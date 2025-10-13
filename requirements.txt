@@ -1,0 +1,6 @@
+scikit-surprise
+numpy
+pandas
+matplotlib
+seaborn
+tensorflow

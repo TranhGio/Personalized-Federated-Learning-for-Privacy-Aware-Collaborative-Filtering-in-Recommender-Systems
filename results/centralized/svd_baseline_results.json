@@ -1,0 +1,52 @@
+{
+    "dataset": "ml-1m",
+    "test_size": 0.2,
+    "timestamp": "2025-10-13T15:24:30.693008",
+    "svd_results": {
+        "model_name": "SVD",
+        "rmse": 0.8728931555711223,
+        "mae": 0.6845203566559622,
+        "mse": 0.7619424610429116,
+        "r2": 0.3887677311063067,
+        "training_time": 3.938283,
+        "n_predictions": 200042,
+        "params": {
+            "n_factors": 100,
+            "n_epochs": 20,
+            "lr_all": 0.005,
+            "reg_all": 0.02
+        }
+    },
+    "cv_results": {
+        "mean_rmse": 0.8735239107223007,
+        "std_rmse": 0.0013258562346973013,
+        "mean_mae": 0.685747558048908,
+        "std_mae": 0.0007517501139253514
+    },
+    "comparison": [
+        {
+            "Method": "SVD++",
+            "RMSE": 0.8669819747686953,
+            "MAE": 0.6768859039693952,
+            "Training Time (s)": 362.063359
+        },
+        {
+            "Method": "SVD",
+            "RMSE": 0.8742490421467917,
+            "MAE": 0.6860663542766716,
+            "Training Time (s)": 4.365728
+        },
+        {
+            "Method": "KNN-Basic",
+            "RMSE": 0.9765109705341003,
+            "MAE": 0.7713329432610434,
+            "Training Time (s)": 46.214697
+        },
+        {
+            "Method": "NMF",
+            "RMSE": 1.1285491746604133,
+            "MAE": 0.8575055456588749,
+            "Training Time (s)": 13.133296
+        }
+    ]
+}
