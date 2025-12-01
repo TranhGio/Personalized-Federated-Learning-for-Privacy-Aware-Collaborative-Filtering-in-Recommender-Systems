@@ -395,3 +395,52 @@ def load_partition_data(
     num_items = len(item2idx)
 
     return trainloader, testloader, num_users, num_items, user2idx, item2idx
+
+
+def load_full_data(
+    test_ratio: float = 0.2,
+    batch_size: int = 256,
+    data_dir: Optional[str] = None,
+):
+    """
+    Load full MovieLens 1M dataset for server-side evaluation.
+
+    This function loads the entire dataset (not partitioned) for centralized
+    evaluation of the federated model. Used by the server to compute final
+    metrics after training.
+
+    Args:
+        test_ratio: Ratio of test data (default: 0.2)
+        batch_size: Batch size for DataLoader
+        data_dir: Directory for data (defaults to project root data/)
+
+    Returns:
+        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx)
+    """
+    from torch.utils.data import DataLoader
+
+    if data_dir is None:
+        data_dir = str(_DEFAULT_DATA_DIR)
+
+    # Download and load data
+    download_movielens_1m(data_dir)
+    ratings_df, _, _ = load_movielens_1m(data_dir)
+
+    # Create global mappings
+    user2idx, _, item2idx, _ = create_global_mappings(ratings_df)
+
+    # Split into train/test (using all data, not partitioned)
+    train_df, test_df = create_train_test_split(ratings_df, test_ratio=test_ratio)
+
+    # Create datasets
+    train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
+    test_dataset = MovieLensDataset(test_df, user2idx, item2idx)
+
+    # Create dataloaders
+    trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    num_users = len(user2idx)
+    num_items = len(item2idx)
+
+    return trainloader, testloader, num_users, num_items, user2idx, item2idx

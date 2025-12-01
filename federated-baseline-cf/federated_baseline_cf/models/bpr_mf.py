@@ -211,9 +211,12 @@ class BPRMF(nn.Module):
         """
         self.eval()
         with torch.no_grad():
+            # Get device from model parameters
+            device = next(self.parameters()).device
+
             # Expand user_id for all items
-            user_ids = torch.LongTensor([user_id] * self.num_items)
-            all_item_ids = torch.arange(self.num_items)
+            user_ids = torch.LongTensor([user_id] * self.num_items).to(device)
+            all_item_ids = torch.arange(self.num_items, device=device)
 
             # Get scores for all items
             scores = self._compute_score(user_ids, all_item_ids)

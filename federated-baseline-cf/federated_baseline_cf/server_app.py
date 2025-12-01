@@ -3,13 +3,14 @@
 import torch
 import json
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from flwr.app import ArrayRecord, ConfigRecord, Context
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
-from federated_baseline_cf.task import get_model
+from federated_baseline_cf.task import get_model, test, evaluate_ranking
+from federated_baseline_cf.dataset import load_full_data
 
 # Create ServerApp
 app = ServerApp()
@@ -104,14 +105,28 @@ def print_evaluation_metrics(round_num: int, metrics: Dict[str, float], context:
                 print(f"\n  @ K={k}:")
                 if f"hit_rate@{k}" in metrics:
                     print(f"    Hit Rate:   {metrics[f'hit_rate@{k}']:.4f}")
-                if f"accuracy@{k}" in metrics:
-                    print(f"    Accuracy:   {metrics[f'accuracy@{k}']:.4f}")
                 if f"precision@{k}" in metrics:
                     print(f"    Precision:  {metrics[f'precision@{k}']:.4f}")
                 if f"recall@{k}" in metrics:
                     print(f"    Recall:     {metrics[f'recall@{k}']:.4f}")
+                if f"f1@{k}" in metrics:
+                    print(f"    F1:         {metrics[f'f1@{k}']:.4f}")
                 if f"ndcg@{k}" in metrics:
                     print(f"    NDCG:       {metrics[f'ndcg@{k}']:.4f}")
+                if f"map@{k}" in metrics:
+                    print(f"    MAP:        {metrics[f'map@{k}']:.4f}")
+
+            # Diversity/Popularity metrics (only for first K value to avoid repetition)
+            k = sorted(k_values)[0]
+            has_diversity = any(f"{m}@{k}" in metrics for m in ['coverage', 'novelty'])
+            if has_diversity:
+                print("\n📈 Diversity/Popularity Metrics:")
+                for k in sorted(k_values):
+                    print(f"\n  @ K={k}:")
+                    if f"coverage@{k}" in metrics:
+                        print(f"    Coverage:   {metrics[f'coverage@{k}']:.4f}")
+                    if f"novelty@{k}" in metrics:
+                        print(f"    Novelty:    {metrics[f'novelty@{k}']:.4f}")
 
     print(f"\n{'='*70}\n")
 
@@ -165,26 +180,81 @@ def main(grid: Grid, context: Context) -> None:
         num_rounds=num_rounds,
     )
 
-    # Print final evaluation metrics summary
+    # Print training complete message
     print("\n" + "="*70)
-    print("TRAINING COMPLETE")
+    print("FEDERATED TRAINING COMPLETE")
     print("="*70)
     print(f"Total rounds completed: {num_rounds}")
-    print("Note: Evaluation metrics are displayed during training.")
     print("="*70)
 
-    # Extract final metrics from the last round
-    final_metrics = {}
-    if hasattr(result, 'metrics_distributed') and result.metrics_distributed:
-        # Get metrics from the last round
-        last_round = max(result.metrics_distributed.keys())
-        last_round_metrics = result.metrics_distributed[last_round]
+    # =========================================================================
+    # CENTRALIZED EVALUATION: Run evaluation on server with final model
+    # =========================================================================
+    print("\n📊 Running centralized evaluation with final model...")
 
-        # Extract the aggregated metrics
-        if last_round_metrics:
-            for key, value in last_round_metrics.items():
-                if key != "num-examples":
-                    final_metrics[key] = float(value)
+    # Load final model weights from result
+    final_model = get_model(
+        model_type=model_type,
+        embedding_dim=embedding_dim,
+        dropout=dropout,
+    )
+    final_model.load_state_dict(result.arrays.to_torch_state_dict())
+
+    # Auto-detect device (CUDA if available and compatible, else CPU)
+    # Note: RTX 5090 (sm_120) requires PyTorch nightly with CUDA 12.8+
+    if torch.cuda.is_available():
+        try:
+            # Test if CUDA actually works by creating a small tensor
+            test_tensor = torch.zeros(1).cuda()
+            del test_tensor
+            device = torch.device("cuda:0")
+            print(f"  Using GPU: {torch.cuda.get_device_name(0)}")
+        except RuntimeError as e:
+            print(f"  CUDA available but not compatible: {e}")
+            print(f"  Falling back to CPU")
+            device = torch.device("cpu")
+    else:
+        device = torch.device("cpu")
+        print(f"  Using CPU")
+    final_model.to(device)
+
+    # Load full test data for evaluation
+    trainloader, testloader, _, _, _, _ = load_full_data(
+        test_ratio=0.2,
+        batch_size=256,
+    )
+
+    # Compute rating prediction metrics (RMSE, MAE)
+    print("  Computing rating prediction metrics...")
+    eval_loss, rating_metrics = test(
+        model=final_model,
+        testloader=testloader,
+        device=str(device),
+        model_type=model_type,
+    )
+
+    # Compute ranking metrics (Hit Rate, Precision, Recall, F1, NDCG, MAP, Coverage, Novelty, MRR)
+    print("  Computing ranking metrics...")
+    k_values_str = context.run_config.get("ranking-k-values", "5,10,20")
+    k_values = [int(k.strip()) for k in k_values_str.split(",")]
+
+    ranking_metrics = evaluate_ranking(
+        model=final_model,
+        testloader=testloader,
+        device=str(device),
+        k_values=k_values,
+        trainloader=trainloader,  # For computing item popularity
+    )
+
+    # Combine all metrics
+    final_metrics = {
+        "eval_loss": float(eval_loss),
+        **rating_metrics,
+        **ranking_metrics,
+    }
+
+    # Print evaluation results
+    print_evaluation_metrics(num_rounds, final_metrics, context)
 
     # Create results JSON structure similar to centralized results
     results_data = {
@@ -203,14 +273,6 @@ def main(grid: Grid, context: Context) -> None:
         "final_metrics": final_metrics,
         "training_rounds": num_rounds,
     }
-
-    # Add per-round metrics if available
-    if hasattr(result, 'metrics_distributed') and result.metrics_distributed:
-        results_data["metrics_per_round"] = {}
-        for round_num, metrics in result.metrics_distributed.items():
-            results_data["metrics_per_round"][str(round_num)] = {
-                k: float(v) for k, v in metrics.items() if k != "num-examples"
-            }
 
     # Save results to JSON file
     print("\nSaving evaluation results...")

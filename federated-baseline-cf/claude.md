@@ -713,7 +713,7 @@ alpha = 0.5                 # Dirichlet concentration (0.1-10.0)
 
 ```toml
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 10    # Number of simulated clients
+options.num-supernodes = 5    # Number of simulated clients
 ```
 
 For production deployment, use remote federation:

@@ -165,13 +165,16 @@ class BasicMF(nn.Module):
         """
         self.eval()
         with torch.no_grad():
+            # Get device from model parameters
+            device = next(self.parameters()).device
+
             # Get user embedding
-            user_ids = torch.LongTensor([user_id])
+            user_ids = torch.LongTensor([user_id]).to(device)
             user_emb = self.user_embeddings(user_ids)  # (1, embedding_dim)
             user_b = self.user_bias(user_ids)  # (1, 1)
 
             # Get all item embeddings and biases
-            all_item_ids = torch.arange(self.num_items)
+            all_item_ids = torch.arange(self.num_items, device=device)
             item_embs = self.item_embeddings(all_item_ids)  # (num_items, embedding_dim)
             item_bs = self.item_bias(all_item_ids).squeeze()  # (num_items,)
 

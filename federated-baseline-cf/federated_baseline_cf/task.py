@@ -3,7 +3,8 @@
 import torch
 import torch.optim as optim
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Set, Optional
+from collections import Counter
 
 from federated_baseline_cf.dataset import load_partition_data
 from federated_baseline_cf.models import BasicMF, BPRMF, MSELoss, BPRLoss
@@ -11,6 +12,9 @@ from federated_baseline_cf.models import BasicMF, BPRMF, MSELoss, BPRLoss
 
 # Global cache for dataset metadata
 _dataset_cache = {}
+
+# Global cache for item popularity (computed from training data)
+_item_popularity_cache = {}
 
 
 def load_data(
@@ -425,11 +429,75 @@ def compute_mrr(ranked_items, relevant_items):
     return 0.0
 
 
+def compute_ap(ranked_items, relevant_items, k: int) -> float:
+    """
+    Compute Average Precision at K for a single user.
+
+    AP@K = (1/min(K, |relevant|)) * sum(P(i) * rel(i)) for i in 1..K
+    where P(i) is precision at position i, and rel(i) is 1 if item at i is relevant.
+
+    Args:
+        ranked_items: List of recommended item IDs (in rank order)
+        relevant_items: Set of relevant (ground truth) item IDs
+        k: Cutoff position
+
+    Returns:
+        Average Precision at K (0 to 1, higher is better)
+    """
+    if not relevant_items:
+        return 0.0
+
+    hits = 0
+    precision_sum = 0.0
+
+    for i, item in enumerate(ranked_items[:k]):
+        if item in relevant_items:
+            hits += 1
+            # Precision at this position
+            precision_sum += hits / (i + 1)
+
+    # Normalize by minimum of K and number of relevant items
+    return precision_sum / min(k, len(relevant_items))
+
+
+def compute_novelty(
+    ranked_items,
+    item_popularity: Dict[int, float],
+    k: int,
+) -> float:
+    """
+    Compute Novelty at K for a single user's recommendations.
+
+    Novelty = average of -log2(popularity) for recommended items.
+    Higher novelty means recommending less popular (more surprising) items.
+
+    Args:
+        ranked_items: List of recommended item IDs (in rank order)
+        item_popularity: Dict mapping item_id -> popularity (0 to 1)
+        k: Cutoff position
+
+    Returns:
+        Average novelty score (higher = more novel/surprising)
+    """
+    if len(ranked_items) == 0:
+        return 0.0
+
+    novelties = []
+    for item in ranked_items[:k]:
+        pop = item_popularity.get(item, 1e-10)  # Avoid log(0)
+        # Self-information: -log2(p) where p is popularity
+        novelties.append(-np.log2(max(pop, 1e-10)))
+
+    return float(np.mean(novelties)) if novelties else 0.0
+
+
 def evaluate_ranking(
     model,
     testloader,
     device: str,
     k_values: list = None,
+    item_popularity: Optional[Dict[int, float]] = None,
+    trainloader=None,
 ) -> Dict[str, float]:
     """
     Comprehensive ranking evaluation with multiple metrics.
@@ -438,7 +506,11 @@ def evaluate_ranking(
         - Hit Rate@K: Fraction of users with at least one hit in top-K
         - Precision@K: Average fraction of relevant items in top-K
         - Recall@K: Average fraction of relevant items retrieved
+        - F1@K: Harmonic mean of Precision and Recall
         - NDCG@K: Normalized Discounted Cumulative Gain (ranking quality)
+        - MAP@K: Mean Average Precision at K
+        - Coverage@K: Fraction of catalog items appearing in recommendations
+        - Novelty@K: Average inverse popularity of recommended items
         - MRR: Mean Reciprocal Rank (position of first relevant item)
         - Accuracy@K: Same as Hit Rate (binary hit/miss)
 
@@ -447,6 +519,9 @@ def evaluate_ranking(
         testloader: Test data loader
         device: Device ('cuda' or 'cpu')
         k_values: List of K values to evaluate (default: [5, 10, 20])
+        item_popularity: Dict mapping item_id -> popularity (0 to 1).
+            If None and trainloader provided, computed from trainloader.
+        trainloader: Training data loader (used to compute item_popularity if not provided)
 
     Returns:
         Dictionary of ranking metrics with keys like:
@@ -468,12 +543,36 @@ def evaluate_ranking(
                 user_test_items[u] = set()
             user_test_items[u].add(i)
 
+    # Compute item popularity from training data if not provided
+    if item_popularity is None:
+        item_popularity = {}
+        if trainloader is not None:
+            item_counts = Counter()
+            total_interactions = 0
+            for batch in trainloader:
+                items = batch['item'].numpy()
+                item_counts.update(items)
+                total_interactions += len(items)
+            # Normalize to get popularity (fraction of interactions)
+            if total_interactions > 0:
+                for item_id, count in item_counts.items():
+                    item_popularity[item_id] = count / total_interactions
+        # Cache for future use
+        _item_popularity_cache.update(item_popularity)
+
+    # Get number of items for coverage calculation
+    num_total_items = model.num_items if hasattr(model, 'num_items') else _dataset_cache.get('num_items', 3706)
+
     # Initialize metric accumulators for each K
     metrics_per_k = {k: {
         'hits': 0,
         'precisions': [],
         'recalls': [],
+        'f1s': [],
         'ndcgs': [],
+        'aps': [],  # Average Precision scores
+        'novelties': [],
+        'recommended_items': set(),  # For coverage
     } for k in k_values}
 
     mrr_scores = []
@@ -505,12 +604,30 @@ def evaluate_ranking(
                 precision = hits_for_user / k if k > 0 else 0
                 recall = hits_for_user / len(test_items) if len(test_items) > 0 else 0
 
+                # Compute F1@K (harmonic mean of precision and recall)
+                if precision + recall > 0:
+                    f1 = 2 * (precision * recall) / (precision + recall)
+                else:
+                    f1 = 0.0
+
                 # Compute NDCG@K
                 ndcg = compute_ndcg(top_k_items, test_items, k)
 
+                # Compute AP@K (Average Precision)
+                ap = compute_ap(top_k_items, test_items, k)
+
+                # Compute Novelty@K
+                novelty = compute_novelty(top_k_items, item_popularity, k)
+
+                # Track recommended items for coverage
+                metrics_per_k[k]['recommended_items'].update(top_k_items)
+
                 metrics_per_k[k]['precisions'].append(precision)
                 metrics_per_k[k]['recalls'].append(recall)
+                metrics_per_k[k]['f1s'].append(f1)
                 metrics_per_k[k]['ndcgs'].append(ndcg)
+                metrics_per_k[k]['aps'].append(ap)
+                metrics_per_k[k]['novelties'].append(novelty)
 
             num_users += 1
 
@@ -523,15 +640,27 @@ def evaluate_ranking(
         results[f'accuracy@{k}'] = results[f'hit_rate@{k}']  # Same metric, different name
 
         # Precision@K
-        results[f'precision@{k}'] = np.mean(metrics_per_k[k]['precisions']) if metrics_per_k[k]['precisions'] else 0.0
+        results[f'precision@{k}'] = float(np.mean(metrics_per_k[k]['precisions'])) if metrics_per_k[k]['precisions'] else 0.0
 
         # Recall@K
-        results[f'recall@{k}'] = np.mean(metrics_per_k[k]['recalls']) if metrics_per_k[k]['recalls'] else 0.0
+        results[f'recall@{k}'] = float(np.mean(metrics_per_k[k]['recalls'])) if metrics_per_k[k]['recalls'] else 0.0
+
+        # F1@K
+        results[f'f1@{k}'] = float(np.mean(metrics_per_k[k]['f1s'])) if metrics_per_k[k]['f1s'] else 0.0
 
         # NDCG@K
-        results[f'ndcg@{k}'] = np.mean(metrics_per_k[k]['ndcgs']) if metrics_per_k[k]['ndcgs'] else 0.0
+        results[f'ndcg@{k}'] = float(np.mean(metrics_per_k[k]['ndcgs'])) if metrics_per_k[k]['ndcgs'] else 0.0
+
+        # MAP@K (Mean Average Precision)
+        results[f'map@{k}'] = float(np.mean(metrics_per_k[k]['aps'])) if metrics_per_k[k]['aps'] else 0.0
+
+        # Coverage@K (fraction of catalog items recommended)
+        results[f'coverage@{k}'] = len(metrics_per_k[k]['recommended_items']) / num_total_items if num_total_items > 0 else 0.0
+
+        # Novelty@K (average inverse popularity)
+        results[f'novelty@{k}'] = float(np.mean(metrics_per_k[k]['novelties'])) if metrics_per_k[k]['novelties'] else 0.0
 
     # MRR (not K-dependent)
-    results['mrr'] = np.mean(mrr_scores) if mrr_scores else 0.0
+    results['mrr'] = float(np.mean(mrr_scores)) if mrr_scores else 0.0
 
     return results

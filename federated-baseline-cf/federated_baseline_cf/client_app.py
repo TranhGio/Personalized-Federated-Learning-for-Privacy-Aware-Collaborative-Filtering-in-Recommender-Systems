@@ -12,6 +12,30 @@ from federated_baseline_cf.task import evaluate_ranking
 # Flower ClientApp
 app = ClientApp()
 
+# Cache for device detection (avoid repeated CUDA tests)
+_device_cache = None
+
+
+def get_device():
+    """Get device with safe CUDA detection (handles incompatible GPU architectures)."""
+    global _device_cache
+    if _device_cache is not None:
+        return _device_cache
+
+    if torch.cuda.is_available():
+        try:
+            # Test if CUDA actually works by creating a small tensor
+            test_tensor = torch.zeros(1).cuda()
+            del test_tensor
+            _device_cache = torch.device("cuda:0")
+        except RuntimeError:
+            # CUDA available but not compatible (e.g., RTX 5090 with old PyTorch)
+            _device_cache = torch.device("cpu")
+    else:
+        _device_cache = torch.device("cpu")
+
+    return _device_cache
+
 
 @app.train()
 def train(msg: Message, context: Context):
@@ -29,14 +53,9 @@ def train(msg: Message, context: Context):
         dropout=dropout,
     )
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # Print device info for verification
-    print(f"🎮 Training on device: {device}")
-    if torch.cuda.is_available():
-        print(f"   GPU: {torch.cuda.get_device_name(0)}")
-        print(f"   Memory allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
-
+    # Use safe device detection (handles incompatible GPU architectures)
+    device = get_device()
     model.to(device)
 
     # Load the data
@@ -88,14 +107,16 @@ def evaluate(msg: Message, context: Context):
         dropout=dropout,
     )
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # Use safe device detection (handles incompatible GPU architectures)
+    device = get_device()
     model.to(device)
 
-    # Load the data
+    # Load the data (both train and test for item popularity computation)
     partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     alpha = context.run_config.get("alpha", 0.5)
-    _, testloader = load_data(
+    trainloader, testloader = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=alpha,
@@ -124,12 +145,13 @@ def evaluate(msg: Message, context: Context):
         k_values_str = context.run_config.get("ranking-k-values", "5,10,20")
         k_values = [int(k.strip()) for k in k_values_str.split(",")]
 
-        # Compute ranking metrics
+        # Compute ranking metrics (pass trainloader for item popularity computation)
         ranking_metrics = evaluate_ranking(
             model=model,
             testloader=testloader,
             device=device,
             k_values=k_values,
+            trainloader=trainloader,
         )
 
         # Add ranking metrics to results
