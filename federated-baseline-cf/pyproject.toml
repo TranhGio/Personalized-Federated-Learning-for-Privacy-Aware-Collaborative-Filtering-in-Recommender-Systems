@@ -21,6 +21,7 @@ dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "scikit-learn>=1.3.0",
+    "wandb>=0.16.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -42,8 +43,8 @@ fraction-train = 1.0
 local-epochs = 5
 
 # Federated Learning Strategy
-strategy = "fedavg"         # Options: "fedavg" (default) or "fedprox"
-proximal-mu = 0.0           # Proximal term strength for FedProx (μ in paper)
+strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"
+proximal-mu = 0.01           # Proximal term strength for FedProx (μ in paper)
                             # When 0.0, FedProx behaves identically to FedAvg
                             # Recommended values: 0.001, 0.01, 0.1, 1.0
 
@@ -63,6 +64,12 @@ alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
 # Ranking evaluation
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
 ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
+
+# Weights & Biases (wandb) configuration
+wandb-enabled = true              # Enable/disable wandb logging
+wandb-project = "federated-cf"    # wandb project name
+wandb-entity = ""                 # wandb team/entity (optional, uses default if empty)
+wandb-run-name = ""               # Custom run name (optional, auto-generated if empty)
 
 # Default federation to use when running the app
 [tool.flwr.federations]
