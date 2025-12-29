@@ -1,4 +1,12 @@
-"""federated-baseline-cf: A Flower / PyTorch app for Matrix Factorization."""
+"""federated-personalized-cf: Split Learning for Personalized Collaborative Filtering.
+
+This server implements SPLIT ARCHITECTURE where:
+- GLOBAL params (item embeddings) are sent to clients and aggregated
+- LOCAL params (user embeddings) stay on clients (server never sees them)
+
+NOTE: Centralized evaluation is NOT possible in split learning since the server
+only has global parameters. Final metrics come from federated evaluation.
+"""
 
 import torch
 import json
@@ -8,10 +16,9 @@ from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from flwr.app import ArrayRecord, ConfigRecord, Context
 from flwr.serverapp import Grid, ServerApp
-from flwr.serverapp.strategy import FedAvg, FedProx
 
-from federated_baseline_cf.task import get_model, test, evaluate_ranking
-from federated_baseline_cf.dataset import load_full_data
+from federated_personalized_cf.task import get_model
+from federated_personalized_cf.strategy import SplitFedAvg, SplitFedProx, GLOBAL_PARAM_KEYS
 
 # Create ServerApp
 app = ServerApp()
@@ -189,21 +196,24 @@ def main(grid: Grid, context: Context) -> None:
     num_params = sum(p.numel() for p in global_model.parameters())
     print(f"  Total parameters: {num_params:,}")
 
-    arrays = ArrayRecord(global_model.state_dict())
+    # Only send global params to clients (item embeddings, item bias, global bias)
+    # User embeddings stay on clients (split architecture)
+    arrays = ArrayRecord(global_model.get_global_parameters())
 
     # Initialize strategy based on configuration
     # Note: Flower automatically does weighted averaging of metrics based on num-examples
+    # Using Split strategies that only aggregate global params (item embeddings)
     if strategy_name == "fedprox":
-        strategy = FedProx(
+        strategy = SplitFedProx(
             fraction_train=fraction_train,
             proximal_mu=proximal_mu,
         )
-        print(f"  Strategy: FedProx (proximal_mu={proximal_mu})")
+        print(f"  Strategy: SplitFedProx (proximal_mu={proximal_mu})")
     else:
-        strategy = FedAvg(
+        strategy = SplitFedAvg(
             fraction_train=fraction_train,
         )
-        print(f"  Strategy: FedAvg")
+        print(f"  Strategy: SplitFedAvg")
 
     # Start strategy, run FedAvg for `num_rounds`
     print(f"\nStarting Federated Learning with {num_rounds} rounds...")
@@ -248,70 +258,23 @@ def main(grid: Grid, context: Context) -> None:
     print("="*70)
 
     # =========================================================================
-    # CENTRALIZED EVALUATION: Run evaluation on server with final model
+    # FEDERATED EVALUATION: Use aggregated metrics from final round
     # =========================================================================
-    print("\n📊 Running centralized evaluation with final model...")
+    # NOTE: Centralized evaluation is NOT possible in split learning since the
+    # server only has global parameters (item embeddings). User embeddings
+    # remain on clients and are never sent to the server.
+    print("\n📊 Using federated evaluation metrics from final round...")
+    print("  (Centralized evaluation not possible in split learning)")
 
-    # Load final model weights from result
-    final_model = get_model(
-        model_type=model_type,
-        embedding_dim=embedding_dim,
-        dropout=dropout,
-    )
-    final_model.load_state_dict(result.arrays.to_torch_state_dict())
+    # Get final round metrics from federated evaluation
+    final_round_metrics = result.evaluate_metrics_clientapp.get(num_rounds, {})
 
-    # Auto-detect device (CUDA if available and compatible, else CPU)
-    # Note: RTX 5090 (sm_120) requires PyTorch nightly with CUDA 12.8+
-    if torch.cuda.is_available():
-        try:
-            # Test if CUDA actually works by creating a small tensor
-            test_tensor = torch.zeros(1).cuda()
-            del test_tensor
-            device = torch.device("cuda:0")
-            print(f"  Using GPU: {torch.cuda.get_device_name(0)}")
-        except RuntimeError as e:
-            print(f"  CUDA available but not compatible: {e}")
-            print(f"  Falling back to CPU")
-            device = torch.device("cpu")
+    if not final_round_metrics:
+        print("  Warning: No evaluation metrics from final round")
+        final_metrics = {}
     else:
-        device = torch.device("cpu")
-        print(f"  Using CPU")
-    final_model.to(device)
-
-    # Load full test data for evaluation
-    trainloader, testloader, _, _, _, _ = load_full_data(
-        test_ratio=0.2,
-        batch_size=256,
-    )
-
-    # Compute rating prediction metrics (RMSE, MAE)
-    print("  Computing rating prediction metrics...")
-    eval_loss, rating_metrics = test(
-        model=final_model,
-        testloader=testloader,
-        device=str(device),
-        model_type=model_type,
-    )
-
-    # Compute ranking metrics (Hit Rate, Precision, Recall, F1, NDCG, MAP, Coverage, Novelty, MRR)
-    print("  Computing ranking metrics...")
-    k_values_str = context.run_config.get("ranking-k-values", "5,10,20")
-    k_values = [int(k.strip()) for k in k_values_str.split(",")]
-
-    ranking_metrics = evaluate_ranking(
-        model=final_model,
-        testloader=testloader,
-        device=str(device),
-        k_values=k_values,
-        trainloader=trainloader,  # For computing item popularity
-    )
-
-    # Combine all metrics
-    final_metrics = {
-        "eval_loss": float(eval_loss),
-        **rating_metrics,
-        **ranking_metrics,
-    }
+        # Use federated metrics (already aggregated by Flower)
+        final_metrics = dict(final_round_metrics)
 
     # Print evaluation results
     print_evaluation_metrics(num_rounds, final_metrics, context)
@@ -330,8 +293,9 @@ def main(grid: Grid, context: Context) -> None:
 
     # Create results JSON structure similar to centralized results
     results_data = {
-        "model_name": f"{model_type.upper()}_MF_Federated_{strategy_name.upper()}",
+        "model_name": f"{model_type.upper()}_MF_Personalized_Split_{strategy_name.upper()}",
         "dataset": "ml-1m",
+        "architecture": "split_learning",
         "federated_config": {
             "num_rounds": num_rounds,
             "num_clients": 10,  # Adjust based on your config
@@ -342,18 +306,21 @@ def main(grid: Grid, context: Context) -> None:
             "embedding_dim": embedding_dim,
             "dropout": dropout,
             "learning_rate": lr,
+            "split_learning": True,
+            "global_params": ["item_embeddings", "item_bias", "global_bias"],
+            "local_params": ["user_embeddings", "user_bias"],
         },
         "timestamp": datetime.now().isoformat(),
         "final_metrics": final_metrics,
         "training_rounds": num_rounds,
     }
 
-    # Save results to JSON file
+    # Save results to JSON file (in personalized subfolder)
     print("\nSaving evaluation results...")
-    results_dir = Path("../results/federated")
+    results_dir = Path("../results/federated/personalized")
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    results_filename = results_dir / f"{model_type}_mf_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}_results.json"
+    results_filename = results_dir / f"{model_type}_mf_split_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}_results.json"
     with open(results_filename, 'w') as f:
         json.dump(results_data, f, indent=4)
 

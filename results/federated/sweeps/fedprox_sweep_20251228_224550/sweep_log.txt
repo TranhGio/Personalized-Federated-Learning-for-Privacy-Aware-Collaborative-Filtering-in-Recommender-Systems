@@ -1,0 +1,549 @@
+========================================
+FedProx Hyperparameter Sweep
+Started: Sun Dec 28 10:45:50 PM +07 2025
+Results directory: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/sweeps/fedprox_sweep_20251228_224550
+========================================
+
+Hyperparameter Grid:
+  proximal-mu: 0.05 0.1 0.5
+  num-server-rounds: 50 100
+  fraction-train: 0.3 0.5
+========================================
+
+========================================
+[1/12] Running: fedprox_mu0.05_r50_f0.3
+  proximal-mu=0.05
+  num-server-rounds=50
+  fraction-train=0.3
+  Started: Sun Dec 28 10:45:50 PM +07 2025
+========================================
+2025-12-28 22:45:50.425669: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936750.433912  306766 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936750.436514  306766 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:45:51.748746: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936751.756887  306848 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936751.759521  306848 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.05 num-server-rounds=50 fraction-train=0.3 wandb-run-name=fedprox_mu0.05_r50_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.05_r50_f0.3_results.json
+  Completed: Sun Dec 28 10:45:54 PM +07 2025
+
+========================================
+[2/12] Running: fedprox_mu0.05_r50_f0.5
+  proximal-mu=0.05
+  num-server-rounds=50
+  fraction-train=0.5
+  Started: Sun Dec 28 10:45:54 PM +07 2025
+========================================
+2025-12-28 22:45:54.352190: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936754.360422  306962 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936754.363074  306962 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:45:55.651959: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936755.660110  307074 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936755.662800  307074 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.05 num-server-rounds=50 fraction-train=0.5 wandb-run-name=fedprox_mu0.05_r50_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.05_r50_f0.5_results.json
+  Completed: Sun Dec 28 10:45:57 PM +07 2025
+
+========================================
+[3/12] Running: fedprox_mu0.05_r100_f0.3
+  proximal-mu=0.05
+  num-server-rounds=100
+  fraction-train=0.3
+  Started: Sun Dec 28 10:45:57 PM +07 2025
+========================================
+2025-12-28 22:45:58.248537: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936758.256666  307188 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936758.259339  307188 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:45:59.543728: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936759.552177  307276 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936759.554896  307276 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.05 num-server-rounds=100 fraction-train=0.3 wandb-run-name=fedprox_mu0.05_r100_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.05_r100_f0.3_results.json
+  Completed: Sun Dec 28 10:46:01 PM +07 2025
+
+========================================
+[4/12] Running: fedprox_mu0.05_r100_f0.5
+  proximal-mu=0.05
+  num-server-rounds=100
+  fraction-train=0.5
+  Started: Sun Dec 28 10:46:01 PM +07 2025
+========================================
+2025-12-28 22:46:02.107807: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936762.116202  307392 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936762.118917  307392 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:03.423196: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936763.431705  307465 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936763.434402  307465 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.05 num-server-rounds=100 fraction-train=0.5 wandb-run-name=fedprox_mu0.05_r100_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.05_r100_f0.5_results.json
+  Completed: Sun Dec 28 10:46:05 PM +07 2025
+
+========================================
+[5/12] Running: fedprox_mu0.1_r50_f0.3
+  proximal-mu=0.1
+  num-server-rounds=50
+  fraction-train=0.3
+  Started: Sun Dec 28 10:46:05 PM +07 2025
+========================================
+2025-12-28 22:46:06.013892: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936766.022297  307630 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936766.024950  307630 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:07.329170: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936767.337619  307703 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936767.340286  307703 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.1 num-server-rounds=50 fraction-train=0.3 wandb-run-name=fedprox_mu0.1_r50_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.1_r50_f0.3_results.json
+  Completed: Sun Dec 28 10:46:09 PM +07 2025
+
+========================================
+[6/12] Running: fedprox_mu0.1_r50_f0.5
+  proximal-mu=0.1
+  num-server-rounds=50
+  fraction-train=0.5
+  Started: Sun Dec 28 10:46:09 PM +07 2025
+========================================
+2025-12-28 22:46:09.856023: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936769.864029  307814 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936769.866615  307814 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:11.180746: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936771.189174  307931 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936771.191833  307931 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.1 num-server-rounds=50 fraction-train=0.5 wandb-run-name=fedprox_mu0.1_r50_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.1_r50_f0.5_results.json
+  Completed: Sun Dec 28 10:46:13 PM +07 2025
+
+========================================
+[7/12] Running: fedprox_mu0.1_r100_f0.3
+  proximal-mu=0.1
+  num-server-rounds=100
+  fraction-train=0.3
+  Started: Sun Dec 28 10:46:13 PM +07 2025
+========================================
+2025-12-28 22:46:13.717408: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936773.725812  308045 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936773.728483  308045 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:15.042285: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936775.050478  308169 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936775.053194  308169 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.1 num-server-rounds=100 fraction-train=0.3 wandb-run-name=fedprox_mu0.1_r100_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.1_r100_f0.3_results.json
+  Completed: Sun Dec 28 10:46:17 PM +07 2025
+
+========================================
+[8/12] Running: fedprox_mu0.1_r100_f0.5
+  proximal-mu=0.1
+  num-server-rounds=100
+  fraction-train=0.5
+  Started: Sun Dec 28 10:46:17 PM +07 2025
+========================================
+2025-12-28 22:46:17.707668: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936777.715939  308284 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936777.718611  308284 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:19.041191: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936779.049506  308365 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936779.052140  308365 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.1 num-server-rounds=100 fraction-train=0.5 wandb-run-name=fedprox_mu0.1_r100_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.1_r100_f0.5_results.json
+  Completed: Sun Dec 28 10:46:21 PM +07 2025
+
+========================================
+[9/12] Running: fedprox_mu0.5_r50_f0.3
+  proximal-mu=0.5
+  num-server-rounds=50
+  fraction-train=0.3
+  Started: Sun Dec 28 10:46:21 PM +07 2025
+========================================
+2025-12-28 22:46:21.679376: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936781.687872  308464 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936781.690538  308464 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:23.008253: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936783.016325  308537 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936783.019116  308537 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.5 num-server-rounds=50 fraction-train=0.3 wandb-run-name=fedprox_mu0.5_r50_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.5_r50_f0.3_results.json
+  Completed: Sun Dec 28 10:46:25 PM +07 2025
+
+========================================
+[10/12] Running: fedprox_mu0.5_r50_f0.5
+  proximal-mu=0.5
+  num-server-rounds=50
+  fraction-train=0.5
+  Started: Sun Dec 28 10:46:25 PM +07 2025
+========================================
+2025-12-28 22:46:25.583688: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936785.592287  308696 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936785.594903  308696 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:26.881712: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936786.890212  308765 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936786.892912  308765 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.5 num-server-rounds=50 fraction-train=0.5 wandb-run-name=fedprox_mu0.5_r50_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.5_r50_f0.5_results.json
+  Completed: Sun Dec 28 10:46:29 PM +07 2025
+
+========================================
+[11/12] Running: fedprox_mu0.5_r100_f0.3
+  proximal-mu=0.5
+  num-server-rounds=100
+  fraction-train=0.3
+  Started: Sun Dec 28 10:46:29 PM +07 2025
+========================================
+2025-12-28 22:46:29.461450: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936789.469867  308898 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936789.472551  308898 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:30.821687: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936790.829963  308973 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936790.832646  308973 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.5 num-server-rounds=100 fraction-train=0.3 wandb-run-name=fedprox_mu0.5_r100_f0.3']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.5_r100_f0.3_results.json
+  Completed: Sun Dec 28 10:46:33 PM +07 2025
+
+========================================
+[12/12] Running: fedprox_mu0.5_r100_f0.5
+  proximal-mu=0.5
+  num-server-rounds=100
+  fraction-train=0.5
+  Started: Sun Dec 28 10:46:33 PM +07 2025
+========================================
+2025-12-28 22:46:33.406709: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936793.414991  309073 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936793.417641  309073 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+Loading project configuration... 
+Success
+2025-12-28 22:46:34.742017: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:477] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1766936794.750245  309153 cuda_dnn.cc:8310] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1766936794.752913  309153 cuda_blas.cc:1418] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+❌ The provided configuration string is in an invalid format. The correct format should be, e.g., 'key1=123 key2=false key3="string"', where values must be of type bool, int, string, or float. Ensure proper formatting with space-separated key-value pairs.
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 238, in parse_config_args
+    overrides.update(tomli.loads(toml_str))
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "src/tomli/_parser.py", line 186, in loads
+  File "src/tomli/_parser.py", line 415, in key_value_rule
+  File "src/tomli/_parser.py", line 458, in parse_key_value_pair
+  File "src/tomli/_parser.py", line 752, in parse_value
+tomli._parser.TOMLDecodeError: Invalid value (at line 1, column 12)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation", line 7, in <module>
+    sys.exit(run_simulation_from_cli())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/simulation/run_simulation.py", line 138, in run_simulation_from_cli
+    override_config = parse_config_args(
+                      ^^^^^^^^^^^^^^^^^^
+  File "/home/bes/miniconda3/envs/recsys_fl/lib/python3.11/site-packages/flwr/common/config.py", line 250, in parse_config_args
+    raise typer.Exit(code=1) from err
+click.exceptions.Exit
+Command '['flower-simulation', '--app', '.', '--num-supernodes', '5', '--run-config', 'strategy=fedprox proximal-mu=0.5 num-server-rounds=100 fraction-train=0.5 wandb-run-name=fedprox_mu0.5_r100_f0.5']' returned non-zero exit status 1.
+  WARNING: Result file not found: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/basic_mf_fedprox_mu0.5_r100_f0.5_results.json
+  Completed: Sun Dec 28 10:46:37 PM +07 2025
+
+========================================
+Sweep Complete!
+Total experiments: 12
+Results directory: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/sweeps/fedprox_sweep_20251228_224550
+Finished: Sun Dec 28 10:46:37 PM +07 2025
+========================================
+
+To analyze results, run:
+  python /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/scripts/analyze_sweep_results.py /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/sweeps/fedprox_sweep_20251228_224550
