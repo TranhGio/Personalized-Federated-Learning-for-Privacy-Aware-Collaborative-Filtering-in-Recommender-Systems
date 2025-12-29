@@ -38,9 +38,9 @@ clientapp = "federated_personalized_cf.client_app:app"
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
 # Federated Learning parameters
-num-server-rounds = 2
+num-server-rounds = 10
 fraction-train = 1.0
-local-epochs = 1
+local-epochs = 5
 
 # Federated Learning Strategy
 strategy = "fedavg"         # Options: "fedavg" (default) or "fedprox"
@@ -49,7 +49,7 @@ proximal-mu = 0.01           # Proximal term strength for FedProx (μ in paper)
                             # Recommended values: 0.001, 0.01, 0.1, 1.0
 
 # Model parameters
-model-type = "basic"  # Options: "basic" (MSE) or "bpr" (Bayesian Personalized Ranking)
+model-type = "bpr"  # Options: "basic" (MSE) or "bpr" (Bayesian Personalized Ranking)
 embedding-dim = 128  # Latent factor dimensionality (32, 64, 128, 256)
 dropout = 0.1       # Dropout rate for regularization
 

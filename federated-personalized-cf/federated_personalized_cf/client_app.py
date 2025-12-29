@@ -1,4 +1,14 @@
-"""federated-personalized-cf: A Flower / PyTorch app for Matrix Factorization."""
+"""federated-personalized-cf: Split Learning for Personalized Collaborative Filtering.
+
+This client implements SPLIT ARCHITECTURE where:
+- GLOBAL params (item embeddings) are received from server and sent back
+- LOCAL params (user embeddings) are persisted locally between rounds
+"""
+
+import os
+import tempfile
+from pathlib import Path
+from datetime import datetime
 
 import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
@@ -15,6 +25,156 @@ app = ClientApp()
 # Cache for device detection (avoid repeated CUDA tests)
 _device_cache = None
 
+# Module directory for cache path
+_MODULE_DIR = Path(__file__).parent
+
+
+# =============================================================================
+# User Embedding Persistence Functions
+# =============================================================================
+
+def get_cache_dir(partition_id: int, cache_dir: str = None) -> Path:
+    """
+    Get the cache directory for a specific partition's user embeddings.
+
+    Args:
+        partition_id: Client partition ID (0 to num_partitions-1)
+        cache_dir: Override cache directory (default: project/.embedding_cache)
+
+    Returns:
+        Path to partition's cache directory
+    """
+    if cache_dir is None:
+        # Default: project_root/.embedding_cache/partition_{id}
+        cache_dir = _MODULE_DIR.parent / ".embedding_cache"
+    else:
+        cache_dir = Path(cache_dir)
+
+    partition_dir = cache_dir / f"partition_{partition_id}"
+    partition_dir.mkdir(parents=True, exist_ok=True)
+    return partition_dir
+
+
+def save_local_user_embeddings(
+    model,
+    partition_id: int,
+    cache_dir: str = None,
+    round_num: int = None,
+) -> None:
+    """
+    Save user embeddings to local cache.
+
+    Called AFTER training completes, BEFORE sending updates to server.
+
+    Args:
+        model: The trained model (BasicMF or BPRMF)
+        partition_id: Client partition ID
+        cache_dir: Optional override for cache directory
+        round_num: Optional round number for debugging
+    """
+    cache_path = get_cache_dir(partition_id, cache_dir)
+    filepath = cache_path / "user_embeddings.pt"
+
+    # Get local parameters from model
+    local_params = model.get_local_parameters()
+
+    # Add metadata
+    local_params['_round'] = round_num
+    local_params['_timestamp'] = datetime.now().isoformat()
+
+    # Atomic save (write to temp file, then rename)
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(cache_path),
+            suffix='.tmp'
+        )
+        os.close(fd)
+        torch.save(local_params, tmp_path)
+        os.replace(tmp_path, str(filepath))
+    except Exception as e:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise RuntimeError(f"Failed to save user embeddings: {e}")
+
+
+def load_local_user_embeddings(
+    model,
+    partition_id: int,
+    cache_dir: str = None,
+) -> bool:
+    """
+    Load user embeddings from local cache.
+
+    Called AFTER loading global params from server.
+
+    Args:
+        model: Model to load embeddings into (already has global params)
+        partition_id: Client partition ID
+        cache_dir: Optional override for cache directory
+
+    Returns:
+        True if embeddings were loaded, False if this is first round
+    """
+    cache_path = get_cache_dir(partition_id, cache_dir)
+    filepath = cache_path / "user_embeddings.pt"
+
+    if not filepath.exists():
+        # First round - use model's default initialization
+        return False
+
+    try:
+        local_state = torch.load(filepath, map_location='cpu', weights_only=False)
+
+        # Remove metadata before loading
+        local_state.pop('_round', None)
+        local_state.pop('_timestamp', None)
+
+        # Load local parameters into model
+        loaded_keys, missing_keys = model.set_local_parameters(local_state, strict=False)
+
+        if missing_keys:
+            print(f"  Warning: Missing local param keys: {missing_keys}")
+
+        return True
+
+    except Exception as e:
+        # Log warning but don't fail - use default initialization
+        print(f"  Warning: Failed to load user embeddings for partition {partition_id}: {e}")
+        return False
+
+
+def clear_embedding_cache(partition_id: int = None, cache_dir: str = None) -> None:
+    """
+    Clear cached user embeddings.
+
+    Args:
+        partition_id: Specific partition to clear, or None for all
+        cache_dir: Override cache directory
+    """
+    import shutil
+
+    if cache_dir is None:
+        cache_dir = _MODULE_DIR.parent / ".embedding_cache"
+    else:
+        cache_dir = Path(cache_dir)
+
+    if not cache_dir.exists():
+        return
+
+    if partition_id is not None:
+        # Clear specific partition
+        partition_dir = cache_dir / f"partition_{partition_id}"
+        if partition_dir.exists():
+            shutil.rmtree(partition_dir)
+    else:
+        # Clear all partitions
+        shutil.rmtree(cache_dir)
+
+
+# =============================================================================
+# Device Detection
+# =============================================================================
 
 def get_device():
     """Get device with safe CUDA detection (handles incompatible GPU architectures)."""
@@ -37,40 +197,69 @@ def get_device():
     return _device_cache
 
 
+# =============================================================================
+# Training Function (Split Architecture)
+# =============================================================================
+
 @app.train()
 def train(msg: Message, context: Context):
-    """Train the Matrix Factorization model on local data."""
+    """
+    Train the Matrix Factorization model with SPLIT ARCHITECTURE.
+
+    Split Learning Flow:
+    1. Create model with default initialization
+    2. Load GLOBAL params from server message (item embeddings)
+    3. Load LOCAL params from cache (user embeddings, if exists)
+    4. Train on local data
+    5. Save LOCAL params to cache
+    6. Return only GLOBAL params to server
+    """
+    # Get partition info
+    partition_id = context.node_config["partition-id"]
+    num_partitions = context.node_config["num-partitions"]
 
     # Get model configuration
     model_type = context.run_config.get("model-type", "bpr")
     embedding_dim = context.run_config.get("embedding-dim", 64)
     dropout = context.run_config.get("dropout", 0.1)
 
-    # Load the model and initialize it with the received weights
+    # Step 1: Create model with default initialization
     model = get_model(
         model_type=model_type,
         embedding_dim=embedding_dim,
         dropout=dropout,
     )
-    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
 
-    # Use safe device detection (handles incompatible GPU architectures)
+    # Step 2: Load GLOBAL parameters from server message
+    global_state = msg.content["arrays"].to_torch_state_dict()
+    model.set_global_parameters(global_state)
+
+    # Step 3: Load LOCAL parameters from cache (if exists)
+    loaded = load_local_user_embeddings(model, partition_id)
+    if loaded:
+        print(f"  Client {partition_id}: Loaded cached user embeddings")
+    else:
+        print(f"  Client {partition_id}: First round - using initialized user embeddings")
+
+    # Move to device
     device = get_device()
     model.to(device)
 
-    # === FedProx: Save global parameters BEFORE training ===
-    # Get proximal_mu from config (0.0 means standard FedAvg behavior)
+    # === FedProx: Save ONLY global parameters for proximal term ===
     proximal_mu = msg.content["config"].get("proximal_mu", 0.0)
+    global_params_for_prox = None
+    global_param_names = None
 
-    # Save global parameters for proximal term (only if proximal_mu > 0)
-    global_params = None
     if proximal_mu > 0:
-        global_params = [p.detach().clone() for p in model.parameters()]
-    # === End FedProx modification ===
+        # Only save global params for proximal term
+        # User embeddings should NOT be regularized toward server
+        global_param_names = model.get_global_parameter_names()
+        global_params_for_prox = []
+        for name, p in model.named_parameters():
+            if name in global_param_names:
+                global_params_for_prox.append(p.detach().clone())
 
     # Load the data
-    partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
     alpha = context.run_config.get("alpha", 0.5)
     trainloader, _ = load_data(
         partition_id=partition_id,
@@ -78,7 +267,7 @@ def train(msg: Message, context: Context):
         alpha=alpha,
     )
 
-    # Call the training function
+    # Step 4: Train the model
     train_loss = train_fn(
         model=model,
         trainloader=trainloader,
@@ -88,46 +277,74 @@ def train(msg: Message, context: Context):
         model_type=model_type,
         weight_decay=context.run_config.get("weight-decay", 1e-5),
         num_negatives=context.run_config.get("num-negatives", 1),
-        # FedProx parameters
+        # FedProx parameters (only for global params)
         proximal_mu=proximal_mu,
-        global_params=global_params,
+        global_params=global_params_for_prox,
+        global_param_names=global_param_names,
     )
 
-    # Construct and return reply Message
-    model_record = ArrayRecord(model.state_dict())
+    # Step 5: Save LOCAL parameters to cache for next round
+    save_local_user_embeddings(model, partition_id)
+
+    # Step 6: Return only GLOBAL parameters to server
+    global_params = model.get_global_parameters()
+    model_record = ArrayRecord(global_params)
+
     metrics = {
         "train_loss": train_loss,
         "num-examples": len(trainloader.dataset),
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})
+
     return Message(content=content, reply_to=msg)
 
 
+# =============================================================================
+# Evaluation Function (Split Architecture)
+# =============================================================================
+
 @app.evaluate()
 def evaluate(msg: Message, context: Context):
-    """Evaluate the Matrix Factorization model on local data."""
+    """
+    Evaluate the Matrix Factorization model with SPLIT ARCHITECTURE.
+
+    Evaluation requires both global and local params:
+    1. Load GLOBAL params from server message
+    2. Load LOCAL params from cache (required for personalized evaluation)
+    3. Evaluate on local test data
+    """
+    # Get partition info
+    partition_id = context.node_config["partition-id"]
+    num_partitions = context.node_config["num-partitions"]
 
     # Get model configuration
     model_type = context.run_config.get("model-type", "bpr")
     embedding_dim = context.run_config.get("embedding-dim", 64)
     dropout = context.run_config.get("dropout", 0.1)
 
-    # Load the model and initialize it with the received weights
+    # Step 1: Create model with default initialization
     model = get_model(
         model_type=model_type,
         embedding_dim=embedding_dim,
         dropout=dropout,
     )
-    model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
 
-    # Use safe device detection (handles incompatible GPU architectures)
+    # Step 2: Load GLOBAL parameters from server message
+    global_state = msg.content["arrays"].to_torch_state_dict()
+    model.set_global_parameters(global_state)
+
+    # Step 3: Load LOCAL parameters from cache (required for evaluation)
+    loaded = load_local_user_embeddings(model, partition_id)
+    if not loaded:
+        # This should only happen if evaluate is called before first train
+        print(f"  Warning: No cached user embeddings for partition {partition_id}")
+
+    # Move to device
     device = get_device()
     model.to(device)
 
     # Load the data (both train and test for item popularity computation)
-    partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
     alpha = context.run_config.get("alpha", 0.5)
     trainloader, testloader = load_data(
         partition_id=partition_id,
@@ -172,4 +389,5 @@ def evaluate(msg: Message, context: Context):
 
     metric_record = MetricRecord(result_metrics)
     content = RecordDict({"metrics": metric_record})
+
     return Message(content=content, reply_to=msg)

@@ -113,12 +113,16 @@ def train_basic_mf(
     weight_decay: float = 1e-5,
     proximal_mu: float = 0.0,
     global_params: list = None,
+    global_param_names: list = None,
 ) -> float:
     """
     Train BasicMF model with MSE loss.
 
     When proximal_mu > 0 and global_params is provided, adds FedProx proximal term:
         loss = MSE_loss + (proximal_mu / 2) * ||w - w_global||^2
+
+    For split learning, the proximal term is only applied to global parameters
+    (item embeddings), not local parameters (user embeddings).
 
     Args:
         model: BasicMF model instance
@@ -129,6 +133,8 @@ def train_basic_mf(
         weight_decay: L2 regularization strength
         proximal_mu: FedProx proximal term coefficient (0.0 = standard training)
         global_params: List of global model parameters (required if proximal_mu > 0)
+        global_param_names: List of global parameter names for split learning.
+            If provided, proximal term only applies to these parameters.
 
     Returns:
         Average training loss
@@ -156,11 +162,21 @@ def train_basic_mf(
             # Compute base loss (MSE)
             loss = criterion(predictions, ratings)
 
-            # FedProx: Add proximal term if enabled
+            # FedProx: Add proximal term if enabled (only for global params in split learning)
             if proximal_mu > 0 and global_params is not None:
                 proximal_term = 0.0
-                for local_w, global_w in zip(model.parameters(), global_params):
-                    proximal_term += (local_w - global_w.to(device)).norm(2) ** 2
+                if global_param_names is not None:
+                    # Split learning: only apply to global parameters
+                    global_param_set = set(global_param_names)
+                    idx = 0
+                    for name, local_w in model.named_parameters():
+                        if name in global_param_set:
+                            proximal_term += (local_w - global_params[idx].to(device)).norm(2) ** 2
+                            idx += 1
+                else:
+                    # Standard FedProx: apply to all parameters
+                    for local_w, global_w in zip(model.parameters(), global_params):
+                        proximal_term += (local_w - global_w.to(device)).norm(2) ** 2
                 loss = loss + (proximal_mu / 2) * proximal_term
 
             # Backward pass
@@ -187,12 +203,16 @@ def train_bpr_mf(
     num_negatives: int = 1,
     proximal_mu: float = 0.0,
     global_params: list = None,
+    global_param_names: list = None,
 ) -> float:
     """
     Train BPRMF model with BPR loss.
 
     When proximal_mu > 0 and global_params is provided, adds FedProx proximal term:
         loss = BPR_loss + (proximal_mu / 2) * ||w - w_global||^2
+
+    For split learning, the proximal term is only applied to global parameters
+    (item embeddings), not local parameters (user embeddings).
 
     Critical for SOTA performance (RecSys 2024):
         - Proper negative sampling
@@ -209,6 +229,8 @@ def train_bpr_mf(
         num_negatives: Number of negative samples per positive
         proximal_mu: FedProx proximal term coefficient (0.0 = standard training)
         global_params: List of global model parameters (required if proximal_mu > 0)
+        global_param_names: List of global parameter names for split learning.
+            If provided, proximal term only applies to these parameters.
 
     Returns:
         Average training loss
@@ -254,11 +276,21 @@ def train_bpr_mf(
             # Compute BPR loss
             loss = criterion(pos_scores, neg_scores)
 
-            # FedProx: Add proximal term if enabled
+            # FedProx: Add proximal term if enabled (only for global params in split learning)
             if proximal_mu > 0 and global_params is not None:
                 proximal_term = 0.0
-                for local_w, global_w in zip(model.parameters(), global_params):
-                    proximal_term += (local_w - global_w.to(device)).norm(2) ** 2
+                if global_param_names is not None:
+                    # Split learning: only apply to global parameters
+                    global_param_set = set(global_param_names)
+                    idx = 0
+                    for name, local_w in model.named_parameters():
+                        if name in global_param_set:
+                            proximal_term += (local_w - global_params[idx].to(device)).norm(2) ** 2
+                            idx += 1
+                else:
+                    # Standard FedProx: apply to all parameters
+                    for local_w, global_w in zip(model.parameters(), global_params):
+                        proximal_term += (local_w - global_w.to(device)).norm(2) ** 2
                 loss = loss + (proximal_mu / 2) * proximal_term
 
             # Backward pass
@@ -299,6 +331,7 @@ def train(
             - num_negatives: Number of negative samples (BPR only)
             - proximal_mu: FedProx proximal term coefficient
             - global_params: Global model parameters for FedProx
+            - global_param_names: Global parameter names for split learning
 
     Returns:
         Average training loss
@@ -313,6 +346,7 @@ def train(
             weight_decay=kwargs.get('weight_decay', 1e-5),
             proximal_mu=kwargs.get('proximal_mu', 0.0),
             global_params=kwargs.get('global_params', None),
+            global_param_names=kwargs.get('global_param_names', None),
         )
     elif model_type.lower() == "bpr":
         return train_bpr_mf(
@@ -325,6 +359,7 @@ def train(
             num_negatives=kwargs.get('num_negatives', 1),
             proximal_mu=kwargs.get('proximal_mu', 0.0),
             global_params=kwargs.get('global_params', None),
+            global_param_names=kwargs.get('global_param_names', None),
         )
     else:
         raise ValueError(f"Unknown model_type: {model_type}")

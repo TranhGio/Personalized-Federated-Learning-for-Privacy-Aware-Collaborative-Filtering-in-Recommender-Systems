@@ -28,7 +28,7 @@ This project implements a **federated learning baseline** for collaborative filt
 
 1. **Centralized vs Federated** performance
 2. **Standard FL vs Personalized FL** approaches
-3. **BasicMF (MSE) vs BPR-MF (ranking)** model architectures
+3. **BPR-MF (ranking)** model architectures
 
 ### Why This Matters
 

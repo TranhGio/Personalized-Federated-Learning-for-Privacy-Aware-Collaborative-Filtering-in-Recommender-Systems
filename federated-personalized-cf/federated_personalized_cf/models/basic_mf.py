@@ -1,29 +1,36 @@
-"""Basic Matrix Factorization with MSE loss (Baseline)."""
+"""Basic Matrix Factorization with MSE loss (Personalized Split Architecture)."""
 
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+from collections import OrderedDict
+from typing import Dict, List, Tuple
 
 
 class BasicMF(nn.Module):
     """
     Basic Matrix Factorization for Collaborative Filtering.
 
-    This is a BASELINE model for federated learning comparison.
+    This is a Personalized model with SPLIT ARCHITECTURE for federated learning:
     Uses MSE loss for rating prediction.
 
     Architecture:
         prediction = global_bias + user_bias + item_bias + dot(user_emb, item_emb)
 
-    All parameters are GLOBAL (standard federated learning):
-        - User embeddings: aggregated across clients
-        - Item embeddings: aggregated across clients
-        - Biases: aggregated across clients
+    Split Learning Parameter Classification:
+        GLOBAL (aggregated via FedAvg/FedProx):
+            - item_embeddings.weight: Item latent factors
+            - item_bias.weight: Item popularity bias
+            - global_bias: Overall rating mean
 
-    This serves as a baseline to compare against:
-        1. BPR-MF (better ranking performance)
-        2. Personalized FL (user embeddings local)
+        LOCAL (private, not aggregated):
+            - user_embeddings.weight: User latent factors (personalized)
+            - user_bias.weight: User rating tendencies (personalized)
     """
+
+    # Parameter classification for split learning
+    _GLOBAL_PARAMS = ('item_embeddings.weight', 'item_bias.weight', 'global_bias')
+    _LOCAL_PARAMS = ('user_embeddings.weight', 'user_bias.weight')
 
     def __init__(
         self,
@@ -206,3 +213,132 @@ class BasicMF(nn.Module):
             'user_embeddings': self.user_embeddings.weight,
             'item_embeddings': self.item_embeddings.weight,
         }
+
+    # =========================================================================
+    # Split Learning Methods
+    # =========================================================================
+
+    def get_global_parameters(self) -> OrderedDict:
+        """
+        Get only global parameters for federated aggregation.
+
+        Returns:
+            OrderedDict with keys: item_embeddings.weight, item_bias.weight, global_bias
+            Values are detached tensor copies on CPU.
+
+        Note:
+            - Returns OrderedDict to maintain consistent key ordering for ArrayRecord
+            - Tensors are moved to CPU for serialization
+        """
+        global_params = OrderedDict()
+        full_state = self.state_dict()
+
+        for name in self._GLOBAL_PARAMS:
+            if name in full_state:
+                global_params[name] = full_state[name].cpu().clone()
+
+        return global_params
+
+    def set_global_parameters(self, global_state_dict: Dict[str, torch.Tensor]) -> None:
+        """
+        Update only global parameters from aggregated server weights.
+
+        Args:
+            global_state_dict: Dictionary containing item_embeddings.weight,
+                              item_bias.weight, global_bias
+
+        Note:
+            Local parameters (user embeddings) are preserved.
+        """
+        current_state = self.state_dict()
+
+        for name in self._GLOBAL_PARAMS:
+            if name in global_state_dict:
+                current_state[name] = global_state_dict[name]
+
+        self.load_state_dict(current_state, strict=True)
+
+    def get_local_parameters(self) -> OrderedDict:
+        """
+        Get local (user) parameters for client-side persistence.
+
+        Returns:
+            OrderedDict with keys: user_embeddings.weight, user_bias.weight
+            Values are detached tensor copies on CPU.
+
+        Note:
+            Used to save user embeddings between federated rounds.
+        """
+        local_params = OrderedDict()
+        full_state = self.state_dict()
+
+        for name in self._LOCAL_PARAMS:
+            if name in full_state:
+                local_params[name] = full_state[name].cpu().clone()
+
+        return local_params
+
+    def set_local_parameters(
+        self,
+        local_state_dict: Dict[str, torch.Tensor],
+        strict: bool = False
+    ) -> Tuple[List[str], List[str]]:
+        """
+        Load local (user) parameters from persistence.
+
+        Args:
+            local_state_dict: Saved local parameters
+            strict: If True, raise error on shape mismatch.
+                   If False, partially load what fits.
+
+        Returns:
+            Tuple of (loaded_keys, missing_keys)
+
+        Edge case handling:
+            - If saved embeddings have fewer users than model, new users get
+              initialized with Xavier uniform (kept from model init)
+            - If saved embeddings have more users, extras are ignored
+        """
+        loaded_keys = []
+        missing_keys = []
+        current_state = self.state_dict()
+
+        for name in self._LOCAL_PARAMS:
+            if name not in local_state_dict:
+                missing_keys.append(name)
+                continue
+
+            saved_tensor = local_state_dict[name]
+            current_tensor = current_state[name]
+
+            # Check if shapes match
+            if saved_tensor.shape == current_tensor.shape:
+                # Perfect match - load directly
+                current_state[name] = saved_tensor
+                loaded_keys.append(name)
+            elif saved_tensor.shape[0] < current_tensor.shape[0]:
+                # New users in this round - partial load
+                num_saved = saved_tensor.shape[0]
+                current_state[name][:num_saved] = saved_tensor
+                loaded_keys.append(f"{name}[:{num_saved}]")
+            elif strict:
+                raise ValueError(
+                    f"Shape mismatch for {name}: "
+                    f"saved {saved_tensor.shape} vs current {current_tensor.shape}"
+                )
+            else:
+                # Saved has more users than model expects (unusual)
+                # Truncate to fit
+                current_state[name] = saved_tensor[:current_tensor.shape[0]]
+                loaded_keys.append(f"{name}[:truncated]")
+
+        self.load_state_dict(current_state, strict=True)
+        return loaded_keys, missing_keys
+
+    def get_global_parameter_names(self) -> List[str]:
+        """Return list of global parameter names in consistent order."""
+        return list(self._GLOBAL_PARAMS)
+
+    def get_local_parameter_names(self) -> List[str]:
+        """Return list of local parameter names in consistent order."""
+        return list(self._LOCAL_PARAMS)
