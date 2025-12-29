@@ -8,7 +8,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "federated-baseline-cf"
+name = "federated-personalized-cf"
 version = "1.0.0"
 description = ""
 license = "Apache-2.0"
@@ -32,15 +32,15 @@ publisher = "DangVinh"
 
 # Point to your ServerApp and ClientApp objects
 [tool.flwr.app.components]
-serverapp = "federated_baseline_cf.server_app:app"
-clientapp = "federated_baseline_cf.client_app:app"
+serverapp = "federated_personalized_cf.server_app:app"
+clientapp = "federated_personalized_cf.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
 # Federated Learning parameters
-num-server-rounds = 10
+num-server-rounds = 2
 fraction-train = 1.0
-local-epochs = 5
+local-epochs = 1
 
 # Federated Learning Strategy
 strategy = "fedavg"         # Options: "fedavg" (default) or "fedprox"
@@ -67,7 +67,7 @@ ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, ND
 
 # Weights & Biases (wandb) configuration
 wandb-enabled = true              # Enable/disable wandb logging
-wandb-project = "federated-cf"    # wandb project name
+wandb-project = "federated-personalized-cf"    # wandb project name
 wandb-entity = ""                 # wandb team/entity (optional, uses default if empty)
 wandb-run-name = ""               # Custom run name (optional, auto-generated if empty)
 

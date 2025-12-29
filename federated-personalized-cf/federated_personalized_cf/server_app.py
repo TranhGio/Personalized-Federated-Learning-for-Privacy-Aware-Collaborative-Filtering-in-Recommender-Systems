@@ -1,4 +1,4 @@
-"""federated-baseline-cf: A Flower / PyTorch app for Matrix Factorization."""
+"""federated-personalized-cf: A Flower / PyTorch app for Matrix Factorization."""
 
 import torch
 import json
@@ -10,8 +10,8 @@ from flwr.app import ArrayRecord, ConfigRecord, Context
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg, FedProx
 
-from federated_baseline_cf.task import get_model, test, evaluate_ranking
-from federated_baseline_cf.dataset import load_full_data
+from federated_personalized_cf.task import get_model, test, evaluate_ranking
+from federated_personalized_cf.dataset import load_full_data
 
 # Create ServerApp
 app = ServerApp()

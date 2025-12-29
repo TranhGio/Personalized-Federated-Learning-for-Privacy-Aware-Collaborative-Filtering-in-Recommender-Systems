@@ -1,0 +1,11 @@
+========================================
+FedProx Hyperparameter Sweep
+Started: Sun Dec 28 10:27:11 PM +07 2025
+Results directory: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf/../results/federated/sweeps/fedprox_sweep_20251228_222711
+========================================
+
+Hyperparameter Grid:
+  proximal-mu: 0.05 0.1 0.5
+  num-server-rounds: 50 100
+  fraction-train: 0.3 0.5
+========================================
