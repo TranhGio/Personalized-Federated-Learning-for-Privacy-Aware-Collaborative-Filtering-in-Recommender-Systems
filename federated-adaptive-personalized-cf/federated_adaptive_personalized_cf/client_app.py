@@ -3,21 +3,32 @@
 This client implements SPLIT ARCHITECTURE where:
 - GLOBAL params (item embeddings) are received from server and sent back
 - LOCAL params (user embeddings) are persisted locally between rounds
+
+Supports Adaptive Personalization (α):
+- Computes per-user alpha based on interaction count
+- Uses global prototype for sparse users to improve recommendations
+- Sends user prototype to server for aggregation
 """
 
 import os
 import tempfile
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
+import numpy as np
 import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from federated_adaptive_personalized_cf.task import get_model, load_data
+from federated_adaptive_personalized_cf.task import (
+    get_model, load_data, compute_client_alpha, get_user_stats
+)
 from federated_adaptive_personalized_cf.task import test as test_fn
 from federated_adaptive_personalized_cf.task import train as train_fn
 from federated_adaptive_personalized_cf.task import evaluate_ranking
+from federated_adaptive_personalized_cf.models import AlphaConfig
+from federated_adaptive_personalized_cf.strategy import USER_PROTOTYPE_KEY
 
 # Flower ClientApp
 app = ClientApp()
@@ -210,9 +221,10 @@ def train(msg: Message, context: Context):
     1. Create model with default initialization
     2. Load GLOBAL params from server message (item embeddings)
     3. Load LOCAL params from cache (user embeddings, if exists)
-    4. Train on local data
-    5. Save LOCAL params to cache
-    6. Return only GLOBAL params to server
+    4. Set adaptive alpha and global prototype (if available)
+    5. Train on local data
+    6. Save LOCAL params to cache
+    7. Return GLOBAL params and user prototype to server
     """
     # Get partition info
     partition_id = context.node_config["partition-id"]
@@ -245,6 +257,39 @@ def train(msg: Message, context: Context):
     device = get_device()
     model.to(device)
 
+    # === Adaptive Personalization: Set alpha and global prototype ===
+    # Get alpha configuration from run config
+    alpha_config = AlphaConfig(
+        min_alpha=context.run_config.get("alpha-min", 0.1),
+        max_alpha=context.run_config.get("alpha-max", 0.95),
+        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 50),
+        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.1),
+    )
+
+    # Load data with user stats for alpha computation
+    dirichlet_alpha = context.run_config.get("alpha", 0.5)
+    trainloader, _, user_stats = load_data(
+        partition_id=partition_id,
+        num_partitions=num_partitions,
+        alpha=dirichlet_alpha,
+        compute_stats=True,
+    )
+
+    # Compute client alpha (weighted average of per-user alphas)
+    client_alpha = compute_client_alpha(user_stats, alpha_config)
+
+    # Set alpha on model (only for BPRMF with adaptive support)
+    if hasattr(model, 'set_alpha'):
+        model.set_alpha(client_alpha)
+        print(f"  Client {partition_id}: Set alpha = {client_alpha:.4f}")
+
+    # Set global prototype from server (if available in config)
+    global_prototype_list = msg.content["config"].get("global_prototype", None)
+    if global_prototype_list is not None and hasattr(model, 'set_global_prototype'):
+        global_prototype = torch.tensor(global_prototype_list, dtype=torch.float32)
+        model.set_global_prototype(global_prototype)
+        print(f"  Client {partition_id}: Set global prototype from server")
+
     # === FedProx: Save ONLY global parameters for proximal term ===
     proximal_mu = msg.content["config"].get("proximal_mu", 0.0)
     global_params_for_prox = None
@@ -259,15 +304,7 @@ def train(msg: Message, context: Context):
             if name in global_param_names:
                 global_params_for_prox.append(p.detach().clone())
 
-    # Load the data
-    alpha = context.run_config.get("alpha", 0.5)
-    trainloader, _ = load_data(
-        partition_id=partition_id,
-        num_partitions=num_partitions,
-        alpha=alpha,
-    )
-
-    # Step 4: Train the model
+    # Step 5: Train the model
     train_loss = train_fn(
         model=model,
         trainloader=trainloader,
@@ -283,17 +320,28 @@ def train(msg: Message, context: Context):
         global_param_names=global_param_names,
     )
 
-    # Step 5: Save LOCAL parameters to cache for next round
+    # Step 6: Save LOCAL parameters to cache for next round
     save_local_user_embeddings(model, partition_id)
 
-    # Step 6: Return only GLOBAL parameters to server
+    # Step 7: Return GLOBAL parameters and user prototype to server
     global_params = model.get_global_parameters()
     model_record = ArrayRecord(global_params)
+
+    # Compute user prototype for server aggregation
+    user_prototype = None
+    if hasattr(model, 'compute_user_prototype'):
+        user_prototype = model.compute_user_prototype().detach().cpu().numpy().tolist()
 
     metrics = {
         "train_loss": train_loss,
         "num-examples": len(trainloader.dataset),
+        "client_alpha": float(client_alpha),
     }
+
+    # Add user prototype to metrics for server aggregation
+    if user_prototype is not None:
+        metrics[USER_PROTOTYPE_KEY] = user_prototype
+
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})
 
@@ -312,7 +360,8 @@ def evaluate(msg: Message, context: Context):
     Evaluation requires both global and local params:
     1. Load GLOBAL params from server message
     2. Load LOCAL params from cache (required for personalized evaluation)
-    3. Evaluate on local test data
+    3. Set adaptive alpha and global prototype (matching training)
+    4. Evaluate on local test data
     """
     # Get partition info
     partition_id = context.node_config["partition-id"]
@@ -344,13 +393,36 @@ def evaluate(msg: Message, context: Context):
     device = get_device()
     model.to(device)
 
+    # === Adaptive Personalization: Set alpha and global prototype ===
+    # Get alpha configuration from run config
+    alpha_config = AlphaConfig(
+        min_alpha=context.run_config.get("alpha-min", 0.1),
+        max_alpha=context.run_config.get("alpha-max", 0.95),
+        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 50),
+        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.1),
+    )
+
     # Load the data (both train and test for item popularity computation)
-    alpha = context.run_config.get("alpha", 0.5)
-    trainloader, testloader = load_data(
+    dirichlet_alpha = context.run_config.get("alpha", 0.5)
+    trainloader, testloader, user_stats = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
-        alpha=alpha,
+        alpha=dirichlet_alpha,
+        compute_stats=True,
     )
+
+    # Compute client alpha (weighted average of per-user alphas)
+    client_alpha = compute_client_alpha(user_stats, alpha_config)
+
+    # Set alpha on model (only for BPRMF with adaptive support)
+    if hasattr(model, 'set_alpha'):
+        model.set_alpha(client_alpha)
+
+    # Set global prototype from server (if available in config)
+    global_prototype_list = msg.content.get("config", {}).get("global_prototype", None)
+    if global_prototype_list is not None and hasattr(model, 'set_global_prototype'):
+        global_prototype = torch.tensor(global_prototype_list, dtype=torch.float32)
+        model.set_global_prototype(global_prototype)
 
     # Call the evaluation function (rating prediction metrics)
     eval_loss, metrics = test_fn(
@@ -366,6 +438,7 @@ def evaluate(msg: Message, context: Context):
         "rmse": metrics["rmse"],
         "mae": metrics["mae"],
         "num-examples": len(testloader.dataset),
+        "client_alpha": float(client_alpha),
     }
 
     # Add ranking metrics if enabled

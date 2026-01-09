@@ -1,11 +1,18 @@
-"""BPR Matrix Factorization - State-of-the-art baseline (RecSys 2024) with Split Architecture."""
+"""BPR Matrix Factorization - State-of-the-art baseline (RecSys 2024) with Split Architecture.
+
+Supports Adaptive Personalization (α) for federated learning:
+    - α → 1: Fully personalized (use local user embedding)
+    - α → 0: Fully global (use global prototype)
+
+Effective embedding: p̃_u = α_u * p_u_local + (1 - α_u) * p̄_global
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 import numpy as np
 from collections import OrderedDict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class BPRMF(nn.Module):
@@ -26,11 +33,24 @@ class BPRMF(nn.Module):
         score = global_bias + user_bias + item_bias + dot(user_emb, item_emb)
         loss = BPR(score_positive, score_negative)
 
+    Adaptive Personalization:
+        With adaptive alpha, the effective user embedding becomes:
+        p̃_u = α * p_u_local + (1 - α) * p̄_global
+
+        Where:
+        - α: Personalization level (0 to 1), computed from user statistics
+        - p_u_local: Local user embedding (learned from user's data)
+        - p̄_global: Global user prototype (aggregated from all clients)
+
+        Sparse users (low α) benefit from the global prototype.
+        Dense users (high α) use their personalized embeddings.
+
     Split Learning Parameter Classification:
         GLOBAL (aggregated via FedAvg/FedProx):
             - item_embeddings.weight: Item latent factors
             - item_bias.weight: Item popularity bias (if use_bias=True)
             - global_bias: Overall bias (if use_bias=True)
+            - global_prototype: Aggregated user representation (for adaptive α)
 
         LOCAL (private, not aggregated):
             - user_embeddings.weight: User latent factors (personalized)
@@ -92,6 +112,11 @@ class BPRMF(nn.Module):
         # Dropout for regularization
         self.dropout = nn.Dropout(dropout) if dropout > 0 else None
 
+        # Adaptive personalization parameters
+        # These are set externally via set_alpha() and set_global_prototype()
+        self._alpha: float = 1.0  # Default: fully personalized (no global influence)
+        self._global_prototype: Optional[torch.Tensor] = None  # Received from server
+
         # Initialize weights
         self._init_weights()
 
@@ -121,6 +146,9 @@ class BPRMF(nn.Module):
         This is the core prediction function used for both
         positive and negative samples in BPR.
 
+        Uses adaptive personalization when global prototype is set:
+            p̃_u = α * p_u_local + (1 - α) * p̄_global
+
         Args:
             user_ids: User indices, shape (batch_size,) or (batch_size, num_samples)
             item_ids: Item indices, shape (batch_size,) or (batch_size, num_samples)
@@ -128,8 +156,8 @@ class BPRMF(nn.Module):
         Returns:
             scores: Predicted scores
         """
-        # Get embeddings
-        user_emb = self.user_embeddings(user_ids)
+        # Get effective user embeddings (blended with global prototype if available)
+        user_emb = self.get_effective_embedding(user_ids)
         item_emb = self.item_embeddings(item_ids)
 
         # Apply dropout
@@ -324,6 +352,92 @@ class BPRMF(nn.Module):
             'user_embeddings': self.user_embeddings.weight,
             'item_embeddings': self.item_embeddings.weight,
         }
+
+    # =========================================================================
+    # Adaptive Personalization Methods
+    # =========================================================================
+
+    def set_alpha(self, alpha: float) -> None:
+        """
+        Set the personalization level for this model.
+
+        Args:
+            alpha: Personalization level in [0, 1].
+                   - α → 1: Fully personalized (use local embedding)
+                   - α → 0: Fully global (use global prototype)
+        """
+        if not 0 <= alpha <= 1:
+            raise ValueError(f"Alpha must be in [0, 1], got {alpha}")
+        self._alpha = alpha
+
+    def get_alpha(self) -> float:
+        """Get the current personalization level."""
+        return self._alpha
+
+    def set_global_prototype(self, prototype: torch.Tensor) -> None:
+        """
+        Set the global user prototype received from the server.
+
+        Args:
+            prototype: Global user prototype tensor of shape (embedding_dim,)
+                      This is the aggregated user representation from all clients.
+        """
+        if prototype.shape[-1] != self.embedding_dim:
+            raise ValueError(
+                f"Prototype embedding dim {prototype.shape[-1]} doesn't match "
+                f"model embedding dim {self.embedding_dim}"
+            )
+        # Store on the same device as model parameters
+        device = next(self.parameters()).device
+        self._global_prototype = prototype.to(device)
+
+    def get_global_prototype(self) -> Optional[torch.Tensor]:
+        """Get the current global user prototype."""
+        return self._global_prototype
+
+    def clear_global_prototype(self) -> None:
+        """Clear the global prototype (revert to fully local mode)."""
+        self._global_prototype = None
+
+    def get_effective_embedding(self, user_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the effective user embedding using adaptive personalization.
+
+        Blends local user embeddings with the global prototype:
+            p̃_u = α * p_u_local + (1 - α) * p̄_global
+
+        Args:
+            user_ids: User indices, shape (batch_size,) or (batch_size, num_samples)
+
+        Returns:
+            Effective user embeddings with the same shape as local embeddings
+        """
+        # Get local user embeddings
+        local_emb = self.user_embeddings(user_ids)
+
+        # If no global prototype or fully personalized, return local only
+        if self._global_prototype is None or self._alpha == 1.0:
+            return local_emb
+
+        # If fully global, return only global prototype (broadcasted)
+        if self._alpha == 0.0:
+            # Expand global prototype to match local embedding shape
+            return self._global_prototype.expand_as(local_emb)
+
+        # Blend: α * local + (1 - α) * global
+        global_expanded = self._global_prototype.expand_as(local_emb)
+        return self._alpha * local_emb + (1 - self._alpha) * global_expanded
+
+    def compute_user_prototype(self) -> torch.Tensor:
+        """
+        Compute the average user embedding for this client.
+
+        This is sent to the server for global prototype aggregation.
+
+        Returns:
+            Mean of all user embeddings, shape (embedding_dim,)
+        """
+        return self.user_embeddings.weight.mean(dim=0)
 
     # =========================================================================
     # Split Learning Methods

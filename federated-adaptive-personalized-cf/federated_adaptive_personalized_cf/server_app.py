@@ -4,6 +4,11 @@ This server implements SPLIT ARCHITECTURE where:
 - GLOBAL params (item embeddings) are sent to clients and aggregated
 - LOCAL params (user embeddings) stay on clients (server never sees them)
 
+Supports Adaptive Personalization (α):
+- Aggregates user prototypes from clients into global prototype
+- Logs alpha statistics and correlation with metrics
+- Tracks per-round prototype norm for stability monitoring
+
 NOTE: Centralized evaluation is NOT possible in split learning since the server
 only has global parameters. Final metrics come from federated evaluation.
 """
@@ -11,6 +16,7 @@ only has global parameters. Final metrics come from federated evaluation.
 import torch
 import json
 import wandb
+import numpy as np
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
@@ -19,6 +25,7 @@ from flwr.serverapp import Grid, ServerApp
 
 from federated_adaptive_personalized_cf.task import get_model
 from federated_adaptive_personalized_cf.strategy import SplitFedAvg, SplitFedProx, GLOBAL_PARAM_KEYS
+from federated_adaptive_personalized_cf.evaluation import AlphaAnalyzer
 
 # Create ServerApp
 app = ServerApp()
@@ -155,6 +162,13 @@ def main(grid: Grid, context: Context) -> None:
     strategy_name: str = context.run_config.get("strategy", "fedavg").lower()
     proximal_mu: float = context.run_config.get("proximal-mu", 0.0)
 
+    # Get adaptive alpha configuration
+    alpha_min = context.run_config.get("alpha-min", 0.1)
+    alpha_max = context.run_config.get("alpha-max", 0.95)
+    alpha_quantity_threshold = context.run_config.get("alpha-quantity-threshold", 50)
+    alpha_quantity_temperature = context.run_config.get("alpha-quantity-temperature", 0.1)
+    prototype_momentum = context.run_config.get("prototype-momentum", 0.9)
+
     # Initialize Weights & Biases if enabled
     wandb_enabled = context.run_config.get("wandb-enabled", False)
     if wandb_enabled:
@@ -169,7 +183,13 @@ def main(grid: Grid, context: Context) -> None:
             "dropout": dropout,
             "lr": lr,
             "weight_decay": context.run_config.get("weight-decay", 1e-5),
-            "alpha": context.run_config.get("alpha", 0.5),
+            "dirichlet_alpha": context.run_config.get("alpha", 0.5),
+            # Adaptive personalization config
+            "alpha_min": alpha_min,
+            "alpha_max": alpha_max,
+            "alpha_quantity_threshold": alpha_quantity_threshold,
+            "alpha_quantity_temperature": alpha_quantity_temperature,
+            "prototype_momentum": prototype_momentum,
         }
         wandb_project = context.run_config.get("wandb-project", "federated-cf")
         wandb_entity = context.run_config.get("wandb-entity", "")
@@ -205,15 +225,17 @@ def main(grid: Grid, context: Context) -> None:
     # Using Split strategies that only aggregate global params (item embeddings)
     if strategy_name == "fedprox":
         strategy = SplitFedProx(
-            fraction_train=fraction_train,
+            fraction_fit=fraction_train,
             proximal_mu=proximal_mu,
+            prototype_momentum=prototype_momentum,
         )
-        print(f"  Strategy: SplitFedProx (proximal_mu={proximal_mu})")
+        print(f"  Strategy: SplitFedProx (proximal_mu={proximal_mu}, prototype_momentum={prototype_momentum})")
     else:
         strategy = SplitFedAvg(
-            fraction_train=fraction_train,
+            fraction_fit=fraction_train,
+            prototype_momentum=prototype_momentum,
         )
-        print(f"  Strategy: SplitFedAvg")
+        print(f"  Strategy: SplitFedAvg (prototype_momentum={prototype_momentum})")
 
     # Start strategy, run FedAvg for `num_rounds`
     print(f"\nStarting Federated Learning with {num_rounds} rounds...")
@@ -223,10 +245,14 @@ def main(grid: Grid, context: Context) -> None:
         k_values_str = context.run_config.get('ranking-k-values', "5,10,20")
         print(f"  K values: {k_values_str}")
 
-    result = strategy.start(
-        grid=grid,
-        initial_arrays=arrays,
-        train_config=ConfigRecord({"lr": lr, "proximal_mu": proximal_mu}),
+    # Build train config with global prototype (if available)
+    train_config_dict = {"lr": lr, "proximal_mu": proximal_mu}
+
+    # Run federated learning using Grid
+    result = grid.run(
+        arrays=arrays,
+        train_config=ConfigRecord(train_config_dict),
+        strategy=strategy,
         num_rounds=num_rounds,
     )
 
@@ -291,11 +317,45 @@ def main(grid: Grid, context: Context) -> None:
         for key, value in final_metrics.items():
             wandb.run.summary[f"final/{key}"] = value
 
+    # Analyze alpha values from training metrics
+    alpha_analyzer = AlphaAnalyzer()
+    for round_num, metrics in result.train_metrics_clientapp.items():
+        if "client_alpha" in metrics:
+            alpha_analyzer.add_client_data(
+                client_id=round_num,  # Using round as proxy for client ID
+                alpha=metrics["client_alpha"],
+                metrics={k: v for k, v in metrics.items() if k not in ["client_alpha", "num-examples"]}
+            )
+
+    # Log alpha statistics
+    alpha_stats = alpha_analyzer.compute_statistics()
+    if alpha_stats.count > 0:
+        print("\n📊 Adaptive Alpha Analysis:")
+        print(f"  Mean alpha: {alpha_stats.mean:.4f} (std: {alpha_stats.std:.4f})")
+        print(f"  Range: [{alpha_stats.min:.4f}, {alpha_stats.max:.4f}]")
+        print(f"  Quartiles: Q25={alpha_stats.q25:.4f}, Median={alpha_stats.median:.4f}, Q75={alpha_stats.q75:.4f}")
+
+        if wandb_enabled:
+            wandb.run.summary["alpha/mean"] = alpha_stats.mean
+            wandb.run.summary["alpha/std"] = alpha_stats.std
+            wandb.run.summary["alpha/min"] = alpha_stats.min
+            wandb.run.summary["alpha/max"] = alpha_stats.max
+
+    # Get global prototype info from strategy
+    global_prototype = strategy.get_global_prototype()
+    prototype_norm = float(np.linalg.norm(global_prototype)) if global_prototype is not None else None
+
+    if prototype_norm is not None:
+        print(f"\n🔮 Global Prototype:")
+        print(f"  Final norm: {prototype_norm:.4f}")
+        if wandb_enabled:
+            wandb.run.summary["prototype/final_norm"] = prototype_norm
+
     # Create results JSON structure similar to centralized results
     results_data = {
-        "model_name": f"{model_type.upper()}_MF_Personalized_Split_{strategy_name.upper()}",
+        "model_name": f"{model_type.upper()}_MF_Personalized_Split_{strategy_name.upper()}_Adaptive",
         "dataset": "ml-1m",
-        "architecture": "split_learning",
+        "architecture": "split_learning_adaptive",
         "federated_config": {
             "num_rounds": num_rounds,
             "num_clients": 10,  # Adjust based on your config
@@ -310,6 +370,21 @@ def main(grid: Grid, context: Context) -> None:
             "global_params": ["item_embeddings", "item_bias", "global_bias"],
             "local_params": ["user_embeddings", "user_bias"],
         },
+        "adaptive_config": {
+            "alpha_min": alpha_min,
+            "alpha_max": alpha_max,
+            "quantity_threshold": alpha_quantity_threshold,
+            "quantity_temperature": alpha_quantity_temperature,
+            "prototype_momentum": prototype_momentum,
+        },
+        "alpha_analysis": {
+            "mean": alpha_stats.mean,
+            "std": alpha_stats.std,
+            "min": alpha_stats.min,
+            "max": alpha_stats.max,
+            "median": alpha_stats.median,
+        } if alpha_stats.count > 0 else None,
+        "global_prototype_norm": prototype_norm,
         "timestamp": datetime.now().isoformat(),
         "final_metrics": final_metrics,
         "training_rounds": num_rounds,

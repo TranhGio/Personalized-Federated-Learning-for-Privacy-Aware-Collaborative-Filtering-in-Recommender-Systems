@@ -1,13 +1,21 @@
-"""Matrix Factorization training and evaluation for MovieLens 1M."""
+"""Matrix Factorization training and evaluation for MovieLens 1M.
+
+Supports Adaptive Personalization for federated learning:
+- Computes per-user alpha based on interaction statistics
+- Tracks user group metrics (sparse/medium/dense)
+"""
 
 import torch
 import torch.optim as optim
 import numpy as np
-from typing import Dict, Tuple, Set, Optional
+from typing import Dict, Tuple, Set, Optional, List
 from collections import Counter
 
 from federated_adaptive_personalized_cf.dataset import load_partition_data
-from federated_adaptive_personalized_cf.models import BasicMF, BPRMF, MSELoss, BPRLoss
+from federated_adaptive_personalized_cf.models import (
+    BasicMF, BPRMF, MSELoss, BPRLoss,
+    AlphaConfig, DataQuantityAlpha, create_alpha_computer,
+)
 
 
 # Global cache for dataset metadata
@@ -15,6 +23,9 @@ _dataset_cache = {}
 
 # Global cache for item popularity (computed from training data)
 _item_popularity_cache = {}
+
+# Global cache for user statistics
+_user_stats_cache = {}
 
 
 def load_data(
@@ -24,6 +35,7 @@ def load_data(
     test_ratio: float = 0.2,
     batch_size: int = 256,
     data_dir: str = None,
+    compute_stats: bool = True,
 ):
     """
     Load MovieLens 1M data for a specific partition.
@@ -35,18 +47,26 @@ def load_data(
         test_ratio: Ratio of test data (default: 0.2)
         batch_size: Batch size for DataLoader
         data_dir: Directory for data storage (defaults to project root data/)
+        compute_stats: Whether to compute user statistics for adaptive alpha
 
     Returns:
-        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx)
+        Tuple of (trainloader, testloader) if compute_stats=False
+        Tuple of (trainloader, testloader, user_stats) if compute_stats=True
     """
-    trainloader, testloader, num_users, num_items, user2idx, item2idx = load_partition_data(
+    # load_partition_data always returns 7 values; user_stats is None if compute_stats=False
+    trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats = load_partition_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=alpha,
         test_ratio=test_ratio,
         batch_size=batch_size,
         data_dir=data_dir,
+        compute_stats=compute_stats,
     )
+
+    # Ensure user_stats is a dict (None -> {})
+    if user_stats is None:
+        user_stats = {}
 
     # Cache metadata for model initialization
     _dataset_cache['num_users'] = num_users
@@ -54,7 +74,84 @@ def load_data(
     _dataset_cache['user2idx'] = user2idx
     _dataset_cache['item2idx'] = item2idx
 
+    # Cache user statistics for adaptive alpha
+    _user_stats_cache.update(user_stats)
+
+    if compute_stats:
+        return trainloader, testloader, user_stats
     return trainloader, testloader
+
+
+def get_user_stats() -> Dict[int, Dict]:
+    """
+    Get cached user statistics for alpha computation.
+
+    Returns:
+        Dict mapping user_id -> user statistics dict
+    """
+    return _user_stats_cache.copy()
+
+
+def compute_client_alpha(
+    user_stats: Dict[int, Dict],
+    alpha_config: Optional[AlphaConfig] = None,
+) -> float:
+    """
+    Compute aggregate alpha for a client based on user statistics.
+
+    Uses weighted average of per-user alphas, where weights are
+    the number of interactions per user.
+
+    Args:
+        user_stats: Dict mapping user_id -> user statistics dict
+        alpha_config: Configuration for alpha computation (uses defaults if None)
+
+    Returns:
+        Aggregate alpha value for the client
+    """
+    if not user_stats:
+        return 1.0  # Default: fully personalized if no stats
+
+    alpha_computer = create_alpha_computer(alpha_config)
+
+    total_interactions = 0
+    weighted_alpha_sum = 0.0
+
+    for user_id, stats in user_stats.items():
+        n_interactions = stats.get('n_interactions', 0)
+        if n_interactions > 0:
+            user_alpha = alpha_computer.compute(n_interactions)
+            weighted_alpha_sum += user_alpha * n_interactions
+            total_interactions += n_interactions
+
+    if total_interactions == 0:
+        return 1.0  # Default if no interactions
+
+    return weighted_alpha_sum / total_interactions
+
+
+def compute_per_user_alpha(
+    user_stats: Dict[int, Dict],
+    alpha_config: Optional[AlphaConfig] = None,
+) -> Dict[int, float]:
+    """
+    Compute alpha for each user based on their statistics.
+
+    Args:
+        user_stats: Dict mapping user_id -> user statistics dict
+        alpha_config: Configuration for alpha computation
+
+    Returns:
+        Dict mapping user_id -> alpha value
+    """
+    alpha_computer = create_alpha_computer(alpha_config)
+
+    user_alphas = {}
+    for user_id, stats in user_stats.items():
+        n_interactions = stats.get('n_interactions', 0)
+        user_alphas[user_id] = alpha_computer.compute(n_interactions)
+
+    return user_alphas
 
 
 def get_model(

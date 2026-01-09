@@ -180,6 +180,99 @@ def compute_user_genre_distribution(
     return user_genre_proportions
 
 
+def compute_user_stats(
+    ratings_df: pd.DataFrame,
+    movies_df: Optional[pd.DataFrame] = None,
+) -> Dict[int, Dict]:
+    """
+    Compute per-user statistics for adaptive alpha computation.
+
+    These statistics are used to determine the personalization level (alpha)
+    for each user. Users with more interactions get higher alpha values
+    (more personalization), while users with fewer interactions rely more
+    on the global prototype.
+
+    Args:
+        ratings_df: DataFrame with ratings [user_id, movie_id, rating, timestamp]
+        movies_df: Optional DataFrame with movies [movie_id, title, genres]
+                   If provided, genre entropy is computed
+
+    Returns:
+        Dictionary mapping user_id to stats dict with:
+        - n_interactions: number of ratings
+        - n_unique_items: number of unique items rated
+        - rating_mean: mean rating
+        - rating_std: standard deviation of ratings
+        - genre_entropy: entropy of genre distribution (if movies_df provided)
+    """
+    user_stats = {}
+
+    for user_id, group in ratings_df.groupby("user_id"):
+        stats = {
+            "n_interactions": len(group),
+            "n_unique_items": group["movie_id"].nunique(),
+            "rating_mean": float(group["rating"].mean()),
+            "rating_std": float(group["rating"].std()) if len(group) > 1 else 0.0,
+        }
+
+        # Compute genre entropy if movies are provided
+        if movies_df is not None:
+            genre_counts = {}
+            # Get genres for items rated by this user
+            user_items = group["movie_id"].values
+            user_movies = movies_df[movies_df["movie_id"].isin(user_items)]
+
+            for genres_str in user_movies["genres"].values:
+                for genre in genres_str.split("|"):
+                    genre_counts[genre] = genre_counts.get(genre, 0) + 1
+
+            if genre_counts:
+                total = sum(genre_counts.values())
+                probs = np.array(list(genre_counts.values())) / total
+                # Entropy: -sum(p * log(p))
+                entropy = -np.sum(probs * np.log(probs + 1e-10))
+                stats["genre_entropy"] = float(entropy)
+                stats["n_genres"] = len(genre_counts)
+            else:
+                stats["genre_entropy"] = 0.0
+                stats["n_genres"] = 0
+
+        user_stats[user_id] = stats
+
+    return user_stats
+
+
+def compute_partition_user_stats(
+    ratings_df: pd.DataFrame,
+    user2idx: Dict[int, int],
+    movies_df: Optional[pd.DataFrame] = None,
+) -> Dict[int, Dict]:
+    """
+    Compute user stats with indexed user IDs.
+
+    This is a convenience wrapper that maps user_id to user index
+    for direct use with the model.
+
+    Args:
+        ratings_df: DataFrame with ratings
+        user2idx: Mapping from user_id to index
+        movies_df: Optional DataFrame with movies for genre entropy
+
+    Returns:
+        Dictionary mapping user_idx to stats dict
+    """
+    raw_stats = compute_user_stats(ratings_df, movies_df)
+
+    # Map to user indices
+    indexed_stats = {}
+    for user_id, stats in raw_stats.items():
+        if user_id in user2idx:
+            user_idx = user2idx[user_id]
+            indexed_stats[user_idx] = stats
+
+    return indexed_stats
+
+
 def dirichlet_partition_users(
     ratings_df: pd.DataFrame,
     movies_df: pd.DataFrame,
@@ -342,6 +435,7 @@ def load_partition_data(
     test_ratio: float = 0.2,
     batch_size: int = 32,
     data_dir: Optional[str] = None,
+    compute_stats: bool = True,
 ):
     """
     Load and partition MovieLens 1M data for federated learning.
@@ -353,9 +447,11 @@ def load_partition_data(
         test_ratio: Ratio of test data
         batch_size: Batch size for DataLoader
         data_dir: Directory for data (defaults to project root data/)
+        compute_stats: Whether to compute user stats for adaptive alpha
 
     Returns:
-        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx)
+        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
+        user_stats is None if compute_stats=False
     """
     from torch.utils.data import DataLoader
 
@@ -380,6 +476,12 @@ def load_partition_data(
     # Get this client's partition
     client_ratings = partitions[partition_id]
 
+    # Compute user stats for adaptive alpha (before train/test split)
+    user_stats = None
+    if compute_stats:
+        user_stats = compute_partition_user_stats(client_ratings, user2idx, movies_df)
+        print(f"Computed stats for {len(user_stats)} users in partition {partition_id}")
+
     # Split into train/test
     train_df, test_df = create_train_test_split(client_ratings, test_ratio=test_ratio)
 
@@ -394,13 +496,14 @@ def load_partition_data(
     num_users = len(user2idx)
     num_items = len(item2idx)
 
-    return trainloader, testloader, num_users, num_items, user2idx, item2idx
+    return trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats
 
 
 def load_full_data(
     test_ratio: float = 0.2,
     batch_size: int = 256,
     data_dir: Optional[str] = None,
+    compute_stats: bool = True,
 ):
     """
     Load full MovieLens 1M dataset for server-side evaluation.
@@ -413,9 +516,11 @@ def load_full_data(
         test_ratio: Ratio of test data (default: 0.2)
         batch_size: Batch size for DataLoader
         data_dir: Directory for data (defaults to project root data/)
+        compute_stats: Whether to compute user stats for adaptive alpha
 
     Returns:
-        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx)
+        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
+        user_stats is None if compute_stats=False
     """
     from torch.utils.data import DataLoader
 
@@ -424,10 +529,16 @@ def load_full_data(
 
     # Download and load data
     download_movielens_1m(data_dir)
-    ratings_df, _, _ = load_movielens_1m(data_dir)
+    ratings_df, movies_df, _ = load_movielens_1m(data_dir)
 
     # Create global mappings
     user2idx, _, item2idx, _ = create_global_mappings(ratings_df)
+
+    # Compute user stats for adaptive alpha
+    user_stats = None
+    if compute_stats:
+        user_stats = compute_partition_user_stats(ratings_df, user2idx, movies_df)
+        print(f"Computed stats for {len(user_stats)} users (full dataset)")
 
     # Split into train/test (using all data, not partitioned)
     train_df, test_df = create_train_test_split(ratings_df, test_ratio=test_ratio)
@@ -443,4 +554,4 @@ def load_full_data(
     num_users = len(user2idx)
     num_items = len(item2idx)
 
-    return trainloader, testloader, num_users, num_items, user2idx, item2idx
+    return trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats

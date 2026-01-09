@@ -21,7 +21,7 @@ dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "scikit-learn>=1.3.0",
-    "wandb>=0.16.0",
+    "wandb=0.23.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -60,6 +60,28 @@ num-negatives = 1   # Number of negative samples per positive (for BPR only)
 
 # Data partitioning
 alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
+
+# =============================================================================
+# Adaptive Personalization Configuration (α)
+# =============================================================================
+# Alpha controls personalization level: α → 1 = local, α → 0 = global
+# Formula: p̃_u = α * p_local + (1 - α) * p_global
+
+# Alpha computation parameters (DataQuantity method)
+alpha-min = 0.1                    # Minimum personalization (even sparse users get some local)
+alpha-max = 0.95                   # Maximum personalization (even dense users get some global)
+alpha-quantity-threshold = 50      # Sigmoid midpoint: users with 50 interactions get α ≈ 0.5
+alpha-quantity-temperature = 0.1   # Sigmoid steepness (higher = sharper transition)
+
+# Global prototype aggregation
+prototype-momentum = 0.9           # EMA momentum: p_global = m * p_old + (1-m) * p_new
+                                   # Higher = more stable but slower adaptation
+
+# User group boundaries for per-group metrics
+# Groups: sparse (0-30), medium (30-100), dense (100+) interactions
+user-group-sparse = "0,30"
+user-group-medium = "30,100"
+user-group-dense = "100,10000"
 
 # Ranking evaluation
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
