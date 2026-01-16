@@ -8,7 +8,7 @@ Supports Adaptive Personalization for federated learning:
 import torch
 import torch.optim as optim
 import numpy as np
-from typing import Dict, Tuple, Set, Optional, List
+from typing import Dict, Tuple, Optional, List
 from collections import Counter
 
 from federated_adaptive_personalized_cf.dataset import load_partition_data

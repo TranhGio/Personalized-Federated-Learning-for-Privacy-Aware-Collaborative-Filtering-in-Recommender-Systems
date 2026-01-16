@@ -1,9 +1,8 @@
 """MovieLens 1M Dataset Loading and Dirichlet Partitioning."""
 
-import os
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from urllib.request import urlretrieve
 
 import numpy as np
@@ -317,7 +316,6 @@ def dirichlet_partition_users(
     # Assign users to clients based on genre similarity
     # Compute similarity between each user's genre preferences and client distributions
     user_to_client = {}
-    users_remaining = set(all_users)
 
     # Convert user preferences to numpy array
     user_genre_matrix = user_genre_prefs.values

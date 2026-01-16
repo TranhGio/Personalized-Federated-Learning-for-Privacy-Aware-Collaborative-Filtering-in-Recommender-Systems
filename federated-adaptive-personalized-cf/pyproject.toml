@@ -152,5 +152,9 @@ options.backend.client-resources.num-gpus = 0.2
 # Remote federation example for use with SuperLink
 [tool.flwr.federations.remote-federation]
 address = "<SUPERLINK-ADDRESS>:<PORT>"
+# WARNING: insecure = true disables TLS/certificate verification and sends all federated
+# training traffic (including model updates) unencrypted over the network. This is a
+# SECURITY RISK in production environments. Use only for local development/testing.
+# For production, remove the insecure flag and configure proper certificates instead.
 insecure = true  # Remove this line to enable TLS
 # root-certificates = "<PATH/TO/ca.crt>"  # For TLS setup

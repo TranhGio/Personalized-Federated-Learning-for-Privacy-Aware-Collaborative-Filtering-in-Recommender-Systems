@@ -297,7 +297,6 @@ class BPRMF(nn.Module):
         Returns:
             neg_item_ids: Negative item indices, shape (batch_size, num_negatives) or (batch_size,)
         """
-        batch_size = user_ids.shape[0]
         device = user_ids.device
 
         if num_negatives == 1:

@@ -20,7 +20,7 @@ import json
 import wandb
 import numpy as np
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 from pathlib import Path
 from flwr.common import (
     FitRes,
@@ -34,7 +34,7 @@ from flwr.common.context import Context
 from flwr.serverapp import Grid, ServerApp
 
 from federated_adaptive_personalized_cf.task import get_model
-from federated_adaptive_personalized_cf.strategy import SplitFedAvg, SplitFedProx, GLOBAL_PARAM_KEYS, USER_PROTOTYPE_KEY
+from federated_adaptive_personalized_cf.strategy import SplitFedAvg, SplitFedProx, USER_PROTOTYPE_KEY
 from federated_adaptive_personalized_cf.evaluation import AlphaAnalyzer
 
 # Create ServerApp

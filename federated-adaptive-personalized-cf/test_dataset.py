@@ -4,7 +4,6 @@ from federated_baseline_cf.dataset import (
     download_movielens_1m,
     load_movielens_1m,
     dirichlet_partition_users,
-    create_global_mappings,
     load_partition_data,
 )
 
