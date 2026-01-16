@@ -56,3 +56,4 @@ htmlcov/
 # Keep results JSON files
 !results/**/*.json
 .claude/
+pal-mcp-server/
