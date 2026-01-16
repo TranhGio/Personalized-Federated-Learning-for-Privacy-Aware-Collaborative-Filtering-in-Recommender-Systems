@@ -1,0 +1,36 @@
+{
+    "model_name": "BPR-MF (Centralized)",
+    "dataset": "ml-1m",
+    "timestamp": "2026-01-14T11:20:13.448745",
+    "params": {
+        "embedding_dim": 128,
+        "lr": 0.005,
+        "weight_decay": 1e-05,
+        "n_epochs": 50,
+        "batch_size": 1024,
+        "num_negatives": 1
+    },
+    "eval_protocol": {
+        "num_negatives": 99,
+        "k_values": [
+            5,
+            10,
+            20
+        ]
+    },
+    "metrics": {
+        "hr@5": 0.40910596026490065,
+        "ndcg@5": 0.27461246920809684,
+        "hr@10": 0.590066225165563,
+        "ndcg@10": 0.33320490895253574,
+        "hr@20": 0.7754966887417218,
+        "ndcg@20": 0.3801908610389513,
+        "mrr": 0.2745814692540673
+    },
+    "training_time": 191.998211,
+    "final_loss": 0.2180567690997119,
+    "num_users": 6040,
+    "num_items": 3706,
+    "train_size": 994169,
+    "test_size": 6040
+}

@@ -13,7 +13,7 @@ from collections import Counter
 
 from federated_adaptive_personalized_cf.dataset import load_partition_data
 from federated_adaptive_personalized_cf.models import (
-    BasicMF, BPRMF, MSELoss, BPRLoss,
+    BasicMF, BPRMF, DualPersonalizedBPRMF, MSELoss, BPRLoss,
     AlphaConfig, DataQuantityAlpha, create_alpha_computer,
 )
 
@@ -102,6 +102,10 @@ def compute_client_alpha(
     Uses weighted average of per-user alphas, where weights are
     the number of interactions per user.
 
+    For DataQuantityAlpha: uses only n_interactions
+    For MultiFactorAlpha: uses full user stats (n_interactions, genre_entropy,
+                          n_unique_items, rating_std)
+
     Args:
         user_stats: Dict mapping user_id -> user statistics dict
         alpha_config: Configuration for alpha computation (uses defaults if None)
@@ -120,7 +124,10 @@ def compute_client_alpha(
     for user_id, stats in user_stats.items():
         n_interactions = stats.get('n_interactions', 0)
         if n_interactions > 0:
-            user_alpha = alpha_computer.compute(n_interactions)
+            # Use compute_from_stats to leverage all available user statistics
+            # For DataQuantityAlpha: uses only n_interactions
+            # For MultiFactorAlpha: uses full stats (entropy, coverage, std)
+            user_alpha = alpha_computer.compute_from_stats(stats)
             weighted_alpha_sum += user_alpha * n_interactions
             total_interactions += n_interactions
 
@@ -137,6 +144,9 @@ def compute_per_user_alpha(
     """
     Compute alpha for each user based on their statistics.
 
+    For DataQuantityAlpha: uses only n_interactions
+    For MultiFactorAlpha: uses full user stats
+
     Args:
         user_stats: Dict mapping user_id -> user statistics dict
         alpha_config: Configuration for alpha computation
@@ -148,31 +158,40 @@ def compute_per_user_alpha(
 
     user_alphas = {}
     for user_id, stats in user_stats.items():
-        n_interactions = stats.get('n_interactions', 0)
-        user_alphas[user_id] = alpha_computer.compute(n_interactions)
+        # Use compute_from_stats to leverage all available user statistics
+        user_alphas[user_id] = alpha_computer.compute_from_stats(stats)
 
     return user_alphas
 
 
 def get_model(
     model_type: str = "bpr",
-    num_users: int = None,
-    num_items: int = None,
+    num_users: Optional[int] = None,
+    num_items: Optional[int] = None,
     embedding_dim: int = 64,
     dropout: float = 0.1,
+    mlp_hidden_dims: Optional[List[int]] = None,
+    fusion_type: str = "add",
 ):
     """
     Create a Matrix Factorization model.
 
     Args:
-        model_type: "basic" for BasicMF (MSE), "bpr" for BPRMF
+        model_type: Model architecture to use:
+            - "basic": BasicMF with MSE loss
+            - "bpr": BPRMF with BPR loss (single-level α personalization)
+            - "dual": DualPersonalizedBPRMF (dual-level personalization)
+                     Combines α-blending + client-specific MLP
         num_users: Number of users (if None, uses cached value)
         num_items: Number of items (if None, uses cached value)
         embedding_dim: Embedding dimensionality (default: 64)
         dropout: Dropout rate (default: 0.1)
+        mlp_hidden_dims: Hidden layer dimensions for PersonalMLP (dual model only)
+                        Default: [embedding_dim, embedding_dim // 2]
+        fusion_type: Score fusion type for dual model: "add", "gate", "concat"
 
     Returns:
-        Model instance (BasicMF or BPRMF)
+        Model instance (BasicMF, BPRMF, or DualPersonalizedBPRMF)
     """
     # Use cached values if not provided
     if num_users is None:
@@ -195,8 +214,21 @@ def get_model(
             dropout=dropout,
             use_bias=True,
         )
+    elif model_type.lower() == "dual":
+        # Dual-level personalization: α-blending + PersonalMLP
+        if mlp_hidden_dims is None:
+            mlp_hidden_dims = [embedding_dim, embedding_dim // 2]
+        model = DualPersonalizedBPRMF(
+            num_users=num_users,
+            num_items=num_items,
+            embedding_dim=embedding_dim,
+            mlp_hidden_dims=mlp_hidden_dims,
+            dropout=dropout,
+            use_bias=True,
+            fusion_type=fusion_type,
+        )
     else:
-        raise ValueError(f"Unknown model_type: {model_type}. Use 'basic' or 'bpr'.")
+        raise ValueError(f"Unknown model_type: {model_type}. Use 'basic', 'bpr', or 'dual'.")
 
     return model
 
@@ -445,7 +477,9 @@ def train(
             global_params=kwargs.get('global_params', None),
             global_param_names=kwargs.get('global_param_names', None),
         )
-    elif model_type.lower() == "bpr":
+    elif model_type.lower() in ("bpr", "dual"):
+        # Both "bpr" and "dual" use BPR loss training
+        # "dual" adds PersonalMLP layers but training procedure is the same
         return train_bpr_mf(
             model,
             trainloader,
@@ -505,8 +539,8 @@ def test(
                 predictions = model(user_ids, item_ids)
                 # Clamp to valid rating range [1, 5]
                 predictions = torch.clamp(predictions, min=1.0, max=5.0)
-            elif model_type.lower() == "bpr":
-                # For BPR, get scores (not clamped)
+            elif model_type.lower() in ("bpr", "dual"):
+                # For BPR/Dual, get scores (not clamped)
                 predictions = model(user_ids, item_ids, neg_item_ids=None)
                 # For evaluation, can clamp to rating range
                 predictions = torch.clamp(predictions, min=1.0, max=5.0)
@@ -830,5 +864,163 @@ def evaluate_ranking(
 
     # MRR (not K-dependent)
     results['mrr'] = float(np.mean(mrr_scores)) if mrr_scores else 0.0
+
+    return results
+
+
+def evaluate_ranking_sampled(
+    model,
+    testloader,
+    trainloader,
+    device: str,
+    k_values: Optional[List[int]] = None,
+    num_negatives: int = 99,
+) -> Dict[str, float]:
+    """
+    Ranking evaluation with leave-one-out and negative sampling.
+
+    This follows the evaluation protocol used in NCF, FedMF, PFedRec papers:
+    - For each user, take ONE positive test item
+    - Sample N random negatives (items user hasn't interacted with)
+    - Rank the 1 positive among (1 + N) candidates
+    - Compute HR@K, NDCG@K on this smaller candidate pool
+
+    This is easier than full-rank evaluation and allows fair comparison
+    with published federated recommendation baselines.
+
+    Args:
+        model: Model instance (BasicMF or BPRMF)
+        testloader: Test data loader
+        trainloader: Training data loader (to get user's train items)
+        device: Device ('cuda' or 'cpu')
+        k_values: List of K values to evaluate (default: [5, 10, 20])
+        num_negatives: Number of negative samples per positive (default: 99)
+
+    Returns:
+        Dictionary of sampled ranking metrics with keys like:
+        - 'sampled_hr@10', 'sampled_ndcg@10', etc.
+    """
+    import random
+
+    if k_values is None:
+        k_values = [5, 10, 20]
+
+    model.to(device)
+    model.eval()
+
+    # Collect all items each user has interacted with (train + test)
+    user_train_items = {}
+    for batch in trainloader:
+        users = batch['user'].numpy()
+        items = batch['item'].numpy()
+        for u, i in zip(users, items):
+            if u not in user_train_items:
+                user_train_items[u] = set()
+            user_train_items[u].add(i)
+
+    user_test_items = {}
+    for batch in testloader:
+        users = batch['user'].numpy()
+        items = batch['item'].numpy()
+        for u, i in zip(users, items):
+            if u not in user_test_items:
+                user_test_items[u] = set()
+            user_test_items[u].add(i)
+
+    # Get total number of items
+    num_total_items = model.num_items if hasattr(model, 'num_items') else _dataset_cache.get('num_items', 3706)
+    all_items = set(range(num_total_items))
+
+    # Initialize metric accumulators for each K
+    metrics_per_k = {k: {
+        'hits': 0,
+        'ndcgs': [],
+    } for k in k_values}
+
+    mrr_scores = []
+    num_users = 0
+
+    with torch.no_grad():
+        for user_id in user_test_items.keys():
+            test_items = list(user_test_items[user_id])
+            train_items = user_train_items.get(user_id, set())
+
+            if len(test_items) == 0:
+                continue
+
+            # Leave-one-out: pick one positive item (last one or random)
+            positive_item = test_items[-1]  # Use last test item
+
+            # Sample negative items (items user hasn't interacted with)
+            all_user_items = train_items | user_test_items[user_id]
+            negative_candidates = list(all_items - all_user_items)
+
+            if len(negative_candidates) < num_negatives:
+                # Not enough negatives, use all available
+                negative_items = negative_candidates
+            else:
+                negative_items = random.sample(negative_candidates, num_negatives)
+
+            # Candidate pool: 1 positive + N negatives
+            candidate_items = [positive_item] + negative_items
+
+            # Get scores for all candidates (batch processing for efficiency)
+            user_tensor = torch.tensor([user_id] * len(candidate_items), dtype=torch.long).to(device)
+            item_tensor = torch.tensor(candidate_items, dtype=torch.long).to(device)
+
+            # Use model.predict() which calls forward() with neg_item_ids=None
+            candidate_scores = model.predict(user_tensor, item_tensor)
+
+            # Create (item_id, score) pairs
+            scores = [(item_id, candidate_scores[i].item()) for i, item_id in enumerate(candidate_items)]
+
+            # Sort by score (descending)
+            scores.sort(key=lambda x: x[1], reverse=True)
+            ranked_items = [item_id for item_id, _ in scores]
+
+            # Find rank of positive item
+            try:
+                positive_rank = ranked_items.index(positive_item) + 1  # 1-indexed
+            except ValueError:
+                positive_rank = len(ranked_items) + 1
+
+            # Compute MRR
+            mrr = 1.0 / positive_rank
+            mrr_scores.append(mrr)
+
+            # Compute metrics for each K
+            for k in k_values:
+                top_k_items = ranked_items[:k]
+
+                # Hit@K: is positive item in top-K?
+                if positive_item in top_k_items:
+                    metrics_per_k[k]['hits'] += 1
+
+                # NDCG@K: with single relevant item
+                if positive_item in top_k_items:
+                    pos_in_topk = top_k_items.index(positive_item)
+                    ndcg = 1.0 / np.log2(pos_in_topk + 2)  # +2 because index is 0-based
+                else:
+                    ndcg = 0.0
+                metrics_per_k[k]['ndcgs'].append(ndcg)
+
+            num_users += 1
+
+    # Aggregate metrics with 'sampled_' prefix
+    results = {}
+
+    for k in k_values:
+        # Hit Rate@K (sampled)
+        results[f'sampled_hr@{k}'] = metrics_per_k[k]['hits'] / num_users if num_users > 0 else 0.0
+
+        # NDCG@K (sampled)
+        results[f'sampled_ndcg@{k}'] = float(np.mean(metrics_per_k[k]['ndcgs'])) if metrics_per_k[k]['ndcgs'] else 0.0
+
+    # MRR (sampled)
+    results['sampled_mrr'] = float(np.mean(mrr_scores)) if mrr_scores else 0.0
+
+    # Add metadata
+    results['sampled_num_negatives'] = num_negatives
+    results['sampled_num_users'] = num_users
 
     return results

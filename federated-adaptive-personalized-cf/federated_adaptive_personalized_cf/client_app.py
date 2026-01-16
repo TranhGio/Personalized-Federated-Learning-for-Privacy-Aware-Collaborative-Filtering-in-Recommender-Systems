@@ -26,7 +26,7 @@ from federated_adaptive_personalized_cf.task import (
 )
 from federated_adaptive_personalized_cf.task import test as test_fn
 from federated_adaptive_personalized_cf.task import train as train_fn
-from federated_adaptive_personalized_cf.task import evaluate_ranking
+from federated_adaptive_personalized_cf.task import evaluate_ranking, evaluate_ranking_sampled
 from federated_adaptive_personalized_cf.models import AlphaConfig
 from federated_adaptive_personalized_cf.strategy import USER_PROTOTYPE_KEY
 
@@ -235,11 +235,21 @@ def train(msg: Message, context: Context):
     embedding_dim = context.run_config.get("embedding-dim", 64)
     dropout = context.run_config.get("dropout", 0.1)
 
+    # Dual model specific configuration (Level 2: PersonalMLP)
+    mlp_hidden_dims = None
+    fusion_type = "add"
+    if model_type == "dual":
+        mlp_dims_str = context.run_config.get("mlp-hidden-dims", "128,64")
+        mlp_hidden_dims = [int(d.strip()) for d in mlp_dims_str.split(",")]
+        fusion_type = context.run_config.get("fusion-type", "add")
+
     # Step 1: Create model with default initialization
     model = get_model(
         model_type=model_type,
         embedding_dim=embedding_dim,
         dropout=dropout,
+        mlp_hidden_dims=mlp_hidden_dims,
+        fusion_type=fusion_type,
     )
 
     # Step 2: Load GLOBAL parameters from server message
@@ -259,11 +269,26 @@ def train(msg: Message, context: Context):
 
     # === Adaptive Personalization: Set alpha and global prototype ===
     # Get alpha configuration from run config
+    alpha_method = context.run_config.get("alpha-method", "data_quantity")
+
+    # Build factor weights dict for multi-factor method
+    factor_weights = {
+        'quantity': context.run_config.get("alpha-weight-quantity", 0.40),
+        'diversity': context.run_config.get("alpha-weight-diversity", 0.25),
+        'coverage': context.run_config.get("alpha-weight-coverage", 0.20),
+        'consistency': context.run_config.get("alpha-weight-consistency", 0.15),
+    }
+
     alpha_config = AlphaConfig(
+        method=alpha_method,
         min_alpha=context.run_config.get("alpha-min", 0.1),
         max_alpha=context.run_config.get("alpha-max", 0.95),
-        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 50),
-        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.1),
+        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 100),
+        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.05),
+        factor_weights=factor_weights,
+        max_entropy=context.run_config.get("alpha-max-entropy", 3.0),
+        coverage_threshold=context.run_config.get("alpha-coverage-threshold", 100),
+        max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
     )
 
     # Load data with user stats for alpha computation
@@ -372,11 +397,21 @@ def evaluate(msg: Message, context: Context):
     embedding_dim = context.run_config.get("embedding-dim", 64)
     dropout = context.run_config.get("dropout", 0.1)
 
+    # Dual model specific configuration (Level 2: PersonalMLP)
+    mlp_hidden_dims = None
+    fusion_type = "add"
+    if model_type == "dual":
+        mlp_dims_str = context.run_config.get("mlp-hidden-dims", "128,64")
+        mlp_hidden_dims = [int(d.strip()) for d in mlp_dims_str.split(",")]
+        fusion_type = context.run_config.get("fusion-type", "add")
+
     # Step 1: Create model with default initialization
     model = get_model(
         model_type=model_type,
         embedding_dim=embedding_dim,
         dropout=dropout,
+        mlp_hidden_dims=mlp_hidden_dims,
+        fusion_type=fusion_type,
     )
 
     # Step 2: Load GLOBAL parameters from server message
@@ -395,11 +430,26 @@ def evaluate(msg: Message, context: Context):
 
     # === Adaptive Personalization: Set alpha and global prototype ===
     # Get alpha configuration from run config
+    alpha_method = context.run_config.get("alpha-method", "data_quantity")
+
+    # Build factor weights dict for multi-factor method
+    factor_weights = {
+        'quantity': context.run_config.get("alpha-weight-quantity", 0.40),
+        'diversity': context.run_config.get("alpha-weight-diversity", 0.25),
+        'coverage': context.run_config.get("alpha-weight-coverage", 0.20),
+        'consistency': context.run_config.get("alpha-weight-consistency", 0.15),
+    }
+
     alpha_config = AlphaConfig(
+        method=alpha_method,
         min_alpha=context.run_config.get("alpha-min", 0.1),
         max_alpha=context.run_config.get("alpha-max", 0.95),
-        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 50),
-        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.1),
+        quantity_threshold=context.run_config.get("alpha-quantity-threshold", 100),
+        quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.05),
+        factor_weights=factor_weights,
+        max_entropy=context.run_config.get("alpha-max-entropy", 3.0),
+        coverage_threshold=context.run_config.get("alpha-coverage-threshold", 100),
+        max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
     )
 
     # Load the data (both train and test for item popularity computation)
@@ -448,7 +498,7 @@ def evaluate(msg: Message, context: Context):
         k_values_str = context.run_config.get("ranking-k-values", "5,10,20")
         k_values = [int(k.strip()) for k in k_values_str.split(",")]
 
-        # Compute ranking metrics (pass trainloader for item popularity computation)
+        # Compute FULL-RANK ranking metrics (ranking among all items)
         ranking_metrics = evaluate_ranking(
             model=model,
             testloader=testloader,
@@ -457,8 +507,23 @@ def evaluate(msg: Message, context: Context):
             trainloader=trainloader,
         )
 
-        # Add ranking metrics to results
+        # Add full-rank ranking metrics to results
         result_metrics.update(ranking_metrics)
+
+        # Compute SAMPLED ranking metrics (leave-one-out with N negatives)
+        # This follows the evaluation protocol used in NCF, FedMF, PFedRec papers
+        num_negatives = context.run_config.get("eval-num-negatives", 99)
+        sampled_metrics = evaluate_ranking_sampled(
+            model=model,
+            testloader=testloader,
+            trainloader=trainloader,
+            device=device,
+            k_values=k_values,
+            num_negatives=num_negatives,
+        )
+
+        # Add sampled ranking metrics to results
+        result_metrics.update(sampled_metrics)
 
     metric_record = MetricRecord(result_metrics)
     content = RecordDict({"metrics": metric_record})
