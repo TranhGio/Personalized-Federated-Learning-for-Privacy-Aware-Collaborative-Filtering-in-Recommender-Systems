@@ -86,7 +86,7 @@ parameters:
   # Adaptive Alpha Configuration
   # =============================================================================
   alpha_method:
-    values: ["data_quantity", "multi_factor"]
+    values: ["data_quantity", "multi_factor", "hierarchical_conditional"]
 
   alpha_min:
     values: [0.05, 0.1, 0.2]
@@ -122,6 +122,75 @@ parameters:
     distribution: uniform
     min: 0.1
     max: 0.3
+
+  # =============================================================================
+  # Hierarchical Conditional Alpha (only used when alpha_method = "hierarchical_conditional")
+  # =============================================================================
+  # Addresses factor conflicts: Quantity-Coverage redundancy, Diversity-Consistency contradiction
+
+  # Hierarchical weights (should sum to 1.0)
+  alpha_hc_data_volume_weight:
+    distribution: uniform
+    min: 0.4
+    max: 0.7
+
+  alpha_hc_preference_weight:
+    distribution: uniform
+    min: 0.3
+    max: 0.6
+
+  # Conditional rule thresholds
+  # Rule 1: Sparse users penalty
+  alpha_hc_sparse_threshold:
+    values: [15, 20, 30]
+
+  alpha_hc_sparse_penalty_max:
+    distribution: uniform
+    min: 0.3
+    max: 0.7
+
+  # Rule 2: Niche specialists bonus
+  alpha_hc_niche_diversity_threshold:
+    distribution: uniform
+    min: 0.15
+    max: 0.35
+
+  alpha_hc_niche_quantity_threshold:
+    distribution: uniform
+    min: 0.5
+    max: 0.8
+
+  alpha_hc_niche_bonus:
+    distribution: uniform
+    min: 0.1
+    max: 0.25
+
+  # Rule 3: Inconsistent raters penalty
+  alpha_hc_inconsistent_threshold:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  alpha_hc_inconsistent_penalty:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  # Rule 4: Completionists bonus
+  alpha_hc_completionist_coverage:
+    distribution: uniform
+    min: 0.6
+    max: 0.8
+
+  alpha_hc_completionist_diversity:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  alpha_hc_completionist_bonus:
+    distribution: uniform
+    min: 0.05
+    max: 0.15
 
   prototype_momentum:
     values: [0.8, 0.9, 0.95]

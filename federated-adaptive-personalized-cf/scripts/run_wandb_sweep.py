@@ -49,15 +49,29 @@ def get_default_config() -> Dict[str, Any]:
         "fraction_train": 1.0,
         "strategy": "fedavg",
         "proximal_mu": 0.01,
-        "alpha_method": "multi_factor",
+        "alpha_method": "hierarchical_conditional",
         "alpha_min": 0.1,
         "alpha_max": 0.95,
         "alpha_quantity_threshold": 100,
         "alpha_quantity_temperature": 0.05,
+        # Multi-factor weights (used when alpha_method = "multi_factor")
         "alpha_weight_quantity": 0.25,
         "alpha_weight_diversity": 0.35,
         "alpha_weight_coverage": 0.20,
         "alpha_weight_consistency": 0.20,
+        # Hierarchical Conditional parameters (used when alpha_method = "hierarchical_conditional")
+        "alpha_hc_data_volume_weight": 0.55,
+        "alpha_hc_preference_weight": 0.45,
+        "alpha_hc_sparse_threshold": 20,
+        "alpha_hc_sparse_penalty_max": 0.5,
+        "alpha_hc_niche_diversity_threshold": 0.25,
+        "alpha_hc_niche_quantity_threshold": 0.6,
+        "alpha_hc_niche_bonus": 0.15,
+        "alpha_hc_inconsistent_threshold": 0.3,
+        "alpha_hc_inconsistent_penalty": 0.3,
+        "alpha_hc_completionist_coverage": 0.7,
+        "alpha_hc_completionist_diversity": 0.3,
+        "alpha_hc_completionist_bonus": 0.1,
         "prototype_momentum": 0.9,
         "early_stopping_patience": 10,
         "early_stopping_metric": "sampled_ndcg@10",
@@ -104,19 +118,33 @@ def normalize_weights(config: Dict[str, Any]) -> Dict[str, Any]:
 
     wandb sweeps may sample weights independently, so we need to normalize.
     """
-    weight_keys = [
+    # Normalize multi-factor weights
+    mf_weight_keys = [
         "alpha_weight_quantity",
         "alpha_weight_diversity",
         "alpha_weight_coverage",
         "alpha_weight_consistency",
     ]
 
-    total = sum(config.get(k, 0.25) for k in weight_keys)
+    mf_total = sum(config.get(k, 0.25) for k in mf_weight_keys)
 
-    if total > 0:
-        for k in weight_keys:
+    if mf_total > 0:
+        for k in mf_weight_keys:
             if k in config:
-                config[k] = config[k] / total
+                config[k] = config[k] / mf_total
+
+    # Normalize hierarchical conditional weights
+    hc_weight_keys = [
+        "alpha_hc_data_volume_weight",
+        "alpha_hc_preference_weight",
+    ]
+
+    hc_total = sum(config.get(k, 0.5) for k in hc_weight_keys)
+
+    if hc_total > 0:
+        for k in hc_weight_keys:
+            if k in config:
+                config[k] = config[k] / hc_total
 
     return config
 
@@ -152,10 +180,24 @@ def build_run_config(config: Dict[str, Any], enable_wandb: bool = True) -> str:
         "alpha_max": "alpha-max",
         "alpha_quantity_threshold": "alpha-quantity-threshold",
         "alpha_quantity_temperature": "alpha-quantity-temperature",
+        # Multi-factor weights
         "alpha_weight_quantity": "alpha-weight-quantity",
         "alpha_weight_diversity": "alpha-weight-diversity",
         "alpha_weight_coverage": "alpha-weight-coverage",
         "alpha_weight_consistency": "alpha-weight-consistency",
+        # Hierarchical Conditional parameters
+        "alpha_hc_data_volume_weight": "alpha-hc-data-volume-weight",
+        "alpha_hc_preference_weight": "alpha-hc-preference-weight",
+        "alpha_hc_sparse_threshold": "alpha-hc-sparse-threshold",
+        "alpha_hc_sparse_penalty_max": "alpha-hc-sparse-penalty-max",
+        "alpha_hc_niche_diversity_threshold": "alpha-hc-niche-diversity-threshold",
+        "alpha_hc_niche_quantity_threshold": "alpha-hc-niche-quantity-threshold",
+        "alpha_hc_niche_bonus": "alpha-hc-niche-bonus",
+        "alpha_hc_inconsistent_threshold": "alpha-hc-inconsistent-threshold",
+        "alpha_hc_inconsistent_penalty": "alpha-hc-inconsistent-penalty",
+        "alpha_hc_completionist_coverage": "alpha-hc-completionist-coverage",
+        "alpha_hc_completionist_diversity": "alpha-hc-completionist-diversity",
+        "alpha_hc_completionist_bonus": "alpha-hc-completionist-bonus",
         "prototype_momentum": "prototype-momentum",
         "early_stopping_patience": "early-stopping-patience",
         "early_stopping_metric": "early-stopping-metric",

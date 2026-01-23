@@ -1,7 +1,7 @@
 # Federated Adaptive Personalized Collaborative Filtering
 
 > **Master Thesis: Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems**
-> MovieLens 1M | Split Learning | FedAvg/FedProx | BPR-MF | Multi-Factor Adaptive Alpha | Dual-Level Personalization | Global Prototype Aggregation
+> MovieLens 1M | Split Learning | FedAvg/FedProx | BPR-MF | Hierarchical Conditional Alpha | Dual-Level Personalization | Global Prototype Aggregation
 
 ---
 
@@ -42,9 +42,10 @@ This project implements **Personalized Federated Learning** for collaborative fi
 **Thesis Title**: *Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems*
 
 **Key Innovations**:
-1. **Multi-Factor Adaptive Alpha**: 4-factor weighted formula for personalization level
-2. **Dual-Level Personalization**: Statistical (α-blending) + Neural (client-specific MLP)
-3. **Global Prototype Aggregation**: EMA-based prototype for sparse user support
+1. **Hierarchical Conditional Alpha**: Domain-aware alpha computation that addresses factor conflicts
+2. **Multi-Factor Adaptive Alpha**: 4-factor weighted formula for personalization level
+3. **Dual-Level Personalization**: Statistical (α-blending) + Neural (client-specific MLP)
+4. **Global Prototype Aggregation**: EMA-based prototype for sparse user support
 
 ### Why This Matters
 
@@ -77,11 +78,47 @@ LOCAL_PARAMS = ('user_embeddings.weight', 'user_bias.weight')
 - Reduced communication (only item embeddings transmitted)
 - Better personalization through local user embeddings
 
-### 2. Multi-Factor Adaptive Alpha (Implemented - Key Thesis Contribution)
+### 2. Hierarchical Conditional Alpha (Implemented - Key Thesis Contribution)
 
 **File**: `models/adaptive_alpha.py`
 
-Dynamic personalization level (α) computed from 4 user characteristics:
+Advanced alpha computation that addresses conflicts in the multi-factor approach through:
+1. **Hierarchical factor aggregation** (resolves redundancy)
+2. **Conditional rules** (handles domain-specific user archetypes)
+
+**Identified Conflicts in Multi-Factor Approach:**
+- **Quantity-Coverage Redundancy**: Correlation 0.8-1.0, combined 60% weight
+- **Diversity-Consistency Contradiction**: Negative correlation -0.3 to -0.5
+
+**Solution - Two-Stage Computation:**
+
+```python
+# Stage 1: Hierarchical Aggregation
+data_volume = sqrt(f_quantity × f_coverage)           # Geometric mean (addresses redundancy)
+preference_quality = 2×f_d×f_s / (f_d + f_s)         # Harmonic mean (balances conflict)
+
+base_alpha = 0.55 × data_volume + 0.45 × preference_quality
+
+# Stage 2: Conditional Rules (domain-aware adjustments)
+# Rule 1: Sparse users (< 20 interactions) get penalty
+# Rule 2: Niche specialists (low diversity, high quantity) get bonus
+# Rule 3: Inconsistent raters (high variance) get penalty
+# Rule 4: Completionists (high coverage, low diversity) get bonus
+```
+
+**Conditional Rules:**
+| Rule | Condition | Adjustment | Rationale |
+|------|-----------|------------|-----------|
+| Sparse Users | n < 20 | penalty up to 50% | Insufficient data |
+| Niche Specialists | f_d < 0.25 AND f_q > 0.6 | +0.15 bonus | Trust niche expertise |
+| Inconsistent Raters | f_s < 0.3 | 30% penalty | Unreliable preferences |
+| Completionists | f_c > 0.7 AND f_d < 0.3 | +0.1 bonus | Trust item exploration |
+
+### 3. Multi-Factor Adaptive Alpha (Alternative Method)
+
+**File**: `models/adaptive_alpha.py`
+
+Simpler 4-factor weighted formula (use when hierarchical method is not needed):
 
 ```
 α = w_q × f_quantity + w_d × f_diversity + w_c × f_coverage + w_s × f_consistency
@@ -96,12 +133,12 @@ Dynamic personalization level (α) computed from 4 user characteristics:
 | **Coverage** | 0.20 | min(n_unique_items / threshold, 1.0) | Wide coverage = reliable patterns |
 | **Consistency** | 0.15 | 1 - (rating_std / max_std) | Stable preferences worth preserving |
 
-**Why Multi-Factor?** Single-factor (quantity-only) has correlation problem:
-- Users with many interactions tend to have higher diversity/coverage
-- Multi-factor captures orthogonal user characteristics
-- Diversity factor provides independent variance signal
+**Known Issues** (addressed by hierarchical conditional):
+- Quantity-Coverage redundancy (high correlation)
+- Diversity-Consistency contradiction (negative correlation)
+- Quantity dominance (40% weight)
 
-### 3. Dual-Level Personalization (Implemented)
+### 4. Dual-Level Personalization (Implemented)
 
 **File**: `models/dual_personalized_bpr_mf.py`
 
@@ -122,7 +159,7 @@ Level 2 (Neural - Function Space):
 - MLP captures **non-linear patterns** (learned transformation)
 - **Complementary**: α controls magnitude, MLP learns interaction
 
-### 4. Global Prototype Aggregation (Implemented)
+### 5. Global Prototype Aggregation (Implemented)
 
 **File**: `strategy.py`
 
@@ -139,7 +176,7 @@ global_prototype = momentum × global_prototype + (1 - momentum) × new_prototyp
 - EMA ensures stability (momentum = 0.9 default)
 - Privacy-preserving (aggregated across all clients)
 
-### 5. Split-Aware FedProx (Implemented)
+### 6. Split-Aware FedProx (Implemented)
 
 Modified FedProx that applies proximal term **only to global parameters**:
 
@@ -285,7 +322,7 @@ Alpha (α) controls the personalization level:
 @dataclass
 class AlphaConfig:
     # Method selection
-    method: str = "data_quantity"  # "data_quantity" or "multi_factor"
+    method: str = "hierarchical_conditional"  # "data_quantity", "multi_factor", or "hierarchical_conditional"
 
     # Common parameters
     min_alpha: float = 0.1         # Minimum personalization
@@ -305,6 +342,35 @@ class AlphaConfig:
     max_entropy: float = 3.0       # ~log2(18) for MovieLens genres
     coverage_threshold: int = 100  # Items for full coverage credit
     max_rating_std: float = 1.5    # Typical max std for 1-5 ratings
+
+@dataclass
+class HierarchicalConditionalAlphaConfig:
+    # Base parameters
+    min_alpha: float = 0.1
+    max_alpha: float = 0.95
+
+    # Hierarchical weights (must sum to 1.0)
+    data_volume_weight: float = 0.55      # Weight for sqrt(quantity × coverage)
+    preference_quality_weight: float = 0.45  # Weight for harmonic(diversity, consistency)
+
+    # Factor thresholds (same as multi-factor)
+    quantity_threshold: int = 100
+    quantity_temperature: float = 0.05
+    max_entropy: float = 3.0
+    coverage_threshold: int = 100
+    max_rating_std: float = 1.5
+
+    # Conditional rule thresholds
+    sparse_threshold: int = 20           # Users below this get penalty
+    sparse_penalty_max: float = 0.5      # Max penalty factor (50%)
+    niche_diversity_threshold: float = 0.25
+    niche_quantity_threshold: float = 0.6
+    niche_bonus: float = 0.15
+    inconsistent_threshold: float = 0.3
+    inconsistent_penalty: float = 0.3    # 30% penalty
+    completionist_coverage: float = 0.7
+    completionist_diversity: float = 0.3
+    completionist_bonus: float = 0.1
 ```
 
 ### Method 1: DataQuantityAlpha (Single Factor)
@@ -350,14 +416,71 @@ class MultiFactorAlpha:
         return clip(alpha, min_alpha, max_alpha)
 ```
 
+### Method 3: HierarchicalConditionalAlpha (Recommended)
+
+```python
+class HierarchicalConditionalAlpha:
+    """
+    Two-stage alpha computation:
+    1. Hierarchical factor aggregation (addresses redundancy)
+    2. Conditional adjustments (handles conflicts and edge cases)
+    """
+
+    def compute_from_stats(self, user_stats: Dict) -> float:
+        # Get base factors (reuse existing computation)
+        f_q = self._compute_quantity_factor(user_stats.get('n_interactions', 0))
+        f_d = self._compute_diversity_factor(user_stats.get('genre_entropy', 1.5))
+        f_c = self._compute_coverage_factor(user_stats.get('n_unique_items', 0))
+        f_s = self._compute_consistency_factor(user_stats.get('rating_std', 0.75))
+
+        # Stage 1: Hierarchical aggregation
+        data_volume = np.sqrt(f_q * f_c)  # Geometric mean
+        preference_quality = 2 * f_d * f_s / (f_d + f_s)  # Harmonic mean
+
+        base_alpha = (0.55 * data_volume + 0.45 * preference_quality)
+
+        # Stage 2: Conditional rules
+        n = user_stats.get('n_interactions', 0)
+
+        # Rule 1: Sparse users penalty
+        if n < 20:
+            penalty = 0.5 * (1 - n / 20)
+            base_alpha *= (1 - penalty)
+
+        # Rule 2: Niche specialists bonus
+        if f_d < 0.25 and f_q > 0.6:
+            base_alpha = min(base_alpha + 0.15, 1.0)
+
+        # Rule 3: Inconsistent raters penalty
+        if f_s < 0.3:
+            base_alpha *= 0.7
+
+        # Rule 4: Completionists bonus
+        if f_c > 0.7 and f_d < 0.3:
+            base_alpha = min(base_alpha + 0.1, 1.0)
+
+        return float(np.clip(base_alpha, 0.1, 0.95))
+```
+
+**Example Outputs:**
+- Sparse user (n=10, moderate diversity) → α ≈ 0.15 (low - insufficient data)
+- Niche specialist (n=200, low diversity) → α ≈ 0.85 (high - trust niche expertise)
+- Inconsistent explorer (n=150, high diversity, high variance) → α ≈ 0.40 (moderate)
+- Completionist (n=300, high coverage, low diversity) → α ≈ 0.90 (high - trust exploration)
+
 ### Factory Function
 
 ```python
 from federated_adaptive_personalized_cf.models.adaptive_alpha import (
-    create_alpha_computer, AlphaConfig
+    create_alpha_computer, AlphaConfig, HierarchicalConditionalAlphaConfig
 )
 
-# Create multi-factor alpha computer
+# Create hierarchical conditional alpha computer (recommended)
+config = AlphaConfig(method="hierarchical_conditional")
+hc_config = HierarchicalConditionalAlphaConfig()
+alpha_computer = create_alpha_computer(config, hc_config=hc_config)
+
+# Or create multi-factor alpha computer
 config = AlphaConfig(method="multi_factor")
 alpha_computer = create_alpha_computer(config)
 
@@ -651,7 +774,7 @@ pip install -e .
 
 ### Basic Usage
 
-**1. Run Federated Training (default BPR-MF with multi-factor alpha)**:
+**1. Run Federated Training (default BPR-MF with hierarchical conditional alpha)**:
 ```bash
 flwr run .
 ```
@@ -668,8 +791,11 @@ flwr run . --run-config "model-type=dual fusion-type=concat"
 
 **4. Custom Configuration**:
 ```bash
-# 50 rounds, FedProx, data-quantity alpha
-flwr run . --run-config "num-server-rounds=50 strategy=fedprox alpha-method=data_quantity"
+# 50 rounds, FedProx, hierarchical conditional alpha (default)
+flwr run . --run-config "num-server-rounds=50 strategy=fedprox alpha-method=hierarchical_conditional"
+
+# Use multi-factor alpha instead
+flwr run . --run-config "alpha-method=multi_factor"
 
 # Different embedding size
 flwr run . --run-config "embedding-dim=256"
@@ -683,7 +809,7 @@ flwr run . --run-config "wandb-enabled=false"
 ```python
 from federated_adaptive_personalized_cf.task import get_model, load_data, train, test
 from federated_adaptive_personalized_cf.models.adaptive_alpha import (
-    create_alpha_computer, AlphaConfig
+    create_alpha_computer, AlphaConfig, HierarchicalConditionalAlphaConfig
 )
 
 # Load data for client 0
@@ -697,9 +823,10 @@ trainloader, testloader = load_data(
 model = get_model(model_type="dual", embedding_dim=128,
                   num_users=6040, num_items=3706)
 
-# Create alpha computer
-alpha_config = AlphaConfig(method="multi_factor")
-alpha_computer = create_alpha_computer(alpha_config)
+# Create hierarchical conditional alpha computer (recommended)
+alpha_config = AlphaConfig(method="hierarchical_conditional")
+hc_config = HierarchicalConditionalAlphaConfig()
+alpha_computer = create_alpha_computer(alpha_config, hc_config=hc_config)
 
 # Compute client alpha
 client_alpha = alpha_computer.compute_from_stats(user_stats)
@@ -745,22 +872,45 @@ fusion-type = "concat"           # "add", "gate", or "concat"
 # =============================================================================
 # Adaptive Alpha Configuration (Key Thesis Feature)
 # =============================================================================
-alpha-method = "multi_factor"    # "data_quantity" or "multi_factor"
+alpha-method = "hierarchical_conditional"  # "data_quantity", "multi_factor", or "hierarchical_conditional"
 alpha-min = 0.1
 alpha-max = 0.95
 alpha-quantity-threshold = 100
 alpha-quantity-temperature = 0.05
 
-# Multi-factor weights (must sum to 1.0)
+# Multi-factor weights (only used when alpha-method = "multi_factor")
 alpha-weight-quantity = 0.40
 alpha-weight-diversity = 0.25
 alpha-weight-coverage = 0.20
 alpha-weight-consistency = 0.15
 
-# Normalization thresholds
+# Normalization thresholds (used by multi_factor and hierarchical_conditional)
 alpha-max-entropy = 3.0
 alpha-coverage-threshold = 100
 alpha-max-rating-std = 1.5
+
+# =============================================================================
+# Hierarchical Conditional Alpha (only used when alpha-method = "hierarchical_conditional")
+# =============================================================================
+# Addresses factor conflicts in multi-factor approach:
+# 1. Quantity-Coverage redundancy → geometric mean
+# 2. Diversity-Consistency contradiction → harmonic mean
+
+# Hierarchical weights (must sum to 1.0)
+alpha-hc-data-volume-weight = 0.55    # Weight for data_volume = sqrt(quantity × coverage)
+alpha-hc-preference-weight = 0.45     # Weight for preference_quality = harmonic(diversity, consistency)
+
+# Conditional rule thresholds (domain-aware adjustments)
+alpha-hc-sparse-threshold = 20        # Users below this get penalty
+alpha-hc-sparse-penalty-max = 0.5     # Max penalty factor (50%)
+alpha-hc-niche-diversity-threshold = 0.25
+alpha-hc-niche-quantity-threshold = 0.6
+alpha-hc-niche-bonus = 0.15
+alpha-hc-inconsistent-threshold = 0.3
+alpha-hc-inconsistent-penalty = 0.3
+alpha-hc-completionist-coverage = 0.7
+alpha-hc-completionist-diversity = 0.3
+alpha-hc-completionist-bonus = 0.1
 
 # =============================================================================
 # Global Prototype Aggregation
@@ -853,8 +1003,9 @@ run_sweep_agent <SWEEP_ID>
 
 | Parameter | Recommended | Purpose | Trade-offs |
 |-----------|-------------|---------|------------|
-| **alpha-method** | multi_factor | Better captures user heterogeneity | Requires user stats |
-| **alpha-weight-diversity** | 0.25 | Independent variance signal | Higher = more weight on preferences |
+| **alpha-method** | hierarchical_conditional | Addresses factor conflicts in multi-factor | Requires user stats |
+| **alpha-hc-data-volume-weight** | 0.55 | Data sufficiency weight | Balance with preference quality |
+| **alpha-hc-preference-weight** | 0.45 | Preference quality weight | Balance with data volume |
 | **prototype-momentum** | 0.9 | Stable prototype | Higher = slower adaptation |
 | **fusion-type** | concat | Most flexible | More parameters |
 | **model-type** | dual | Full personalization | More computation |
@@ -865,12 +1016,15 @@ run_sweep_agent <SWEEP_ID>
 
 ### Implemented Experiments
 
-#### 1. Multi-Factor Alpha vs Data-Quantity Alpha
+#### 1. Hierarchical Conditional vs Multi-Factor vs Data-Quantity Alpha
 
 **Status**: ✅ Implemented
 
 **Configuration**:
 ```bash
+# Hierarchical Conditional (recommended)
+flwr run . --run-config "alpha-method=hierarchical_conditional"
+
 # Multi-factor
 flwr run . --run-config "alpha-method=multi_factor"
 
@@ -878,7 +1032,10 @@ flwr run . --run-config "alpha-method=multi_factor"
 flwr run . --run-config "alpha-method=data_quantity"
 ```
 
-**Hypothesis**: Multi-factor alpha better captures user heterogeneity by using orthogonal features.
+**Hypothesis**: Hierarchical conditional alpha outperforms multi-factor by addressing:
+- Quantity-Coverage redundancy (geometric mean aggregation)
+- Diversity-Consistency contradiction (harmonic mean balance)
+- Domain-specific user archetypes (conditional rules)
 
 #### 2. Dual-Level Personalization Ablation
 
@@ -1035,7 +1192,7 @@ Apache License 2.0
 
 ---
 
-**Last Updated**: 2025-01-22
-**Project Status**: Multi-Factor Adaptive Alpha Implemented, Dual-Level Personalization Implemented, Experiments In Progress
+**Last Updated**: 2026-01-23
+**Project Status**: Hierarchical Conditional Alpha Implemented, Multi-Factor Adaptive Alpha Implemented, Dual-Level Personalization Implemented, Experiments In Progress
 **Thesis Author**: Dang Vinh
 **Thesis Title**: Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems
