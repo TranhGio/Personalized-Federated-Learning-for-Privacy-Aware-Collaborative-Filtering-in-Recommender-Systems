@@ -43,7 +43,7 @@ fraction-train = 1.0
 local-epochs = 12
 
 # Federated Learning Strategy
-strategy = "fedavg"         # Options: "fedavg" (default) or "fedprox"
+strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"
 proximal-mu = 0.01           # Proximal term strength for FedProx (μ in paper)
                             # When 0.0, FedProx behaves identically to FedAvg
                             # Recommended values: 0.001, 0.01, 0.1, 1.0
@@ -89,7 +89,10 @@ alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
 # Formula: p̃_u = α * p_local + (1 - α) * p_global
 
 # Alpha method selection
-alpha-method = "multi_factor"     # Options: "data_quantity" (single factor) or "multi_factor" (4 factors)
+alpha-method = "hierarchical_conditional"     # Options: "data_quantity", "multi_factor", or "hierarchical_conditional"
+                                  # - data_quantity: Single factor (interaction count only)
+                                  # - multi_factor: 4-factor weighted sum (may have factor conflicts)
+                                  # - hierarchical_conditional: Addresses factor conflicts via grouping + rules
 
 # Common alpha parameters
 alpha-min = 0.1                    # Minimum personalization (even sparse users get some local)
@@ -109,6 +112,38 @@ alpha-max-entropy = 3.0            # Max genre entropy for normalization (~log2(
 alpha-coverage-threshold = 100     # Items for full coverage credit
 alpha-max-rating-std = 1.5         # Max rating std for normalization (typical for 1-5 scale)
 
+# =============================================================================
+# Hierarchical Conditional Alpha Configuration (alpha-method = "hierarchical_conditional")
+# =============================================================================
+# Addresses two critical conflicts in multi-factor approach:
+# 1. Quantity-Coverage Redundancy: Both highly correlated (0.8-1.0)
+#    Solution: Combine via geometric mean → data_volume = sqrt(f_q * f_c)
+# 2. Diversity-Consistency Conflict: Negatively correlated (-0.3 to -0.5)
+#    Solution: Combine via harmonic mean → preference_quality = 2*f_d*f_s/(f_d+f_s)
+
+# Hierarchical weights (must sum to 1.0)
+alpha-hc-data-volume-weight = 0.55      # Weight for data_volume = sqrt(quantity * coverage)
+alpha-hc-preference-weight = 0.45       # Weight for preference_quality = harmonic(diversity, consistency)
+
+# Conditional rule thresholds (domain-aware adjustments for MovieLens user archetypes)
+# Rule 1: Sparse users - users with few interactions get penalty
+alpha-hc-sparse-threshold = 20          # Interactions below this trigger sparse penalty
+alpha-hc-sparse-penalty-max = 0.5       # Maximum penalty (50% reduction at n=0)
+
+# Rule 2: Niche specialists - low diversity but high quantity users get bonus
+alpha-hc-niche-diversity-threshold = 0.25   # f_diversity below this threshold
+alpha-hc-niche-quantity-threshold = 0.6     # f_quantity above this threshold
+alpha-hc-niche-bonus = 0.15                 # Alpha bonus for niche specialists
+
+# Rule 3: Inconsistent raters - high rating variance users get penalty
+alpha-hc-inconsistent-threshold = 0.3       # f_consistency below this triggers penalty
+alpha-hc-inconsistent-penalty = 0.3         # 30% penalty for unreliable preferences
+
+# Rule 4: Completionists - high coverage but low diversity (genre experts)
+alpha-hc-completionist-coverage = 0.7       # f_coverage above this threshold
+alpha-hc-completionist-diversity = 0.3      # f_diversity below this threshold
+alpha-hc-completionist-bonus = 0.1          # Alpha bonus for completionists
+
 # Global prototype aggregation
 prototype-momentum = 0.9           # EMA momentum: p_global = m * p_old + (1-m) * p_new
                                    # Higher = more stable but slower adaptation
@@ -127,6 +162,16 @@ ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, ND
 # This follows the evaluation protocol used in NCF, FedMF, PFedRec papers
 # for fair comparison with published baselines
 eval-num-negatives = 99           # Number of negative samples per positive (default: 99 as in NCF paper)
+
+# =============================================================================
+# Early Stopping Configuration
+# =============================================================================
+# Stop training when the monitored metric stops improving
+early-stopping-enabled = true     # Enable/disable early stopping (enable for sweeps)
+early-stopping-patience = 10       # Rounds without improvement before stopping
+early-stopping-metric = "sampled_ndcg@10"  # Metric to monitor (sampled_ndcg@10, ndcg@10, hit_rate@10)
+early-stopping-mode = "max"        # "max" for metrics where higher is better, "min" for lower
+early-stopping-min-delta = 0.001   # Minimum change to qualify as improvement
 
 # Weights & Biases (wandb) configuration
 wandb-enabled = true              # Enable/disable wandb logging

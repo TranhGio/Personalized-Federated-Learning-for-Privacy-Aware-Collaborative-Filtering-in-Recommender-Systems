@@ -36,6 +36,7 @@ from flwr.serverapp import Grid, ServerApp
 from federated_adaptive_personalized_cf.task import get_model
 from federated_adaptive_personalized_cf.strategy import SplitFedAvg, SplitFedProx, GLOBAL_PARAM_KEYS, USER_PROTOTYPE_KEY
 from federated_adaptive_personalized_cf.evaluation import AlphaAnalyzer
+from federated_adaptive_personalized_cf.early_stopping import EarlyStopping
 
 # Create ServerApp
 app = ServerApp()
@@ -225,6 +226,25 @@ def main(grid: Grid, context: Context) -> None:
     alpha_quantity_temperature = context.run_config.get("alpha-quantity-temperature", 0.1)
     prototype_momentum = context.run_config.get("prototype-momentum", 0.9)
 
+    # Early stopping configuration
+    early_stopping_enabled = context.run_config.get("early-stopping-enabled", False)
+    early_stopping_patience = context.run_config.get("early-stopping-patience", 10)
+    early_stopping_metric = context.run_config.get("early-stopping-metric", "sampled_ndcg@10")
+    early_stopping_mode = context.run_config.get("early-stopping-mode", "max")
+    early_stopping_min_delta = context.run_config.get("early-stopping-min-delta", 0.001)
+
+    # Initialize early stopping if enabled
+    early_stopper = None
+    if early_stopping_enabled:
+        early_stopper = EarlyStopping(
+            patience=early_stopping_patience,
+            metric_name=early_stopping_metric,
+            mode=early_stopping_mode,
+            min_delta=early_stopping_min_delta,
+            verbose=True,
+        )
+        print(f"  Early stopping: Enabled (patience={early_stopping_patience}, metric={early_stopping_metric})")
+
     # Initialize Weights & Biases if enabled
     wandb_enabled = context.run_config.get("wandb-enabled", False)
     if wandb_enabled:
@@ -246,6 +266,10 @@ def main(grid: Grid, context: Context) -> None:
             "alpha_quantity_threshold": alpha_quantity_threshold,
             "alpha_quantity_temperature": alpha_quantity_temperature,
             "prototype_momentum": prototype_momentum,
+            # Early stopping config
+            "early_stopping_enabled": early_stopping_enabled,
+            "early_stopping_patience": early_stopping_patience,
+            "early_stopping_metric": early_stopping_metric,
         }
         wandb_project = context.run_config.get("wandb-project", "federated-cf")
         wandb_entity = context.run_config.get("wandb-entity", "")
@@ -479,24 +503,52 @@ def main(grid: Grid, context: Context) -> None:
                     round_metrics[f"eval/{key}"] = value
             wandb.log(round_metrics, step=round_num)
 
+        # Check early stopping
+        if early_stopper is not None and round_eval_metrics:
+            current_eval_metrics = eval_metrics_history.get(round_num, {})
+            if early_stopper.step(round_num, current_eval_metrics):
+                print(f"\n⏹ Training stopped early at round {round_num}")
+                # Log early stopping event to wandb
+                if wandb_enabled:
+                    wandb.log({
+                        "early_stopped": True,
+                        "early_stopped_round": round_num,
+                        "best_round": early_stopper.best_round,
+                        f"best_{early_stopping_metric}": early_stopper.best_metric,
+                    }, step=round_num)
+                break
+
+    # Determine actual rounds completed (may be less than num_rounds if early stopped)
+    actual_rounds = round_num if early_stopper and early_stopper.state.should_stop else num_rounds
+
     # Print training complete message
     print("\n" + "="*70)
     print("FEDERATED TRAINING COMPLETE")
     print("="*70)
-    print(f"Total rounds completed: {num_rounds}")
+    print(f"Total rounds completed: {actual_rounds}/{num_rounds}")
+    if early_stopper and early_stopper.state.should_stop:
+        print(f"Early stopping: Triggered at round {actual_rounds}")
+        print(f"Best {early_stopping_metric}: {early_stopper.best_metric:.4f} at round {early_stopper.best_round}")
     print("="*70)
 
     # =========================================================================
-    # FEDERATED EVALUATION: Use aggregated metrics from final round
+    # FEDERATED EVALUATION: Use aggregated metrics from best round
     # =========================================================================
     # NOTE: Centralized evaluation is NOT possible in split learning since the
     # server only has global parameters (item embeddings). User embeddings
     # remain on clients and are never sent to the server.
-    print("\n📊 Using federated evaluation metrics from final round...")
+
+    # Use best round metrics if early stopping was used, otherwise use final round
+    if early_stopper and early_stopper.best_round > 0:
+        best_round = early_stopper.best_round
+        print(f"\n📊 Using federated evaluation metrics from best round ({best_round})...")
+    else:
+        best_round = actual_rounds
+        print(f"\n📊 Using federated evaluation metrics from final round ({best_round})...")
     print("  (Centralized evaluation not possible in split learning)")
 
     # Get final round metrics from federated evaluation
-    final_round_metrics = eval_metrics_history.get(num_rounds, {})
+    final_round_metrics = eval_metrics_history.get(best_round, {})
 
     if not final_round_metrics:
         print("  Warning: No evaluation metrics from final round")
@@ -506,21 +558,29 @@ def main(grid: Grid, context: Context) -> None:
         final_metrics = dict(final_round_metrics)
 
     # Print evaluation results
-    print_evaluation_metrics(num_rounds, final_metrics, context)
+    print_evaluation_metrics(actual_rounds, final_metrics, context)
 
     # Log final metrics to wandb
     if wandb_enabled:
-        # Log final metrics at step num_rounds + 1 (after all round metrics)
-        final_log = {"round": num_rounds + 1}
+        # Log final metrics at step actual_rounds + 1 (after all round metrics)
+        final_log = {"round": actual_rounds + 1}
         for key, value in final_metrics.items():
             if isinstance(value, (int, float)):
                 final_log[f"final/{key}"] = value
-        wandb.log(final_log, step=num_rounds + 1)
+        wandb.log(final_log, step=actual_rounds + 1)
 
         # Also add to summary for easy comparison in W&B dashboard
         for key, value in final_metrics.items():
             if isinstance(value, (int, float)):
                 wandb.run.summary[f"final/{key}"] = value
+
+        # Add early stopping info to summary
+        if early_stopper:
+            wandb.run.summary["early_stopping/enabled"] = early_stopping_enabled
+            wandb.run.summary["early_stopping/stopped_early"] = early_stopper.state.should_stop
+            wandb.run.summary["early_stopping/best_round"] = early_stopper.best_round
+            wandb.run.summary[f"early_stopping/best_{early_stopping_metric}"] = early_stopper.best_metric
+            wandb.run.summary["training/actual_rounds"] = actual_rounds
 
     # Analyze alpha values from per-client metrics (not aggregated per-round values)
     alpha_analyzer = AlphaAnalyzer()
@@ -566,12 +626,18 @@ def main(grid: Grid, context: Context) -> None:
         local_params_list.extend(["personal_mlp", "fusion_gate" if fusion_type == "gate" else "fusion_layer" if fusion_type == "concat" else None])
         local_params_list = [p for p in local_params_list if p is not None]
 
+    # Prepare early stopping summary for results
+    early_stopping_summary = None
+    if early_stopper:
+        early_stopping_summary = early_stopper.get_summary()
+
     results_data = {
         "model_name": f"{model_type.upper()}_MF_Personalized_Split_{strategy_name.upper()}_Adaptive",
         "dataset": "ml-1m",
         "architecture": "split_learning_adaptive" if model_type != "dual" else "dual_level_personalization",
         "federated_config": {
             "num_rounds": num_rounds,
+            "actual_rounds": actual_rounds,
             "num_clients": 10,  # Adjust based on your config
             "fraction_train": fraction_train,
             "strategy": strategy_name,
@@ -594,6 +660,7 @@ def main(grid: Grid, context: Context) -> None:
             "quantity_temperature": alpha_quantity_temperature,
             "prototype_momentum": prototype_momentum,
         },
+        "early_stopping": early_stopping_summary,
         "alpha_analysis": {
             "mean": alpha_stats.mean,
             "std": alpha_stats.std,
@@ -604,7 +671,7 @@ def main(grid: Grid, context: Context) -> None:
         "global_prototype_norm": prototype_norm,
         "timestamp": datetime.now().isoformat(),
         "final_metrics": final_metrics,
-        "training_rounds": num_rounds,
+        "training_rounds": actual_rounds,
     }
 
     # Save results to JSON file (in personalized subfolder)

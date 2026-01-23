@@ -786,7 +786,68 @@ eval-num-negatives = 99      # Sampled evaluation (NCF protocol)
 # =============================================================================
 wandb-enabled = true
 wandb-project = "federated-adaptive-personalized-cf"
+
+# =============================================================================
+# Early Stopping
+# =============================================================================
+early-stopping-enabled = false     # Enable for hyperparameter sweeps
+early-stopping-patience = 10       # Rounds without improvement
+early-stopping-metric = "sampled_ndcg@10"
+early-stopping-mode = "max"
+early-stopping-min-delta = 0.001
 ```
+
+### Early Stopping Usage
+
+Enable early stopping to automatically stop training when metrics plateau:
+
+```bash
+# Enable early stopping with default patience (10 rounds)
+flwr run . --run-config "early-stopping-enabled=true"
+
+# Custom patience and metric
+flwr run . --run-config "early-stopping-enabled=true early-stopping-patience=15 early-stopping-metric=ndcg@10"
+```
+
+### Hyperparameter Sweeps with wandb
+
+The project includes full wandb sweep support for hyperparameter tuning:
+
+**1. Create a sweep**:
+```bash
+cd federated-adaptive-personalized-cf
+wandb sweep sweep.yaml
+# Note the SWEEP_ID from output
+```
+
+**2. Run sweep agents** (can run multiple in parallel):
+```bash
+wandb agent <YOUR_ENTITY>/federated-adaptive-personalized-cf/<SWEEP_ID>
+
+# Or run specific number of experiments
+wandb agent --count 20 <SWEEP_ID>
+```
+
+**3. Use convenience scripts**:
+```bash
+# Load helper functions
+source scripts/sweep_commands.sh
+
+# Test sweep config locally (dry run)
+test_sweep_config
+
+# Create sweep
+create_sweep
+
+# Run agent
+run_sweep_agent <SWEEP_ID>
+```
+
+**Sweep configuration** (`sweep.yaml`) includes:
+- Bayesian optimization for efficient search
+- Hyperband early termination for poor runs
+- Key hyperparameters: lr, embedding_dim, model_type, fusion_type, alpha weights
+- Automatically enables early stopping
 
 ### Parameter Guidelines
 

@@ -1,0 +1,54 @@
+wandb_version: 1
+
+alpha_max:
+  value: 1
+alpha_method:
+  value: multi_factor
+alpha_min:
+  value: 0.05
+alpha_quantity_temperature:
+  value: 0.023798550414385857
+alpha_quantity_threshold:
+  value: 150
+alpha_weight_consistency:
+  value: 0.2497249046070436
+alpha_weight_coverage:
+  value: 0.15581447701329723
+alpha_weight_diversity:
+  value: 0.10780131312331533
+alpha_weight_quantity:
+  value: 0.2952018904413921
+dropout:
+  value: 0.1
+early_stopping_metric:
+  value: sampled_ndcg@10
+early_stopping_min_delta:
+  value: 0.0005
+early_stopping_patience:
+  value: 15
+embedding_dim:
+  value: 256
+fraction_train:
+  value: 0.5
+fusion_type:
+  value: gate
+local_epochs:
+  value: 20
+lr:
+  value: 0.004269708448052657
+mlp_hidden_dims:
+  value: 256,128
+model_type:
+  value: bpr
+num_negatives:
+  value: 1
+num_server_rounds:
+  value: 100
+prototype_momentum:
+  value: 0.9
+proximal_mu:
+  value: 0.0197714130293496
+strategy:
+  value: fedprox
+weight_decay:
+  value: 0.00066538188234912
