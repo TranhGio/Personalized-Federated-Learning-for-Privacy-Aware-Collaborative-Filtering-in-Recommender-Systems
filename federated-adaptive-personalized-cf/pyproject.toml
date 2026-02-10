@@ -40,7 +40,7 @@ clientapp = "federated_adaptive_personalized_cf.client_app:app"
 # Federated Learning parameters
 num-server-rounds = 50
 fraction-train = 1.0
-local-epochs = 12
+local-epochs = 10
 
 # Federated Learning Strategy
 strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"
@@ -49,7 +49,7 @@ proximal-mu = 0.01           # Proximal term strength for FedProx (μ in paper)
                             # Recommended values: 0.001, 0.01, 0.1, 1.0
 
 # Model parameters
-model-type = "bpr"  # Options: "basic" (MSE), "bpr" (BPR), or "dual" (Dual-Level Personalized BPR)
+model-type = "dual"  # Options: "basic" (MSE), "bpr" (BPR), or "dual" (Dual-Level Personalized BPR)
 embedding-dim = 128  # Latent factor dimensionality (32, 64, 128, 256)
 dropout = 0.1       # Dropout rate for regularization
 
@@ -156,7 +156,7 @@ user-group-dense = "100,10000"
 
 # Ranking evaluation
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
-ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
+ranking-k-values = "10"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
 
 # Sampled evaluation (leave-one-out with N negatives)
 # This follows the evaluation protocol used in NCF, FedMF, PFedRec papers
