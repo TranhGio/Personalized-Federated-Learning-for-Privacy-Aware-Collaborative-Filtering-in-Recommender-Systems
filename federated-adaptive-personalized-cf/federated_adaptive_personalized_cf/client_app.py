@@ -27,7 +27,7 @@ from federated_adaptive_personalized_cf.task import (
 from federated_adaptive_personalized_cf.task import test as test_fn
 from federated_adaptive_personalized_cf.task import train as train_fn
 from federated_adaptive_personalized_cf.task import evaluate_ranking, evaluate_ranking_sampled
-from federated_adaptive_personalized_cf.models import AlphaConfig
+from federated_adaptive_personalized_cf.models import AlphaConfig, HierarchicalConditionalAlphaConfig
 from federated_adaptive_personalized_cf.strategy import USER_PROTOTYPE_KEY
 
 # Flower ClientApp
@@ -291,6 +291,31 @@ def train(msg: Message, context: Context):
         max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
     )
 
+    # Build HierarchicalConditionalAlphaConfig if using hierarchical_conditional method
+    hc_config = None
+    if alpha_method == "hierarchical_conditional":
+        hc_config = HierarchicalConditionalAlphaConfig(
+            min_alpha=context.run_config.get("alpha-min", 0.1),
+            max_alpha=context.run_config.get("alpha-max", 0.95),
+            data_volume_weight=context.run_config.get("alpha-hc-data-volume-weight", 0.55),
+            preference_quality_weight=context.run_config.get("alpha-hc-preference-weight", 0.45),
+            quantity_threshold=context.run_config.get("alpha-quantity-threshold", 100),
+            quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.05),
+            max_entropy=context.run_config.get("alpha-max-entropy", 3.0),
+            coverage_threshold=context.run_config.get("alpha-coverage-threshold", 100),
+            max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
+            sparse_threshold=context.run_config.get("alpha-hc-sparse-threshold", 20),
+            sparse_penalty_max=context.run_config.get("alpha-hc-sparse-penalty-max", 0.5),
+            niche_diversity_threshold=context.run_config.get("alpha-hc-niche-diversity-threshold", 0.25),
+            niche_quantity_threshold=context.run_config.get("alpha-hc-niche-quantity-threshold", 0.6),
+            niche_bonus=context.run_config.get("alpha-hc-niche-bonus", 0.15),
+            inconsistent_threshold=context.run_config.get("alpha-hc-inconsistent-threshold", 0.3),
+            inconsistent_penalty=context.run_config.get("alpha-hc-inconsistent-penalty", 0.3),
+            completionist_coverage=context.run_config.get("alpha-hc-completionist-coverage", 0.7),
+            completionist_diversity=context.run_config.get("alpha-hc-completionist-diversity", 0.3),
+            completionist_bonus=context.run_config.get("alpha-hc-completionist-bonus", 0.1),
+        )
+
     # Load data with user stats for alpha computation
     dirichlet_alpha = context.run_config.get("alpha", 0.5)
     trainloader, _, user_stats = load_data(
@@ -301,7 +326,7 @@ def train(msg: Message, context: Context):
     )
 
     # Compute client alpha (weighted average of per-user alphas)
-    client_alpha = compute_client_alpha(user_stats, alpha_config)
+    client_alpha = compute_client_alpha(user_stats, alpha_config, hc_config)
 
     # Set alpha on model (only for BPRMF with adaptive support)
     if hasattr(model, 'set_alpha'):
@@ -452,6 +477,31 @@ def evaluate(msg: Message, context: Context):
         max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
     )
 
+    # Build HierarchicalConditionalAlphaConfig if using hierarchical_conditional method
+    hc_config = None
+    if alpha_method == "hierarchical_conditional":
+        hc_config = HierarchicalConditionalAlphaConfig(
+            min_alpha=context.run_config.get("alpha-min", 0.1),
+            max_alpha=context.run_config.get("alpha-max", 0.95),
+            data_volume_weight=context.run_config.get("alpha-hc-data-volume-weight", 0.55),
+            preference_quality_weight=context.run_config.get("alpha-hc-preference-weight", 0.45),
+            quantity_threshold=context.run_config.get("alpha-quantity-threshold", 100),
+            quantity_temperature=context.run_config.get("alpha-quantity-temperature", 0.05),
+            max_entropy=context.run_config.get("alpha-max-entropy", 3.0),
+            coverage_threshold=context.run_config.get("alpha-coverage-threshold", 100),
+            max_rating_std=context.run_config.get("alpha-max-rating-std", 1.5),
+            sparse_threshold=context.run_config.get("alpha-hc-sparse-threshold", 20),
+            sparse_penalty_max=context.run_config.get("alpha-hc-sparse-penalty-max", 0.5),
+            niche_diversity_threshold=context.run_config.get("alpha-hc-niche-diversity-threshold", 0.25),
+            niche_quantity_threshold=context.run_config.get("alpha-hc-niche-quantity-threshold", 0.6),
+            niche_bonus=context.run_config.get("alpha-hc-niche-bonus", 0.15),
+            inconsistent_threshold=context.run_config.get("alpha-hc-inconsistent-threshold", 0.3),
+            inconsistent_penalty=context.run_config.get("alpha-hc-inconsistent-penalty", 0.3),
+            completionist_coverage=context.run_config.get("alpha-hc-completionist-coverage", 0.7),
+            completionist_diversity=context.run_config.get("alpha-hc-completionist-diversity", 0.3),
+            completionist_bonus=context.run_config.get("alpha-hc-completionist-bonus", 0.1),
+        )
+
     # Load the data (both train and test for item popularity computation)
     dirichlet_alpha = context.run_config.get("alpha", 0.5)
     trainloader, testloader, user_stats = load_data(
@@ -462,7 +512,7 @@ def evaluate(msg: Message, context: Context):
     )
 
     # Compute client alpha (weighted average of per-user alphas)
-    client_alpha = compute_client_alpha(user_stats, alpha_config)
+    client_alpha = compute_client_alpha(user_stats, alpha_config, hc_config)
 
     # Set alpha on model (only for BPRMF with adaptive support)
     if hasattr(model, 'set_alpha'):

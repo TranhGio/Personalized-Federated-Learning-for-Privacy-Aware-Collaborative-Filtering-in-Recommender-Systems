@@ -1,52 +1,52 @@
 {
-    "dataset": "ml-1m",
-    "test_size": 0.2,
-    "timestamp": "2025-10-26T21:34:37.163670",
-    "svd_results": {
-        "model_name": "SVD",
-        "rmse": 0.8545968962992153,
-        "mae": 0.6730901758522647,
-        "mse": 0.7303358551642518,
-        "r2": 0.41412263441068353,
-        "training_time": 4.99541,
-        "n_predictions": 200042,
-        "params": {
-            "n_factors": 150,
-            "n_epochs": 20,
-            "lr_all": 0.01,
-            "reg_all": 0.05
-        }
+  "dataset": "ml-1m",
+  "test_size": 0.2,
+  "timestamp": "2025-10-26T21:34:37.163670",
+  "svd_results": {
+    "model_name": "SVD",
+    "rmse": 0.8545968962992153,
+    "mae": 0.6730901758522647,
+    "mse": 0.7303358551642518,
+    "r2": 0.41412263441068353,
+    "training_time": 4.99541,
+    "n_predictions": 200042,
+    "params": {
+      "n_factors": 150,
+      "n_epochs": 20,
+      "lr_all": 0.01,
+      "reg_all": 0.05
+    }
+  },
+  "cv_results": {
+    "mean_rmse": 0.8545753107909384,
+    "std_rmse": 0.0026903321245403456,
+    "mean_mae": 0.6734274501125408,
+    "std_mae": 0.00236591701510276
+  },
+  "comparison": [
+    {
+      "Method": "SVD++",
+      "RMSE": 0.8670334912408997,
+      "MAE": 0.6768292809028492,
+      "Training Time (s)": 350.237819
     },
-    "cv_results": {
-        "mean_rmse": 0.8545753107909384,
-        "std_rmse": 0.0026903321245403456,
-        "mean_mae": 0.6734274501125408,
-        "std_mae": 0.00236591701510276
+    {
+      "Method": "SVD",
+      "RMSE": 0.8736576884902377,
+      "MAE": 0.6849874900251044,
+      "Training Time (s)": 4.472587
     },
-    "comparison": [
-        {
-            "Method": "SVD++",
-            "RMSE": 0.8670334912408997,
-            "MAE": 0.6768292809028492,
-            "Training Time (s)": 350.237819
-        },
-        {
-            "Method": "SVD",
-            "RMSE": 0.8736576884902377,
-            "MAE": 0.6849874900251044,
-            "Training Time (s)": 4.472587
-        },
-        {
-            "Method": "KNN-Basic",
-            "RMSE": 0.9765109705341003,
-            "MAE": 0.7713329432610434,
-            "Training Time (s)": 60.190006
-        },
-        {
-            "Method": "NMF",
-            "RMSE": 1.1265927103674416,
-            "MAE": 0.8559959463204795,
-            "Training Time (s)": 12.783403
-        }
-    ]
+    {
+      "Method": "KNN-Basic",
+      "RMSE": 0.9765109705341003,
+      "MAE": 0.7713329432610434,
+      "Training Time (s)": 60.190006
+    },
+    {
+      "Method": "NMF",
+      "RMSE": 1.1265927103674416,
+      "MAE": 0.8559959463204795,
+      "Training Time (s)": 12.783403
+    }
+  ]
 }

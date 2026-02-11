@@ -1,0 +1,216 @@
+# Weights & Biases Sweep Configuration
+# For hyperparameter tuning of Federated Adaptive Personalized CF
+#
+# Usage:
+#   1. Create sweep: wandb sweep sweep.yaml
+#   2. Run agent: wandb agent vinh-federated-learning/federated-adaptive-personalized-cf/<SWEEP_ID>
+#   Or use the helper script: python scripts/run_wandb_sweep.py
+#
+# Documentation: https://docs.wandb.ai/guides/sweeps
+
+# Project configuration (ensures sweep is created in the right place)
+project: federated-adaptive-personalized-cf
+entity: vinh-federated-learning
+
+program: scripts/run_wandb_sweep.py
+method: bayes  # Options: grid, random, bayes
+metric:
+  name: final/sampled_ndcg@10
+  goal: maximize
+
+# Early terminate poorly performing runs
+early_terminate:
+  type: hyperband
+  min_iter: 10
+  eta: 3
+  s: 2
+
+parameters:
+  # =============================================================================
+  # Model Architecture
+  # =============================================================================
+  model_type:
+    values: ["bpr", "dual"]
+
+  embedding_dim:
+    values: [64, 128, 256]
+
+  # MLP hidden dims (for dual model only)
+  # Format: comma-separated string
+  mlp_hidden_dims:
+    values: ["64,32", "128,64", "256,128", "512,256,128"]
+
+  fusion_type:
+    values: ["add", "gate", "concat"]
+
+  # =============================================================================
+  # Training Hyperparameters
+  # =============================================================================
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.05
+
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-3
+
+  dropout:
+    values: [0.0, 0.1, 0.2, 0.3]
+
+  local_epochs:
+    values: [5, 10, 15, 20]
+
+  num_negatives:
+    values: [1, 4, 8]
+
+  # =============================================================================
+  # Federated Learning Configuration
+  # =============================================================================
+  num_server_rounds:
+    value: 100  # Fixed, use early stopping
+
+  fraction_train:
+    values: [0.5, 0.8, 1.0]
+
+  strategy:
+    values: ["fedavg", "fedprox"]
+
+  proximal_mu:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 1.0
+
+  # =============================================================================
+  # Adaptive Alpha Configuration
+  # =============================================================================
+  alpha_method:
+    values: ["data_quantity", "multi_factor", "hierarchical_conditional"]
+
+  alpha_min:
+    values: [0.05, 0.1, 0.2]
+
+  alpha_max:
+    values: [0.9, 0.95, 1.0]
+
+  alpha_quantity_threshold:
+    values: [50, 100, 150]
+
+  alpha_quantity_temperature:
+    distribution: uniform
+    min: 0.02
+    max: 0.15
+
+  # Multi-factor weights (only used when alpha_method = "multi_factor")
+  alpha_weight_quantity:
+    distribution: uniform
+    min: 0.1
+    max: 0.5
+
+  alpha_weight_diversity:
+    distribution: uniform
+    min: 0.1
+    max: 0.5
+
+  alpha_weight_coverage:
+    distribution: uniform
+    min: 0.1
+    max: 0.3
+
+  alpha_weight_consistency:
+    distribution: uniform
+    min: 0.1
+    max: 0.3
+
+  # =============================================================================
+  # Hierarchical Conditional Alpha (only used when alpha_method = "hierarchical_conditional")
+  # =============================================================================
+  # Addresses factor conflicts: Quantity-Coverage redundancy, Diversity-Consistency contradiction
+
+  # Hierarchical weights (should sum to 1.0)
+  alpha_hc_data_volume_weight:
+    distribution: uniform
+    min: 0.4
+    max: 0.7
+
+  alpha_hc_preference_weight:
+    distribution: uniform
+    min: 0.3
+    max: 0.6
+
+  # Conditional rule thresholds
+  # Rule 1: Sparse users penalty
+  alpha_hc_sparse_threshold:
+    values: [15, 20, 30]
+
+  alpha_hc_sparse_penalty_max:
+    distribution: uniform
+    min: 0.3
+    max: 0.7
+
+  # Rule 2: Niche specialists bonus
+  alpha_hc_niche_diversity_threshold:
+    distribution: uniform
+    min: 0.15
+    max: 0.35
+
+  alpha_hc_niche_quantity_threshold:
+    distribution: uniform
+    min: 0.5
+    max: 0.8
+
+  alpha_hc_niche_bonus:
+    distribution: uniform
+    min: 0.1
+    max: 0.25
+
+  # Rule 3: Inconsistent raters penalty
+  alpha_hc_inconsistent_threshold:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  alpha_hc_inconsistent_penalty:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  # Rule 4: Completionists bonus
+  alpha_hc_completionist_coverage:
+    distribution: uniform
+    min: 0.6
+    max: 0.8
+
+  alpha_hc_completionist_diversity:
+    distribution: uniform
+    min: 0.2
+    max: 0.4
+
+  alpha_hc_completionist_bonus:
+    distribution: uniform
+    min: 0.05
+    max: 0.15
+
+  prototype_momentum:
+    values: [0.8, 0.9, 0.95]
+
+  # =============================================================================
+  # Early Stopping (always enabled for sweeps)
+  # =============================================================================
+  early_stopping_patience:
+    values: [8, 10, 15]
+
+  early_stopping_metric:
+    value: "sampled_ndcg@10"
+
+  early_stopping_min_delta:
+    values: [0.0005, 0.001, 0.002]
+
+# Command to run
+# NOTE: Do NOT include ${args} - our script reads config from wandb.config
+# after calling wandb.init(), not from command-line arguments
+command:
+  - ${env}
+  - python
+  - ${program}

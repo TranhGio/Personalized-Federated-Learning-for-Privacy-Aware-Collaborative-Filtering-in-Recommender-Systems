@@ -14,7 +14,8 @@ from collections import Counter
 from federated_adaptive_personalized_cf.dataset import load_partition_data
 from federated_adaptive_personalized_cf.models import (
     BasicMF, BPRMF, DualPersonalizedBPRMF, MSELoss, BPRLoss,
-    AlphaConfig, DataQuantityAlpha, create_alpha_computer,
+    AlphaConfig, HierarchicalConditionalAlphaConfig,
+    DataQuantityAlpha, create_alpha_computer,
 )
 
 
@@ -95,6 +96,7 @@ def get_user_stats() -> Dict[int, Dict]:
 def compute_client_alpha(
     user_stats: Dict[int, Dict],
     alpha_config: Optional[AlphaConfig] = None,
+    hc_config: Optional[HierarchicalConditionalAlphaConfig] = None,
 ) -> float:
     """
     Compute aggregate alpha for a client based on user statistics.
@@ -105,10 +107,12 @@ def compute_client_alpha(
     For DataQuantityAlpha: uses only n_interactions
     For MultiFactorAlpha: uses full user stats (n_interactions, genre_entropy,
                           n_unique_items, rating_std)
+    For HierarchicalConditionalAlpha: uses hierarchical grouping with conditional rules
 
     Args:
         user_stats: Dict mapping user_id -> user statistics dict
         alpha_config: Configuration for alpha computation (uses defaults if None)
+        hc_config: Optional HierarchicalConditionalAlphaConfig for hierarchical_conditional method
 
     Returns:
         Aggregate alpha value for the client
@@ -116,7 +120,7 @@ def compute_client_alpha(
     if not user_stats:
         return 1.0  # Default: fully personalized if no stats
 
-    alpha_computer = create_alpha_computer(alpha_config)
+    alpha_computer = create_alpha_computer(alpha_config, hc_config)
 
     total_interactions = 0
     weighted_alpha_sum = 0.0
@@ -140,21 +144,24 @@ def compute_client_alpha(
 def compute_per_user_alpha(
     user_stats: Dict[int, Dict],
     alpha_config: Optional[AlphaConfig] = None,
+    hc_config: Optional[HierarchicalConditionalAlphaConfig] = None,
 ) -> Dict[int, float]:
     """
     Compute alpha for each user based on their statistics.
 
     For DataQuantityAlpha: uses only n_interactions
     For MultiFactorAlpha: uses full user stats
+    For HierarchicalConditionalAlpha: uses hierarchical grouping with conditional rules
 
     Args:
         user_stats: Dict mapping user_id -> user statistics dict
         alpha_config: Configuration for alpha computation
+        hc_config: Optional HierarchicalConditionalAlphaConfig for hierarchical_conditional method
 
     Returns:
         Dict mapping user_id -> alpha value
     """
-    alpha_computer = create_alpha_computer(alpha_config)
+    alpha_computer = create_alpha_computer(alpha_config, hc_config)
 
     user_alphas = {}
     for user_id, stats in user_stats.items():
