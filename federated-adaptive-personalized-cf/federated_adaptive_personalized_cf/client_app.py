@@ -22,7 +22,7 @@ from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
 from federated_adaptive_personalized_cf.task import (
-    get_model, load_data, compute_client_alpha, get_user_stats
+    get_model, load_data, compute_client_alpha, compute_per_user_alpha, get_user_stats
 )
 from federated_adaptive_personalized_cf.task import test as test_fn
 from federated_adaptive_personalized_cf.task import train as train_fn
@@ -340,6 +340,24 @@ def train(msg: Message, context: Context):
         model.set_global_prototype(global_prototype)
         print(f"  Client {partition_id}: Set global prototype from server")
 
+    # === Per-User Learned Alpha (gradient-refined personalization) ===
+    enable_per_user_alpha = context.run_config.get("enable-per-user-alpha", False)
+    if enable_per_user_alpha and hasattr(model, 'enable_per_user_alpha'):
+        per_user_alphas = compute_per_user_alpha(user_stats, alpha_config, hc_config)
+        model.enable_per_user_alpha(
+            num_users=model.num_users,
+            init_alphas=per_user_alphas,
+        )
+        print(f"  Client {partition_id}: Per-user learned alpha enabled "
+              f"({len(per_user_alphas)} users initialized from heuristic)")
+
+    # === Dual-Side Item Perturbation ===
+    enable_item_perturbation = context.run_config.get("enable-item-perturbation", False)
+    if enable_item_perturbation and hasattr(model, 'enable_item_perturbation'):
+        item_perturb_reg = context.run_config.get("item-perturbation-reg", 0.01)
+        model.enable_item_perturbation(reg_lambda=item_perturb_reg)
+        print(f"  Client {partition_id}: Item perturbation enabled (reg={item_perturb_reg})")
+
     # === FedProx: Save ONLY global parameters for proximal term ===
     proximal_mu = msg.content["config"].get("proximal_mu", 0.0)
     global_params_for_prox = None
@@ -355,6 +373,9 @@ def train(msg: Message, context: Context):
                 global_params_for_prox.append(p.detach().clone())
 
     # Step 5: Train the model
+    contrastive_lambda = context.run_config.get("contrastive-lambda", 0.0)
+    contrastive_tau = context.run_config.get("contrastive-tau", 0.1)
+
     train_loss = train_fn(
         model=model,
         trainloader=trainloader,
@@ -368,6 +389,9 @@ def train(msg: Message, context: Context):
         proximal_mu=proximal_mu,
         global_params=global_params_for_prox,
         global_param_names=global_param_names,
+        # Contrastive local-global alignment
+        contrastive_lambda=contrastive_lambda,
+        contrastive_tau=contrastive_tau,
     )
 
     # Step 6: Save LOCAL parameters to cache for next round
@@ -387,6 +411,23 @@ def train(msg: Message, context: Context):
         "num-examples": len(trainloader.dataset),
         "client_alpha": float(client_alpha),
     }
+
+    # Per-user alpha statistics
+    if enable_per_user_alpha and hasattr(model, 'get_per_user_alphas'):
+        with torch.no_grad():
+            per_user_alphas_tensor = model.get_per_user_alphas()
+            metrics["per_user_alpha_mean"] = float(per_user_alphas_tensor.mean())
+            metrics["per_user_alpha_std"] = float(per_user_alphas_tensor.std())
+            metrics["per_user_alpha_min"] = float(per_user_alphas_tensor.min())
+            metrics["per_user_alpha_max"] = float(per_user_alphas_tensor.max())
+
+    # Item perturbation norm statistics
+    if enable_item_perturbation and hasattr(model, '_item_perturbation') and model._item_perturbation is not None:
+        with torch.no_grad():
+            perturb_norms = model._item_perturbation.weight.norm(dim=1)
+            metrics["item_perturb_mean_norm"] = float(perturb_norms.mean())
+            metrics["item_perturb_max_norm"] = float(perturb_norms.max())
+            metrics["item_perturb_active_count"] = int((perturb_norms > 0.01).sum())
 
     # Add user prototype to metrics for server aggregation
     if user_prototype is not None:
@@ -523,6 +564,21 @@ def evaluate(msg: Message, context: Context):
     if global_prototype_list is not None and hasattr(model, 'set_global_prototype'):
         global_prototype = torch.tensor(global_prototype_list, dtype=torch.float32)
         model.set_global_prototype(global_prototype)
+
+    # === Per-User Learned Alpha (must match training) ===
+    enable_per_user_alpha = context.run_config.get("enable-per-user-alpha", False)
+    if enable_per_user_alpha and hasattr(model, 'enable_per_user_alpha'):
+        per_user_alphas = compute_per_user_alpha(user_stats, alpha_config, hc_config)
+        model.enable_per_user_alpha(
+            num_users=model.num_users,
+            init_alphas=per_user_alphas,
+        )
+
+    # === Dual-Side Item Perturbation (must match training) ===
+    enable_item_perturbation = context.run_config.get("enable-item-perturbation", False)
+    if enable_item_perturbation and hasattr(model, 'enable_item_perturbation'):
+        item_perturb_reg = context.run_config.get("item-perturbation-reg", 0.01)
+        model.enable_item_perturbation(reg_lambda=item_perturb_reg)
 
     # Call the evaluation function (rating prediction metrics)
     eval_loss, metrics = test_fn(

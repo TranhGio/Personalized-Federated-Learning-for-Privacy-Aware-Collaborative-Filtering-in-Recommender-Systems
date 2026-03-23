@@ -161,6 +161,15 @@ class DualPersonalizedBPRMF(nn.Module):
         self._alpha: float = 1.0  # Default: fully personalized
         self._global_prototype: Optional[torch.Tensor] = None
 
+        # Per-user learned alpha (gradient-refined personalization)
+        self._per_user_alpha_enabled: bool = False
+        self._logit_alpha: Optional[nn.Embedding] = None
+
+        # Item perturbation for dual-side personalization
+        self._item_perturbation_enabled: bool = False
+        self._item_perturbation: Optional[nn.Embedding] = None
+        self._item_perturbation_reg: float = 0.01
+
         # Initialize weights
         self._init_weights()
 
@@ -236,7 +245,7 @@ class DualPersonalizedBPRMF(nn.Module):
         """
         # Get effective user embeddings (Level 1: α-blended)
         user_emb = self.get_effective_embedding(user_ids)
-        item_emb = self.item_embeddings(item_ids)
+        item_emb = self.get_effective_item_embedding(item_ids)
 
         # Apply dropout
         if self.dropout is not None:
@@ -416,17 +425,99 @@ class DualPersonalizedBPRMF(nn.Module):
         """Clear the global prototype."""
         self._global_prototype = None
 
+    def enable_per_user_alpha(
+        self,
+        num_users: int,
+        init_alphas: Optional[Dict[int, float]] = None,
+    ) -> None:
+        """
+        Enable per-user learnable alpha parameters.
+
+        Each user gets a learnable alpha in logit space, refined by gradient descent.
+        Initialized from heuristic alphas (e.g., hierarchical conditional) if provided.
+        """
+        self._per_user_alpha_enabled = True
+        self._logit_alpha = nn.Embedding(num_users, 1)
+
+        if init_alphas is not None:
+            with torch.no_grad():
+                for user_id, alpha_val in init_alphas.items():
+                    if 0 <= user_id < num_users:
+                        alpha_clamped = max(0.01, min(0.99, alpha_val))
+                        logit_val = torch.log(
+                            torch.tensor(alpha_clamped / (1.0 - alpha_clamped))
+                        )
+                        self._logit_alpha.weight.data[user_id, 0] = logit_val
+        else:
+            nn.init.zeros_(self._logit_alpha.weight)
+
+        device = next(self.parameters()).device
+        self._logit_alpha = self._logit_alpha.to(device)
+
+    def get_per_user_alphas(
+        self, user_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """Get current learned alpha values for logging/analysis."""
+        if not self._per_user_alpha_enabled or self._logit_alpha is None:
+            return torch.tensor([self._alpha])
+        if user_ids is not None:
+            return torch.sigmoid(self._logit_alpha(user_ids)).squeeze(-1)
+        return torch.sigmoid(self._logit_alpha.weight).squeeze(-1)
+
+    def enable_item_perturbation(self, reg_lambda: float = 0.01) -> None:
+        """
+        Enable local item perturbation for dual-side personalization.
+
+        Effective item embedding: q_global[i] + perturbation[i]
+        """
+        self._item_perturbation_enabled = True
+        self._item_perturbation_reg = reg_lambda
+        self._item_perturbation = nn.Embedding(self.num_items, self.embedding_dim)
+        nn.init.zeros_(self._item_perturbation.weight)
+
+        device = next(self.parameters()).device
+        self._item_perturbation = self._item_perturbation.to(device)
+
+    def get_effective_item_embedding(self, item_ids: torch.Tensor) -> torch.Tensor:
+        """Get item embeddings with optional local perturbation."""
+        global_emb = self.item_embeddings(item_ids)
+        if self._item_perturbation_enabled and self._item_perturbation is not None:
+            return global_emb + self._item_perturbation(item_ids)
+        return global_emb
+
+    def get_item_perturbation_reg_loss(self) -> torch.Tensor:
+        """Compute L2 regularization loss on item perturbation."""
+        if not self._item_perturbation_enabled or self._item_perturbation is None:
+            return torch.tensor(0.0, device=next(self.parameters()).device)
+        return self._item_perturbation_reg * (
+            self._item_perturbation.weight.norm(2) ** 2
+        )
+
+    def get_local_embedding(self, user_ids: torch.Tensor) -> torch.Tensor:
+        """Get raw local user embeddings (before alpha blending)."""
+        return self.user_embeddings(user_ids)
+
     def get_effective_embedding(self, user_ids: torch.Tensor) -> torch.Tensor:
         """
         Get α-blended user embeddings (Level 1 personalization).
 
-        p̃_u = α * p_local + (1 - α) * p_global
+        Supports both scalar alpha (legacy) and per-user learned alpha.
+        p̃_u = α_u * p_local + (1 - α_u) * p_global
         """
         local_emb = self.user_embeddings(user_ids)
 
-        if self._global_prototype is None or self._alpha == 1.0:
+        if self._global_prototype is None:
             return local_emb
 
+        # Per-user learned alpha path
+        if self._per_user_alpha_enabled and self._logit_alpha is not None:
+            alpha = torch.sigmoid(self._logit_alpha(user_ids))  # (..., 1)
+            global_expanded = self._global_prototype.expand_as(local_emb)
+            return alpha * local_emb + (1.0 - alpha) * global_expanded
+
+        # Scalar alpha path (legacy)
+        if self._alpha == 1.0:
+            return local_emb
         if self._alpha == 0.0:
             return self._global_prototype.expand_as(local_emb)
 
@@ -456,6 +547,14 @@ class DualPersonalizedBPRMF(nn.Module):
             base = list(self._LOCAL_PARAMS_BASE)
         else:
             base = ['user_embeddings.weight']
+
+        # Add per-user alpha if enabled
+        if self._per_user_alpha_enabled and self._logit_alpha is not None:
+            base.append('_logit_alpha.weight')
+
+        # Add item perturbation if enabled
+        if self._item_perturbation_enabled and self._item_perturbation is not None:
+            base.append('_item_perturbation.weight')
 
         # Add MLP parameters (all are local)
         mlp_params = [name for name, _ in self.personal_mlp.named_parameters()]
@@ -522,7 +621,10 @@ class DualPersonalizedBPRMF(nn.Module):
             if saved_tensor.shape == current_tensor.shape:
                 current_state[name] = saved_tensor
                 loaded_keys.append(name)
-            elif name.startswith('user_') and saved_tensor.shape[0] < current_tensor.shape[0]:
+            elif (
+                name.startswith(('user_', '_logit_alpha'))
+                and saved_tensor.shape[0] < current_tensor.shape[0]
+            ):
                 # New users - partial load
                 num_saved = saved_tensor.shape[0]
                 current_state[name][:num_saved] = saved_tensor

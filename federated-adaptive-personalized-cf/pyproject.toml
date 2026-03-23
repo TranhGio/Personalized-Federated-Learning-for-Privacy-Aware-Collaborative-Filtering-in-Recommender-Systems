@@ -144,6 +144,25 @@ alpha-hc-completionist-coverage = 0.7       # f_coverage above this threshold
 alpha-hc-completionist-diversity = 0.3      # f_diversity below this threshold
 alpha-hc-completionist-bonus = 0.1          # Alpha bonus for completionists
 
+# =============================================================================
+# Next-Gen Personalization Techniques
+# =============================================================================
+# Three complementary techniques for beating SOTA (PFedRec NDCG@10=44.36%)
+
+# Per-User Learned Alpha: replaces client-level scalar with per-user gradient-refined alpha
+# Initialized from hierarchical_conditional heuristic, then refined by BPR gradient descent
+enable-per-user-alpha = false      # When true, each user gets own learnable alpha (LOCAL)
+
+# Dual-Side Item Perturbation: local adjustments to global item embeddings
+# q_effective[i] = q_global[i] + perturbation[i], perturbation is LOCAL
+enable-item-perturbation = false   # When true, adds learnable local offset to item embeddings
+item-perturbation-reg = 0.01      # L2 regularization on perturbation magnitudes
+
+# Contrastive Local-Global Alignment: InfoNCE auxiliary loss
+# L_total = L_BPR + lambda * L_contrastive
+contrastive-lambda = 0.0          # Weight for contrastive loss (0.0 = disabled)
+contrastive-tau = 0.1             # Temperature for InfoNCE similarity scaling
+
 # Global prototype aggregation
 prototype-momentum = 0.9           # EMA momentum: p_global = m * p_old + (1-m) * p_new
                                    # Higher = more stable but slower adaptation

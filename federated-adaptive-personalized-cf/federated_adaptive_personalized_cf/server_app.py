@@ -266,6 +266,12 @@ def main(grid: Grid, context: Context) -> None:
             "alpha_quantity_threshold": alpha_quantity_threshold,
             "alpha_quantity_temperature": alpha_quantity_temperature,
             "prototype_momentum": prototype_momentum,
+            # Next-Gen Personalization Techniques
+            "enable_per_user_alpha": context.run_config.get("enable-per-user-alpha", False),
+            "enable_item_perturbation": context.run_config.get("enable-item-perturbation", False),
+            "item_perturbation_reg": context.run_config.get("item-perturbation-reg", 0.01),
+            "contrastive_lambda": context.run_config.get("contrastive-lambda", 0.0),
+            "contrastive_tau": context.run_config.get("contrastive-tau", 0.1),
             # Early stopping config
             "early_stopping_enabled": early_stopping_enabled,
             "early_stopping_patience": early_stopping_patience,
@@ -659,6 +665,11 @@ def main(grid: Grid, context: Context) -> None:
             "quantity_threshold": alpha_quantity_threshold,
             "quantity_temperature": alpha_quantity_temperature,
             "prototype_momentum": prototype_momentum,
+            "enable_per_user_alpha": context.run_config.get("enable-per-user-alpha", False),
+            "enable_item_perturbation": context.run_config.get("enable-item-perturbation", False),
+            "item_perturbation_reg": context.run_config.get("item-perturbation-reg", 0.01),
+            "contrastive_lambda": context.run_config.get("contrastive-lambda", 0.0),
+            "contrastive_tau": context.run_config.get("contrastive-tau", 0.1),
         },
         "early_stopping": early_stopping_summary,
         "alpha_analysis": {
@@ -679,12 +690,27 @@ def main(grid: Grid, context: Context) -> None:
     results_dir = Path("../results/federated/personalized")
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build filename with dual model specific suffix
+    # Build filename with model config and next-gen technique suffixes
+    base_name = f"{model_type}_mf_split_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}"
     if model_type == "dual" and mlp_hidden_dims is not None:
         mlp_dims_str = "-".join(str(d) for d in mlp_hidden_dims)
-        results_filename = results_dir / f"{model_type}_mf_split_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}_{fusion_type}_mlp{mlp_dims_str}_results.json"
-    else:
-        results_filename = results_dir / f"{model_type}_mf_split_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}_results.json"
+        base_name += f"_{fusion_type}_mlp{mlp_dims_str}"
+
+    # Append next-gen technique tags for unique filenames
+    technique_tags = []
+    if context.run_config.get("enable-per-user-alpha", False):
+        technique_tags.append("pua")
+    if context.run_config.get("enable-item-perturbation", False):
+        reg = context.run_config.get("item-perturbation-reg", 0.01)
+        technique_tags.append(f"ip{reg}")
+    if context.run_config.get("contrastive-lambda", 0.0) > 0:
+        cl = context.run_config.get("contrastive-lambda", 0.0)
+        tau = context.run_config.get("contrastive-tau", 0.1)
+        technique_tags.append(f"cl{cl}_t{tau}")
+    if technique_tags:
+        base_name += "_" + "_".join(technique_tags)
+
+    results_filename = results_dir / f"{base_name}_results.json"
     with open(results_filename, 'w') as f:
         json.dump(results_data, f, indent=4)
 

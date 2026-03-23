@@ -3,7 +3,7 @@
 from .basic_mf import BasicMF
 from .bpr_mf import BPRMF
 from .dual_personalized_bpr_mf import DualPersonalizedBPRMF
-from .losses import MSELoss, BPRLoss
+from .losses import MSELoss, BPRLoss, InfoNCEContrastiveLoss
 from .adaptive_alpha import (
     AlphaConfig,
     HierarchicalConditionalAlphaConfig,
@@ -19,6 +19,7 @@ __all__ = [
     "DualPersonalizedBPRMF",
     "MSELoss",
     "BPRLoss",
+    "InfoNCEContrastiveLoss",
     "AlphaConfig",
     "HierarchicalConditionalAlphaConfig",
     "DataQuantityAlpha",

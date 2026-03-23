@@ -196,6 +196,31 @@ parameters:
     values: [0.8, 0.9, 0.95]
 
   # =============================================================================
+  # Next-Gen Personalization Techniques
+  # =============================================================================
+  # Per-User Learned Alpha
+  enable_per_user_alpha:
+    values: [true, false]
+
+  # Dual-Side Item Perturbation
+  enable_item_perturbation:
+    values: [true, false]
+
+  item_perturbation_reg:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+
+  # Contrastive Local-Global Alignment
+  contrastive_lambda:
+    values: [0.0, 0.01, 0.05, 0.1, 0.2, 0.5]
+
+  contrastive_tau:
+    distribution: uniform
+    min: 0.05
+    max: 0.5
+
+  # =============================================================================
   # Early Stopping (always enabled for sweeps)
   # =============================================================================
   early_stopping_patience:

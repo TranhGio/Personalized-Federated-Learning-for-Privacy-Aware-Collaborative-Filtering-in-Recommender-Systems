@@ -73,6 +73,13 @@ def get_default_config() -> Dict[str, Any]:
         "alpha_hc_completionist_diversity": 0.3,
         "alpha_hc_completionist_bonus": 0.1,
         "prototype_momentum": 0.9,
+        # Next-Gen Personalization Techniques
+        "enable_per_user_alpha": False,
+        "enable_item_perturbation": False,
+        "item_perturbation_reg": 0.01,
+        "contrastive_lambda": 0.0,
+        "contrastive_tau": 0.1,
+        # Early stopping
         "early_stopping_patience": 10,
         "early_stopping_metric": "sampled_ndcg@10",
         "early_stopping_min_delta": 0.001,
@@ -199,6 +206,13 @@ def build_run_config(config: Dict[str, Any], enable_wandb: bool = True) -> str:
         "alpha_hc_completionist_diversity": "alpha-hc-completionist-diversity",
         "alpha_hc_completionist_bonus": "alpha-hc-completionist-bonus",
         "prototype_momentum": "prototype-momentum",
+        # Next-Gen Personalization Techniques
+        "enable_per_user_alpha": "enable-per-user-alpha",
+        "enable_item_perturbation": "enable-item-perturbation",
+        "item_perturbation_reg": "item-perturbation-reg",
+        "contrastive_lambda": "contrastive-lambda",
+        "contrastive_tau": "contrastive-tau",
+        # Early stopping
         "early_stopping_patience": "early-stopping-patience",
         "early_stopping_metric": "early-stopping-metric",
         "early_stopping_min_delta": "early-stopping-min-delta",
@@ -227,8 +241,11 @@ def build_run_config(config: Dict[str, Any], enable_wandb: bool = True) -> str:
         if wandb_key in config:
             value = config[wandb_key]
 
+            # Handle boolean values (flwr expects lowercase true/false)
+            if isinstance(value, bool):
+                config_parts.append(f"{flwr_key}={str(value).lower()}")
             # Handle string values (need quotes)
-            if isinstance(value, str):
+            elif isinstance(value, str):
                 config_parts.append(f'{flwr_key}="{value}"')
             # Handle numeric values
             elif isinstance(value, float):

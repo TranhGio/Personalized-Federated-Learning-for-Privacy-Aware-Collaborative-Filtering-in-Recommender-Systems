@@ -1,0 +1,36 @@
+{
+  "os":  "Linux-6.17.0-14-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.11.14",
+  "startedAt":  "2026-02-23T04:34:38.688382Z",
+  "args":  [
+    "--app",
+    ".",
+    "--num-supernodes",
+    "5",
+    "--backend-config",
+    "{\"client-resources\": {\"num-cpus\": 6, \"num-gpus\": 0.2}}",
+    "--run-config",
+    "enable-per-user-alpha=true enable-item-perturbation=true contrastive-lambda=0.1"
+  ],
+  "program":  "/home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation",
+  "git":  {
+    "remote":  "git@github.com-vinh:TranhGio/Personalized-Federated-Learning-for-Privacy-Aware-Collaborative-Filtering-in-Recommender-Systems.git",
+    "commit":  "cb50ef10330050ae69a1ef8f887125b875386b30"
+  },
+  "email":  "tranhgio15@gmail.com",
+  "root":  "/home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-adaptive-personalized-cf",
+  "host":  "bes-aimachine-02",
+  "executable":  "/home/bes/miniconda3/envs/recsys_fl/bin/python3.11",
+  "cpu_count":  24,
+  "cpu_count_logical":  32,
+  "disk":  {
+    "/":  {
+      "total":  "982240026624",
+      "used":  "752952852480"
+    }
+  },
+  "memory":  {
+    "total":  "67119226880"
+  },
+  "writerId":  "cbuxakkbf9mcbr5kae7ivpdc73xfux5a"
+}

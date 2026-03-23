@@ -340,6 +340,8 @@ def train_bpr_mf(
     proximal_mu: float = 0.0,
     global_params: list = None,
     global_param_names: list = None,
+    contrastive_lambda: float = 0.0,
+    contrastive_tau: float = 0.1,
 ) -> float:
     """
     Train BPRMF model with BPR loss.
@@ -375,6 +377,13 @@ def train_bpr_mf(
     model.train()
 
     criterion = BPRLoss()
+
+    # Contrastive loss (only if enabled)
+    contrastive_loss_fn = None
+    if contrastive_lambda > 0:
+        from federated_adaptive_personalized_cf.models.losses import InfoNCEContrastiveLoss
+        contrastive_loss_fn = InfoNCEContrastiveLoss(temperature=contrastive_tau)
+
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     # Build user_rated_items dictionary for negative sampling
@@ -411,6 +420,18 @@ def train_bpr_mf(
 
             # Compute BPR loss
             loss = criterion(pos_scores, neg_scores)
+
+            # Contrastive local-global alignment
+            if contrastive_loss_fn is not None and hasattr(model, 'get_local_embedding'):
+                unique_users = torch.unique(user_ids)
+                local_emb = model.get_local_embedding(unique_users)
+                effective_emb = model.get_effective_embedding(unique_users)
+                cl_loss = contrastive_loss_fn(local_emb, effective_emb)
+                loss = loss + contrastive_lambda * cl_loss
+
+            # Item perturbation L2 regularization
+            if hasattr(model, 'get_item_perturbation_reg_loss'):
+                loss = loss + model.get_item_perturbation_reg_loss()
 
             # FedProx: Add proximal term if enabled (only for global params in split learning)
             if proximal_mu > 0 and global_params is not None:
@@ -498,6 +519,8 @@ def train(
             proximal_mu=kwargs.get('proximal_mu', 0.0),
             global_params=kwargs.get('global_params', None),
             global_param_names=kwargs.get('global_param_names', None),
+            contrastive_lambda=kwargs.get('contrastive_lambda', 0.0),
+            contrastive_tau=kwargs.get('contrastive_tau', 0.1),
         )
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
