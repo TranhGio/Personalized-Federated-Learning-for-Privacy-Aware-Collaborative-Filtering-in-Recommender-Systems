@@ -37,6 +37,7 @@ def load_data(
     batch_size: int = 256,
     data_dir: str = None,
     compute_stats: bool = True,
+    split_mode: str = "leave-one-out",
 ):
     """
     Load MovieLens 1M data for a specific partition.
@@ -45,10 +46,11 @@ def load_data(
         partition_id: ID of this client partition
         num_partitions: Total number of client partitions
         alpha: Dirichlet concentration parameter (0.5 recommended)
-        test_ratio: Ratio of test data (default: 0.2)
+        test_ratio: Ratio of test data (only used when split_mode="random")
         batch_size: Batch size for DataLoader
         data_dir: Directory for data storage (defaults to project root data/)
         compute_stats: Whether to compute user statistics for adaptive alpha
+        split_mode: "leave-one-out" (NCF protocol) or "random"
 
     Returns:
         Tuple of (trainloader, testloader) if compute_stats=False
@@ -63,6 +65,7 @@ def load_data(
         batch_size=batch_size,
         data_dir=data_dir,
         compute_stats=compute_stats,
+        split_mode=split_mode,
     )
 
     # Ensure user_stats is a dict (None -> {})
@@ -905,6 +908,7 @@ def evaluate_ranking_sampled(
     device: str,
     k_values: Optional[List[int]] = None,
     num_negatives: int = 99,
+    seed: int = 42,
 ) -> Dict[str, float]:
     """
     Ranking evaluation with leave-one-out and negative sampling.
@@ -925,12 +929,14 @@ def evaluate_ranking_sampled(
         device: Device ('cuda' or 'cpu')
         k_values: List of K values to evaluate (default: [5, 10, 20])
         num_negatives: Number of negative samples per positive (default: 99)
+        seed: Random seed for reproducible negative sampling (default: 42)
 
     Returns:
         Dictionary of sampled ranking metrics with keys like:
         - 'sampled_hr@10', 'sampled_ndcg@10', etc.
     """
     import random
+    random.seed(seed)
 
     if k_values is None:
         k_values = [5, 10, 20]
@@ -954,8 +960,8 @@ def evaluate_ranking_sampled(
         items = batch['item'].numpy()
         for u, i in zip(users, items):
             if u not in user_test_items:
-                user_test_items[u] = set()
-            user_test_items[u].add(i)
+                user_test_items[u] = []
+            user_test_items[u].append(i)
 
     # Get total number of items
     num_total_items = model.num_items if hasattr(model, 'num_items') else _dataset_cache.get('num_items', 3706)
@@ -971,18 +977,18 @@ def evaluate_ranking_sampled(
     num_users = 0
 
     with torch.no_grad():
-        for user_id in user_test_items.keys():
-            test_items = list(user_test_items[user_id])
+        for user_id in sorted(user_test_items.keys()):
+            test_items = user_test_items[user_id]
             train_items = user_train_items.get(user_id, set())
 
             if len(test_items) == 0:
                 continue
 
-            # Leave-one-out: pick one positive item (last one or random)
-            positive_item = test_items[-1]  # Use last test item
+            # Leave-one-out: pick one positive item
+            positive_item = test_items[0]  # Use first test item
 
             # Sample negative items (items user hasn't interacted with)
-            all_user_items = train_items | user_test_items[user_id]
+            all_user_items = train_items | set(test_items)
             negative_candidates = list(all_items - all_user_items)
 
             if len(negative_candidates) < num_negatives:

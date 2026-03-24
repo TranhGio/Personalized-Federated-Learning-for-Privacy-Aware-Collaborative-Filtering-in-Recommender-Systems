@@ -72,10 +72,12 @@ def train(msg: Message, context: Context):
     partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     alpha = context.run_config.get("alpha", 0.5)
+    split_mode = context.run_config.get("eval-split-mode", "leave-one-out")
     trainloader, _ = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=alpha,
+        split_mode=split_mode,
     )
 
     # Call the training function
@@ -129,10 +131,12 @@ def evaluate(msg: Message, context: Context):
     partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     alpha = context.run_config.get("alpha", 0.5)
+    split_mode = context.run_config.get("eval-split-mode", "leave-one-out")
     trainloader, testloader = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=alpha,
+        split_mode=split_mode,
     )
 
     # Call the evaluation function (rating prediction metrics)

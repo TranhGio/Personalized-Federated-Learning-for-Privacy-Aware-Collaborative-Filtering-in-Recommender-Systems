@@ -382,7 +382,7 @@ def create_train_test_split(
     seed: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split ratings into train and test sets.
+    Split ratings into train and test sets (random split).
 
     Args:
         ratings_df: DataFrame with ratings
@@ -402,6 +402,56 @@ def create_train_test_split(
     test_df = shuffled.iloc[split_idx:].copy()
 
     print(f"Train: {len(train_df)} ratings, Test: {len(test_df)} ratings")
+    return train_df, test_df
+
+
+def create_leave_one_out_split(
+    ratings_df: pd.DataFrame,
+    seed: int = 42,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Leave-one-out split: hold out each user's last interaction by timestamp.
+
+    Follows the NCF evaluation protocol (He et al., WWW 2017):
+    - For each user, the most recent interaction becomes the test item
+    - All other interactions become training data
+    - Users with only 1 interaction are kept in training only
+
+    Parameters
+    ----------
+    ratings_df : pd.DataFrame
+        DataFrame with columns [user_id, movie_id, rating, timestamp].
+    seed : int
+        Random seed (unused, kept for API consistency).
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame]
+        (train_df, test_df) where test_df has exactly 1 row per user.
+    """
+    # Sort by timestamp within each user
+    ratings_sorted = ratings_df.sort_values(["user_id", "timestamp"])
+
+    # Users with only 1 interaction cannot be split
+    user_counts = ratings_sorted.groupby("user_id").size()
+    users_with_multiple = set(user_counts[user_counts > 1].index)
+
+    # For each user with >1 interaction, take the last as test
+    test_indices = (
+        ratings_sorted[ratings_sorted["user_id"].isin(users_with_multiple)]
+        .groupby("user_id")
+        .tail(1)
+        .index
+    )
+
+    test_df = ratings_sorted.loc[test_indices].copy()
+    train_df = ratings_sorted.drop(test_indices).copy()
+
+    num_test_users = test_df["user_id"].nunique()
+    print(
+        f"Leave-one-out split: Train: {len(train_df)} ratings, "
+        f"Test: {len(test_df)} ratings ({num_test_users} users)"
+    )
     return train_df, test_df
 
 
@@ -436,6 +486,7 @@ def load_partition_data(
     batch_size: int = 32,
     data_dir: Optional[str] = None,
     compute_stats: bool = True,
+    split_mode: str = "leave-one-out",
 ):
     """
     Load and partition MovieLens 1M data for federated learning.
@@ -444,10 +495,11 @@ def load_partition_data(
         partition_id: ID of this client partition
         num_partitions: Total number of client partitions
         alpha: Dirichlet concentration parameter
-        test_ratio: Ratio of test data
+        test_ratio: Ratio of test data (only used when split_mode="random")
         batch_size: Batch size for DataLoader
         data_dir: Directory for data (defaults to project root data/)
         compute_stats: Whether to compute user stats for adaptive alpha
+        split_mode: "leave-one-out" (NCF protocol) or "random"
 
     Returns:
         Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
@@ -483,7 +535,10 @@ def load_partition_data(
         print(f"Computed stats for {len(user_stats)} users in partition {partition_id}")
 
     # Split into train/test
-    train_df, test_df = create_train_test_split(client_ratings, test_ratio=test_ratio)
+    if split_mode == "leave-one-out":
+        train_df, test_df = create_leave_one_out_split(client_ratings)
+    else:
+        train_df, test_df = create_train_test_split(client_ratings, test_ratio=test_ratio)
 
     # Create datasets
     train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
@@ -504,6 +559,7 @@ def load_full_data(
     batch_size: int = 256,
     data_dir: Optional[str] = None,
     compute_stats: bool = True,
+    split_mode: str = "leave-one-out",
 ):
     """
     Load full MovieLens 1M dataset for server-side evaluation.
@@ -513,10 +569,11 @@ def load_full_data(
     metrics after training.
 
     Args:
-        test_ratio: Ratio of test data (default: 0.2)
+        test_ratio: Ratio of test data (only used when split_mode="random")
         batch_size: Batch size for DataLoader
         data_dir: Directory for data (defaults to project root data/)
         compute_stats: Whether to compute user stats for adaptive alpha
+        split_mode: "leave-one-out" (NCF protocol) or "random"
 
     Returns:
         Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
@@ -541,7 +598,10 @@ def load_full_data(
         print(f"Computed stats for {len(user_stats)} users (full dataset)")
 
     # Split into train/test (using all data, not partitioned)
-    train_df, test_df = create_train_test_split(ratings_df, test_ratio=test_ratio)
+    if split_mode == "leave-one-out":
+        train_df, test_df = create_leave_one_out_split(ratings_df)
+    else:
+        train_df, test_df = create_train_test_split(ratings_df, test_ratio=test_ratio)
 
     # Create datasets
     train_dataset = MovieLensDataset(train_df, user2idx, item2idx)

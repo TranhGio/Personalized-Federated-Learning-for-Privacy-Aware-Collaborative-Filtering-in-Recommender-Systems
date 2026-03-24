@@ -318,11 +318,13 @@ def train(msg: Message, context: Context):
 
     # Load data with user stats for alpha computation
     dirichlet_alpha = context.run_config.get("alpha", 0.5)
+    split_mode = context.run_config.get("eval-split-mode", "leave-one-out")
     trainloader, _, user_stats = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=dirichlet_alpha,
         compute_stats=True,
+        split_mode=split_mode,
     )
 
     # Compute client alpha (weighted average of per-user alphas)
@@ -545,11 +547,13 @@ def evaluate(msg: Message, context: Context):
 
     # Load the data (both train and test for item popularity computation)
     dirichlet_alpha = context.run_config.get("alpha", 0.5)
+    split_mode = context.run_config.get("eval-split-mode", "leave-one-out")
     trainloader, testloader, user_stats = load_data(
         partition_id=partition_id,
         num_partitions=num_partitions,
         alpha=dirichlet_alpha,
         compute_stats=True,
+        split_mode=split_mode,
     )
 
     # Compute client alpha (weighted average of per-user alphas)

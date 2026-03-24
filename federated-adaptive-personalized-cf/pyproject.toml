@@ -177,10 +177,9 @@ user-group-dense = "100,10000"
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
 ranking-k-values = "10"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
 
-# Sampled evaluation (leave-one-out with N negatives)
-# This follows the evaluation protocol used in NCF, FedMF, PFedRec papers
-# for fair comparison with published baselines
-eval-num-negatives = 99           # Number of negative samples per positive (default: 99 as in NCF paper)
+# Evaluation protocol
+eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
+eval-num-negatives = 99            # Number of negative samples for sampled evaluation
 
 # =============================================================================
 # Early Stopping Configuration

@@ -483,9 +483,11 @@ def main(grid: Grid, context: Context) -> None:
     final_model.to(device)
 
     # Load full test data for evaluation
+    split_mode = context.run_config.get("eval-split-mode", "leave-one-out")
     trainloader, testloader, _, _, _, _ = load_full_data(
         test_ratio=0.2,
         batch_size=256,
+        split_mode=split_mode,
     )
 
     # Compute rating prediction metrics (RMSE, MAE)

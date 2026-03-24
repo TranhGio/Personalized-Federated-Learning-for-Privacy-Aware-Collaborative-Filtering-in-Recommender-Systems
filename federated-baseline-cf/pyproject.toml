@@ -65,8 +65,9 @@ alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
 ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
 
-# Sampled evaluation (NCF protocol - leave-one-out + N negatives)
-eval-num-negatives = 99
+# Evaluation protocol
+eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
+eval-num-negatives = 99            # Number of negative samples for sampled evaluation
 
 # Early stopping
 early-stopping-enabled = false
