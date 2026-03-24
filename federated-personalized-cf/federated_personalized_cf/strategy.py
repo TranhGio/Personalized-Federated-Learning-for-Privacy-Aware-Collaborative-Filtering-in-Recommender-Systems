@@ -8,7 +8,7 @@ The actual aggregation logic is inherited from Flower's FedAvg/FedProx.
 The split happens at the client level (clients only send global params).
 """
 
-from flwr.serverapp.strategy import FedAvg as BaseFedAvg, FedProx as BaseFedProx
+from flwr.server.strategy import FedAvg as BaseFedAvg, FedProx as BaseFedProx
 
 
 # Define which parameters are global (aggregated) vs local (private)
@@ -39,21 +39,21 @@ class SplitFedAvg(BaseFedAvg):
     The "split" happens in client_app.py which only sends global params.
     """
 
-    def __init__(self, fraction_train: float = 1.0, **kwargs):
+    def __init__(self, fraction_fit: float = 1.0, **kwargs):
         """
         Initialize SplitFedAvg strategy.
 
         Args:
-            fraction_train: Fraction of clients to use per round
+            fraction_fit: Fraction of clients to use per round
             **kwargs: Additional arguments passed to base FedAvg
         """
-        super().__init__(fraction_train=fraction_train, **kwargs)
+        super().__init__(fraction_fit=fraction_fit, **kwargs)
         self.global_param_keys = GLOBAL_PARAM_KEYS
         self.local_param_keys = LOCAL_PARAM_KEYS
         self._is_split_learning = True
 
     def __repr__(self) -> str:
-        return f"SplitFedAvg(fraction_train={self.fraction_train})"
+        return f"SplitFedAvg(fraction_fit={self.fraction_fit})"
 
 
 class SplitFedProx(BaseFedProx):
@@ -71,7 +71,7 @@ class SplitFedProx(BaseFedProx):
 
     def __init__(
         self,
-        fraction_train: float = 1.0,
+        fraction_fit: float = 1.0,
         proximal_mu: float = 0.01,
         **kwargs
     ):
@@ -79,12 +79,12 @@ class SplitFedProx(BaseFedProx):
         Initialize SplitFedProx strategy.
 
         Args:
-            fraction_train: Fraction of clients to use per round
+            fraction_fit: Fraction of clients to use per round
             proximal_mu: Proximal term coefficient (only applied to global params)
             **kwargs: Additional arguments passed to base FedProx
         """
         super().__init__(
-            fraction_train=fraction_train,
+            fraction_fit=fraction_fit,
             proximal_mu=proximal_mu,
             **kwargs
         )
@@ -93,7 +93,7 @@ class SplitFedProx(BaseFedProx):
         self._is_split_learning = True
 
     def __repr__(self) -> str:
-        return f"SplitFedProx(fraction_train={self.fraction_train}, proximal_mu={self.proximal_mu})"
+        return f"SplitFedProx(fraction_fit={self.fraction_fit}, proximal_mu={self.proximal_mu})"
 
 
 def extract_global_params(state_dict: dict) -> dict:

@@ -6,6 +6,9 @@ This server implements SPLIT ARCHITECTURE where:
 
 NOTE: Centralized evaluation is NOT possible in split learning since the server
 only has global parameters. Final metrics come from federated evaluation.
+
+Uses Flower's Grid message-passing API for federated orchestration with support
+for early stopping and sampled evaluation metrics.
 """
 
 import torch
@@ -14,26 +17,49 @@ import wandb
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
-from flwr.app import ArrayRecord, ConfigRecord, Context
+from flwr.common import (
+    FitRes,
+    ndarrays_to_parameters,
+    parameters_to_ndarrays,
+)
+from flwr.server.client_proxy import ClientProxy
+from flwr.common.record import ArrayRecord, ConfigRecord, MetricRecord, RecordDict
+from flwr.common.context import Context
 from flwr.serverapp import Grid, ServerApp
 
 from federated_personalized_cf.task import get_model
 from federated_personalized_cf.strategy import SplitFedAvg, SplitFedProx, GLOBAL_PARAM_KEYS
+from federated_personalized_cf.early_stopping import EarlyStopping
 
 # Create ServerApp
 app = ServerApp()
 
 
+class DummyClientProxy(ClientProxy):
+    """Minimal ClientProxy for strategy compatibility."""
+
+    def __init__(self, cid: str):
+        super().__init__(cid)
+
+    def get_properties(self, ins, timeout, group_id):
+        return None
+
+    def get_parameters(self, ins, timeout, group_id):
+        return None
+
+    def fit(self, ins, timeout, group_id):
+        return None
+
+    def evaluate(self, ins, timeout, group_id):
+        return None
+
+    def reconnect(self, ins, timeout, group_id):
+        return None
+
+
 def weighted_average_metrics(metrics: List[Tuple[int, Dict[str, float]]]) -> Dict[str, float]:
     """
     Aggregate evaluation metrics from multiple clients using weighted average.
-
-    NOTE: This function is available for custom metric aggregation but is not
-    currently used. Flower's new ServerApp API handles metric aggregation
-    automatically based on num-examples.
-
-    This function aggregates both rating prediction metrics (RMSE, MAE) and
-    ranking metrics (Hit Rate, Precision, Recall, NDCG, MRR) across clients.
 
     Args:
         metrics: List of (num_examples, metrics_dict) tuples from each client
@@ -41,16 +67,13 @@ def weighted_average_metrics(metrics: List[Tuple[int, Dict[str, float]]]) -> Dic
     Returns:
         Dictionary of aggregated metrics
     """
-    # Calculate total number of examples
     total_examples = sum(num_examples for num_examples, _ in metrics)
 
     if total_examples == 0:
         return {}
 
-    # Aggregate metrics using weighted average
     aggregated = {}
 
-    # Get all metric keys from first client (assumes all clients report same metrics)
     if metrics:
         metric_keys = metrics[0][1].keys()
 
@@ -58,10 +81,15 @@ def weighted_average_metrics(metrics: List[Tuple[int, Dict[str, float]]]) -> Dic
             if key == "num-examples":
                 continue
 
-            # Weighted average: sum(metric * num_examples) / total_examples
+            # Only aggregate numeric values
+            first_value = metrics[0][1].get(key)
+            if not isinstance(first_value, (int, float)):
+                continue
+
             weighted_sum = sum(
                 metrics_dict.get(key, 0.0) * num_examples
                 for num_examples, metrics_dict in metrics
+                if isinstance(metrics_dict.get(key, 0.0), (int, float))
             )
             aggregated[key] = weighted_sum / total_examples
 
@@ -94,21 +122,17 @@ def print_evaluation_metrics(round_num: int, metrics: Dict[str, float], context:
     # Ranking metrics
     enable_ranking = context.run_config.get("enable-ranking-eval", True)
     if enable_ranking:
-        # Parse K values from comma-separated string
         k_values_str = context.run_config.get("ranking-k-values", "5,10,20")
         k_values = [int(k.strip()) for k in k_values_str.split(",")]
 
-        # Check if we have any ranking metrics
         has_ranking = any(f"hit_rate@{k}" in metrics for k in k_values)
 
         if has_ranking:
             print("\n🎯 Ranking Metrics:")
 
-            # MRR (not K-dependent)
             if "mrr" in metrics:
                 print(f"  MRR:       {metrics['mrr']:.4f}")
 
-            # Metrics for each K value
             for k in sorted(k_values):
                 print(f"\n  @ K={k}:")
                 if f"hit_rate@{k}" in metrics:
@@ -124,7 +148,7 @@ def print_evaluation_metrics(round_num: int, metrics: Dict[str, float], context:
                 if f"map@{k}" in metrics:
                     print(f"    MAP:        {metrics[f'map@{k}']:.4f}")
 
-            # Diversity/Popularity metrics (only for first K value to avoid repetition)
+            # Diversity/Popularity metrics
             k = sorted(k_values)[0]
             has_diversity = any(f"{m}@{k}" in metrics for m in ['coverage', 'novelty'])
             if has_diversity:
@@ -135,6 +159,23 @@ def print_evaluation_metrics(round_num: int, metrics: Dict[str, float], context:
                         print(f"    Coverage:   {metrics[f'coverage@{k}']:.4f}")
                     if f"novelty@{k}" in metrics:
                         print(f"    Novelty:    {metrics[f'novelty@{k}']:.4f}")
+
+        # Sampled ranking metrics (leave-one-out with N negatives)
+        has_sampled = any(f"sampled_hr@{k}" in metrics for k in k_values)
+        if has_sampled:
+            num_neg = int(metrics.get('sampled_num_negatives', 99))
+            print(f"\n🔬 Sampled Ranking Metrics (leave-one-out + {num_neg} negatives):")
+            print("  (For fair comparison with NCF, FedMF, PFedRec baselines)")
+
+            if "sampled_mrr" in metrics:
+                print(f"\n  MRR:       {metrics['sampled_mrr']:.4f}")
+
+            for k in sorted(k_values):
+                print(f"\n  @ K={k}:")
+                if f"sampled_hr@{k}" in metrics:
+                    print(f"    Hit Rate:   {metrics[f'sampled_hr@{k}']:.4f}")
+                if f"sampled_ndcg@{k}" in metrics:
+                    print(f"    NDCG:       {metrics[f'sampled_ndcg@{k}']:.4f}")
 
     print(f"\n{'='*70}\n")
 
@@ -155,6 +196,24 @@ def main(grid: Grid, context: Context) -> None:
     strategy_name: str = context.run_config.get("strategy", "fedavg").lower()
     proximal_mu: float = context.run_config.get("proximal-mu", 0.0)
 
+    # Early stopping configuration
+    early_stopping_enabled = context.run_config.get("early-stopping-enabled", False)
+    early_stopping_patience = context.run_config.get("early-stopping-patience", 10)
+    early_stopping_metric = context.run_config.get("early-stopping-metric", "sampled_ndcg@10")
+    early_stopping_mode = context.run_config.get("early-stopping-mode", "max")
+    early_stopping_min_delta = context.run_config.get("early-stopping-min-delta", 0.001)
+
+    early_stopper = None
+    if early_stopping_enabled:
+        early_stopper = EarlyStopping(
+            patience=early_stopping_patience,
+            metric_name=early_stopping_metric,
+            mode=early_stopping_mode,
+            min_delta=early_stopping_min_delta,
+            verbose=True,
+        )
+        print(f"  Early stopping: Enabled (patience={early_stopping_patience}, metric={early_stopping_metric})")
+
     # Initialize Weights & Biases if enabled
     wandb_enabled = context.run_config.get("wandb-enabled", False)
     if wandb_enabled:
@@ -170,8 +229,11 @@ def main(grid: Grid, context: Context) -> None:
             "lr": lr,
             "weight_decay": context.run_config.get("weight-decay", 1e-5),
             "alpha": context.run_config.get("alpha", 0.5),
+            "early_stopping_enabled": early_stopping_enabled,
+            "early_stopping_patience": early_stopping_patience,
+            "early_stopping_metric": early_stopping_metric,
         }
-        wandb_project = context.run_config.get("wandb-project", "federated-cf")
+        wandb_project = context.run_config.get("wandb-project", "federated-personalized-cf")
         wandb_entity = context.run_config.get("wandb-entity", "")
         wandb_run_name = context.run_config.get("wandb-run-name", "")
         wandb.init(
@@ -201,21 +263,19 @@ def main(grid: Grid, context: Context) -> None:
     arrays = ArrayRecord(global_model.get_global_parameters())
 
     # Initialize strategy based on configuration
-    # Note: Flower automatically does weighted averaging of metrics based on num-examples
-    # Using Split strategies that only aggregate global params (item embeddings)
     if strategy_name == "fedprox":
         strategy = SplitFedProx(
-            fraction_train=fraction_train,
+            fraction_fit=fraction_train,
             proximal_mu=proximal_mu,
         )
         print(f"  Strategy: SplitFedProx (proximal_mu={proximal_mu})")
     else:
         strategy = SplitFedAvg(
-            fraction_train=fraction_train,
+            fraction_fit=fraction_train,
         )
         print(f"  Strategy: SplitFedAvg")
 
-    # Start strategy, run FedAvg for `num_rounds`
+    # Start federated learning
     print(f"\nStarting Federated Learning with {num_rounds} rounds...")
     print(f"  Clients per round: {fraction_train * 100:.0f}%")
     print(f"  Ranking evaluation: {'Enabled' if context.run_config.get('enable-ranking-eval', True) else 'Disabled'}")
@@ -223,82 +283,228 @@ def main(grid: Grid, context: Context) -> None:
         k_values_str = context.run_config.get('ranking-k-values', "5,10,20")
         print(f"  K values: {k_values_str}")
 
-    result = strategy.start(
-        grid=grid,
-        initial_arrays=arrays,
-        train_config=ConfigRecord({"lr": lr, "proximal_mu": proximal_mu}),
-        num_rounds=num_rounds,
-    )
+    # =========================================================================
+    # FEDERATED TRAINING LOOP using Grid's message-passing API
+    # =========================================================================
+    train_metrics_history: Dict[int, Dict] = {}
+    eval_metrics_history: Dict[int, Dict] = {}
 
-    # Log per-round metrics to wandb
-    if wandb_enabled:
-        # Combine training and evaluation metrics for each round into a single log call
-        # (wandb requires monotonically increasing steps)
-        all_rounds = set(result.train_metrics_clientapp.keys()) | set(result.evaluate_metrics_clientapp.keys())
-        for round_num in sorted(all_rounds):
-            round_metrics = {"round": round_num}
+    for round_num in range(1, num_rounds + 1):
+        print(f"\n{'='*50}")
+        print(f"Round {round_num}/{num_rounds}")
+        print(f"{'='*50}")
 
-            # Add training metrics for this round
-            if round_num in result.train_metrics_clientapp:
-                for key, value in result.train_metrics_clientapp[round_num].items():
-                    round_metrics[f"train/{key}"] = value
+        train_config = ConfigRecord({"lr": lr, "proximal_mu": proximal_mu})
 
-            # Add evaluation metrics for this round
-            if round_num in result.evaluate_metrics_clientapp:
-                for key, value in result.evaluate_metrics_clientapp[round_num].items():
-                    round_metrics[f"eval/{key}"] = value
+        # Get all node IDs and select a fraction for this round
+        node_ids = list(grid.get_node_ids())
+        num_selected = max(1, int(len(node_ids) * fraction_train))
+        selected_node_ids = node_ids[:num_selected]
 
-            wandb.log(round_metrics, step=round_num)
+        print(f"  Selected {num_selected}/{len(node_ids)} clients for training")
+
+        # =====================================================================
+        # TRAINING PHASE
+        # =====================================================================
+        train_messages = []
+        for node_id in selected_node_ids:
+            content = RecordDict({
+                "arrays": arrays,
+                "config": train_config,
+            })
+            msg = grid.create_message(
+                content=content,
+                message_type="train",
+                dst_node_id=node_id,
+                group_id=f"train_round_{round_num}",
+            )
+            train_messages.append(msg)
+
+        train_responses = list(grid.send_and_receive(train_messages))
+
+        # Parse training responses and aggregate
+        fit_results = []
+        round_train_metrics = []
+
+        for response in train_responses:
+            if response.has_error():
+                print(f"  Warning: Client {response.metadata.src_node_id} returned error")
+                continue
+
+            resp_arrays = response.content.get("arrays", ArrayRecord())
+            resp_metrics = response.content.get("metrics", MetricRecord())
+
+            metrics_dict = dict(resp_metrics) if resp_metrics else {}
+            num_examples = int(metrics_dict.get("num-examples", 1))
+
+            # Create FitRes for strategy aggregation
+            parameters = ndarrays_to_parameters(list(resp_arrays.to_torch_state_dict().values()))
+            fit_res = FitRes(
+                status=None,
+                parameters=parameters,
+                num_examples=num_examples,
+                metrics=metrics_dict,
+            )
+
+            client_id = str(response.metadata.src_node_id)
+            client_proxy = DummyClientProxy(client_id)
+            fit_results.append((client_proxy, fit_res))
+
+            round_train_metrics.append((num_examples, metrics_dict))
+
+        # Aggregate training results using strategy
+        if fit_results:
+            aggregated_params, agg_metrics = strategy.aggregate_fit(
+                server_round=round_num,
+                results=fit_results,
+                failures=[],
+            )
+
+            # Update global parameters for next round
+            if aggregated_params is not None:
+                param_ndarrays = parameters_to_ndarrays(aggregated_params)
+                param_keys = list(arrays.to_torch_state_dict().keys())
+                new_state_dict = {k: torch.from_numpy(v) for k, v in zip(param_keys, param_ndarrays)}
+                arrays = ArrayRecord(new_state_dict)
+
+            # Aggregate training metrics
+            train_metrics_history[round_num] = weighted_average_metrics(round_train_metrics)
+
+            train_loss = train_metrics_history[round_num].get('train_loss', 'N/A')
+            if isinstance(train_loss, (int, float)):
+                print(f"  Training loss: {train_loss:.4f}")
+
+        # =====================================================================
+        # EVALUATION PHASE
+        # =====================================================================
+        eval_messages = []
+        for node_id in selected_node_ids:
+            eval_config = ConfigRecord({"lr": lr})
+            content = RecordDict({
+                "arrays": arrays,
+                "config": eval_config,
+            })
+            msg = grid.create_message(
+                content=content,
+                message_type="evaluate",
+                dst_node_id=node_id,
+                group_id=f"eval_round_{round_num}",
+            )
+            eval_messages.append(msg)
+
+        eval_responses = list(grid.send_and_receive(eval_messages))
+
+        # Parse evaluation responses
+        round_eval_metrics = []
+        for response in eval_responses:
+            if response.has_error():
+                continue
+
+            resp_metrics = response.content.get("metrics", MetricRecord())
+            metrics_dict = dict(resp_metrics) if resp_metrics else {}
+            num_examples = int(metrics_dict.get("num-examples", 1))
+            round_eval_metrics.append((num_examples, metrics_dict))
+
+        # Aggregate evaluation metrics
+        if round_eval_metrics:
+            eval_metrics_history[round_num] = weighted_average_metrics(round_eval_metrics)
+
+            # Print key metrics
+            rmse = eval_metrics_history[round_num].get('rmse', 'N/A')
+            ndcg10 = eval_metrics_history[round_num].get('ndcg@10', 'N/A')
+            s_ndcg10 = eval_metrics_history[round_num].get('sampled_ndcg@10', 'N/A')
+            rmse_str = f"{rmse:.4f}" if isinstance(rmse, (int, float)) else str(rmse)
+            ndcg10_str = f"{ndcg10:.4f}" if isinstance(ndcg10, (int, float)) else str(ndcg10)
+            s_ndcg10_str = f"{s_ndcg10:.4f}" if isinstance(s_ndcg10, (int, float)) else str(s_ndcg10)
+            print(f"  RMSE: {rmse_str}")
+            print(f"  NDCG@10: {ndcg10_str}")
+            print(f"  Sampled NDCG@10: {s_ndcg10_str}")
+
+        # Log to wandb
+        if wandb_enabled:
+            round_log = {"round": round_num}
+            for key, value in train_metrics_history.get(round_num, {}).items():
+                if isinstance(value, (int, float)):
+                    round_log[f"train/{key}"] = value
+            for key, value in eval_metrics_history.get(round_num, {}).items():
+                if isinstance(value, (int, float)):
+                    round_log[f"eval/{key}"] = value
+            wandb.log(round_log, step=round_num)
+
+        # Check early stopping
+        if early_stopper is not None and round_eval_metrics:
+            current_eval_metrics = eval_metrics_history.get(round_num, {})
+            if early_stopper.step(round_num, current_eval_metrics):
+                print(f"\n⏹ Training stopped early at round {round_num}")
+                if wandb_enabled:
+                    wandb.log({
+                        "early_stopped": True,
+                        "early_stopped_round": round_num,
+                        "best_round": early_stopper.best_round,
+                        f"best_{early_stopping_metric}": early_stopper.best_metric,
+                    }, step=round_num)
+                break
+
+    # Determine actual rounds completed
+    actual_rounds = round_num if early_stopper and early_stopper.state.should_stop else num_rounds
 
     # Print training complete message
     print("\n" + "="*70)
     print("FEDERATED TRAINING COMPLETE")
     print("="*70)
-    print(f"Total rounds completed: {num_rounds}")
+    print(f"Total rounds completed: {actual_rounds}/{num_rounds}")
+    if early_stopper and early_stopper.state.should_stop:
+        print(f"Early stopping: Triggered at round {actual_rounds}")
+        print(f"Best {early_stopping_metric}: {early_stopper.best_metric:.4f} at round {early_stopper.best_round}")
     print("="*70)
 
     # =========================================================================
-    # FEDERATED EVALUATION: Use aggregated metrics from final round
+    # FEDERATED EVALUATION: Use aggregated metrics from best round
     # =========================================================================
     # NOTE: Centralized evaluation is NOT possible in split learning since the
     # server only has global parameters (item embeddings). User embeddings
     # remain on clients and are never sent to the server.
-    print("\n📊 Using federated evaluation metrics from final round...")
+    print("\n📊 Using federated evaluation metrics...")
     print("  (Centralized evaluation not possible in split learning)")
 
-    # Get final round metrics from federated evaluation
-    final_round_metrics = result.evaluate_metrics_clientapp.get(num_rounds, {})
-
-    if not final_round_metrics:
-        print("  Warning: No evaluation metrics from final round")
-        final_metrics = {}
+    # Use best round metrics if early stopping was active, otherwise final round
+    if early_stopper and early_stopper.best_round > 0:
+        best_round = early_stopper.best_round
+        print(f"  Using metrics from best round: {best_round}")
     else:
-        # Use federated metrics (already aggregated by Flower)
-        final_metrics = dict(final_round_metrics)
+        best_round = actual_rounds
+        print(f"  Using metrics from final round: {best_round}")
+
+    final_metrics = eval_metrics_history.get(best_round, {})
+
+    if not final_metrics:
+        print("  Warning: No evaluation metrics from selected round")
+        final_metrics = {}
 
     # Print evaluation results
-    print_evaluation_metrics(num_rounds, final_metrics, context)
+    print_evaluation_metrics(best_round, final_metrics, context)
 
     # Log final metrics to wandb
     if wandb_enabled:
-        # Log final metrics at step num_rounds + 1 (after all round metrics)
-        final_log = {"round": num_rounds + 1}
+        final_log = {"round": actual_rounds + 1}
         for key, value in final_metrics.items():
-            final_log[f"final/{key}"] = value
-        wandb.log(final_log, step=num_rounds + 1)
+            if isinstance(value, (int, float)):
+                final_log[f"final/{key}"] = value
+        wandb.log(final_log, step=actual_rounds + 1)
 
-        # Also add to summary for easy comparison in W&B dashboard
         for key, value in final_metrics.items():
-            wandb.run.summary[f"final/{key}"] = value
+            if isinstance(value, (int, float)):
+                wandb.run.summary[f"final/{key}"] = value
 
-    # Create results JSON structure similar to centralized results
+    # Create results JSON
     results_data = {
         "model_name": f"{model_type.upper()}_MF_Personalized_Split_{strategy_name.upper()}",
         "dataset": "ml-1m",
         "architecture": "split_learning",
         "federated_config": {
             "num_rounds": num_rounds,
-            "num_clients": 10,  # Adjust based on your config
+            "actual_rounds": actual_rounds,
+            "num_clients": len(list(grid.get_node_ids())),
             "fraction_train": fraction_train,
             "strategy": strategy_name,
             "proximal_mu": proximal_mu,
@@ -310,9 +516,10 @@ def main(grid: Grid, context: Context) -> None:
             "global_params": ["item_embeddings", "item_bias", "global_bias"],
             "local_params": ["user_embeddings", "user_bias"],
         },
+        "early_stopping": early_stopper.get_summary() if early_stopper else None,
         "timestamp": datetime.now().isoformat(),
         "final_metrics": final_metrics,
-        "training_rounds": num_rounds,
+        "training_rounds": actual_rounds,
     }
 
     # Save results to JSON file (in personalized subfolder)
@@ -325,13 +532,6 @@ def main(grid: Grid, context: Context) -> None:
         json.dump(results_data, f, indent=4)
 
     print(f"Results saved to: {results_filename.resolve()}")
-
-    # Optionally save model weights (commented out by default)
-    # print("\nSaving final model weights...")
-    # state_dict = result.arrays.to_torch_state_dict()
-    # model_filename = results_dir / f"final_model_{model_type}_d{embedding_dim}.pt"
-    # torch.save(state_dict, model_filename)
-    # print(f"Model saved to: {model_filename.resolve()}")
 
     # Finish wandb run
     if wandb_enabled:

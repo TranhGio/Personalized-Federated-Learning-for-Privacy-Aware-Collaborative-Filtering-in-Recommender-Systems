@@ -7,7 +7,7 @@ from flwr.clientapp import ClientApp
 from federated_baseline_cf.task import get_model, load_data
 from federated_baseline_cf.task import test as test_fn
 from federated_baseline_cf.task import train as train_fn
-from federated_baseline_cf.task import evaluate_ranking
+from federated_baseline_cf.task import evaluate_ranking, evaluate_ranking_sampled
 
 # Flower ClientApp
 app = ClientApp()
@@ -169,6 +169,21 @@ def evaluate(msg: Message, context: Context):
 
         # Add ranking metrics to results
         result_metrics.update(ranking_metrics)
+
+        # Compute SAMPLED ranking metrics (leave-one-out with N negatives)
+        # This follows the evaluation protocol used in NCF, FedMF, PFedRec papers
+        num_negatives = context.run_config.get("eval-num-negatives", 99)
+        sampled_metrics = evaluate_ranking_sampled(
+            model=model,
+            testloader=testloader,
+            trainloader=trainloader,
+            device=device,
+            k_values=k_values,
+            num_negatives=num_negatives,
+        )
+
+        # Add sampled ranking metrics to results
+        result_metrics.update(sampled_metrics)
 
     metric_record = MetricRecord(result_metrics)
     content = RecordDict({"metrics": metric_record})

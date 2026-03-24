@@ -65,6 +65,16 @@ alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
 ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, NDCG metrics (comma-separated)
 
+# Sampled evaluation (NCF protocol - leave-one-out + N negatives)
+eval-num-negatives = 99
+
+# Early stopping
+early-stopping-enabled = false
+early-stopping-patience = 10
+early-stopping-metric = "sampled_ndcg@10"
+early-stopping-mode = "max"
+early-stopping-min-delta = 0.001
+
 # Weights & Biases (wandb) configuration
 wandb-enabled = true              # Enable/disable wandb logging
 wandb-project = "federated-personalized-cf"    # wandb project name

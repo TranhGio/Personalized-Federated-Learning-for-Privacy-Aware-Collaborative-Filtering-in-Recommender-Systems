@@ -84,3 +84,33 @@ When compacting, always preserve:
 - Any running W&B sweep IDs or experiment tracking info
 - The current branch name and recent commits
 - Key metric values discussed (NDCG@10, Hit Rate@K, etc.)
+
+
+## Paper Knowledge Base
+When you need to understand prior work, reference implementations, or architectural decisions from related papers:
+1. Read `Papers/digested/_INDEX.md` for an overview of all digested papers
+2. Read the specific `Papers/digested/<paper_id>.md` for implementation details
+3. Only read raw PDFs in `Papers/raw/` when you need to verify exact details not captured in the digest
+
+Slash commands for paper management:
+- `/digest-paper Papers/raw/<filename>.pdf` — digest a single method/technique paper
+- `/digest-survey Papers/raw/<filename>.pdf` — digest a survey/review paper (different structure: extracts taxonomies, comparative tables, research gaps)
+- `/batch-digest` — process all undigested PDFs in Papers/raw/
+
+How to decide: If the paper proposes ONE new method → `/digest-paper`. If it reviews/surveys MANY methods → `/digest-survey`.
+
+## Notation Convention (use consistently across ALL code and docs)
+- `w` or `global_model` — server global model parameters
+- `theta_i` or `personal_model_i` — client i's personalized model
+- `D_i` — client i's local dataset
+- `K` — number of local training steps per round
+- `R` — total number of FL communication rounds
+- `N` — total number of clients
+- `C` — client sampling fraction per round
+
+## Code Standards
+- Type hints on all function signatures
+- Docstrings on all public functions (NumPy style)
+- Config via dataclasses, not loose dicts
+- Experiments reproducible via seed + config file
+- Log all metrics to CSV + console per round

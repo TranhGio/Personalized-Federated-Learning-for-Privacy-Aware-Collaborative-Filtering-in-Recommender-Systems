@@ -3,7 +3,7 @@
 import torch
 import torch.optim as optim
 import numpy as np
-from typing import Dict, Tuple, Set, Optional
+from typing import Dict, List, Tuple, Set, Optional
 from collections import Counter
 
 from federated_personalized_cf.dataset import load_partition_data
@@ -733,5 +733,163 @@ def evaluate_ranking(
 
     # MRR (not K-dependent)
     results['mrr'] = float(np.mean(mrr_scores)) if mrr_scores else 0.0
+
+    return results
+
+
+def evaluate_ranking_sampled(
+    model,
+    testloader,
+    trainloader,
+    device: str,
+    k_values: Optional[List[int]] = None,
+    num_negatives: int = 99,
+) -> Dict[str, float]:
+    """
+    Ranking evaluation with leave-one-out and negative sampling.
+
+    This follows the evaluation protocol used in NCF, FedMF, PFedRec papers:
+    - For each user, take ONE positive test item
+    - Sample N random negatives (items user hasn't interacted with)
+    - Rank the 1 positive among (1 + N) candidates
+    - Compute HR@K, NDCG@K on this smaller candidate pool
+
+    This is easier than full-rank evaluation and allows fair comparison
+    with published federated recommendation baselines.
+
+    Args:
+        model: Model instance (BasicMF or BPRMF)
+        testloader: Test data loader
+        trainloader: Training data loader (to get user's train items)
+        device: Device ('cuda' or 'cpu')
+        k_values: List of K values to evaluate (default: [5, 10, 20])
+        num_negatives: Number of negative samples per positive (default: 99)
+
+    Returns:
+        Dictionary of sampled ranking metrics with keys like:
+        - 'sampled_hr@10', 'sampled_ndcg@10', etc.
+    """
+    import random
+
+    if k_values is None:
+        k_values = [5, 10, 20]
+
+    model.to(device)
+    model.eval()
+
+    # Collect all items each user has interacted with (train + test)
+    user_train_items = {}
+    for batch in trainloader:
+        users = batch['user'].numpy()
+        items = batch['item'].numpy()
+        for u, i in zip(users, items):
+            if u not in user_train_items:
+                user_train_items[u] = set()
+            user_train_items[u].add(i)
+
+    user_test_items = {}
+    for batch in testloader:
+        users = batch['user'].numpy()
+        items = batch['item'].numpy()
+        for u, i in zip(users, items):
+            if u not in user_test_items:
+                user_test_items[u] = set()
+            user_test_items[u].add(i)
+
+    # Get total number of items
+    num_total_items = model.num_items if hasattr(model, 'num_items') else _dataset_cache.get('num_items', 3706)
+    all_items = set(range(num_total_items))
+
+    # Initialize metric accumulators for each K
+    metrics_per_k = {k: {
+        'hits': 0,
+        'ndcgs': [],
+    } for k in k_values}
+
+    mrr_scores = []
+    num_users = 0
+
+    with torch.no_grad():
+        for user_id in user_test_items.keys():
+            test_items = list(user_test_items[user_id])
+            train_items = user_train_items.get(user_id, set())
+
+            if len(test_items) == 0:
+                continue
+
+            # Leave-one-out: pick one positive item (last one or random)
+            positive_item = test_items[-1]  # Use last test item
+
+            # Sample negative items (items user hasn't interacted with)
+            all_user_items = train_items | user_test_items[user_id]
+            negative_candidates = list(all_items - all_user_items)
+
+            if len(negative_candidates) < num_negatives:
+                # Not enough negatives, use all available
+                negative_items = negative_candidates
+            else:
+                negative_items = random.sample(negative_candidates, num_negatives)
+
+            # Candidate pool: 1 positive + N negatives
+            candidate_items = [positive_item] + negative_items
+
+            # Get scores for all candidates (batch processing for efficiency)
+            user_tensor = torch.tensor([user_id] * len(candidate_items), dtype=torch.long).to(device)
+            item_tensor = torch.tensor(candidate_items, dtype=torch.long).to(device)
+
+            # Use model.predict() which calls forward() with neg_item_ids=None
+            candidate_scores = model.predict(user_tensor, item_tensor)
+
+            # Create (item_id, score) pairs
+            scores = [(item_id, candidate_scores[i].item()) for i, item_id in enumerate(candidate_items)]
+
+            # Sort by score (descending)
+            scores.sort(key=lambda x: x[1], reverse=True)
+            ranked_items = [item_id for item_id, _ in scores]
+
+            # Find rank of positive item
+            try:
+                positive_rank = ranked_items.index(positive_item) + 1  # 1-indexed
+            except ValueError:
+                positive_rank = len(ranked_items) + 1
+
+            # Compute MRR
+            mrr = 1.0 / positive_rank
+            mrr_scores.append(mrr)
+
+            # Compute metrics for each K
+            for k in k_values:
+                top_k_items = ranked_items[:k]
+
+                # Hit@K: is positive item in top-K?
+                if positive_item in top_k_items:
+                    metrics_per_k[k]['hits'] += 1
+
+                # NDCG@K: with single relevant item
+                if positive_item in top_k_items:
+                    pos_in_topk = top_k_items.index(positive_item)
+                    ndcg = 1.0 / np.log2(pos_in_topk + 2)  # +2 because index is 0-based
+                else:
+                    ndcg = 0.0
+                metrics_per_k[k]['ndcgs'].append(ndcg)
+
+            num_users += 1
+
+    # Aggregate metrics with 'sampled_' prefix
+    results = {}
+
+    for k in k_values:
+        # Hit Rate@K (sampled)
+        results[f'sampled_hr@{k}'] = metrics_per_k[k]['hits'] / num_users if num_users > 0 else 0.0
+
+        # NDCG@K (sampled)
+        results[f'sampled_ndcg@{k}'] = float(np.mean(metrics_per_k[k]['ndcgs'])) if metrics_per_k[k]['ndcgs'] else 0.0
+
+    # MRR (sampled)
+    results['sampled_mrr'] = float(np.mean(mrr_scores)) if mrr_scores else 0.0
+
+    # Add metadata
+    results['sampled_num_negatives'] = num_negatives
+    results['sampled_num_users'] = num_users
 
     return results
