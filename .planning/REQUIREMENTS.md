@@ -128,23 +128,66 @@ Deferred beyond this thesis cycle.
 
 ## Traceability
 
-Populated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FND-01 – FND-07 | — | Pending |
-| BSL-01 – BSL-08 | — | Pending |
-| PFR-01 – PFR-09 | — | Pending |
-| PSN-01 – PSN-07 | — | Pending |
-| ADP-01 – ADP-08 | — | Pending |
-| EVL-01 – EVL-06 | — | Pending |
-| THS-01 – THS-07 | — | Pending |
+| FND-01 | Phase 1: Foundation Contract | Pending |
+| FND-02 | Phase 1: Foundation Contract | Pending |
+| FND-03 | Phase 1: Foundation Contract | Pending |
+| FND-04 | Phase 1: Foundation Contract | Pending |
+| FND-05 | Phase 1: Foundation Contract | Pending |
+| FND-06 | Phase 1: Foundation Contract | Pending |
+| FND-07 | Phase 1: Foundation Contract | Pending |
+| BSL-01 | Phase 2: Baseline Migration | Pending |
+| BSL-02 | Phase 2: Baseline Migration | Pending |
+| BSL-03 | Phase 2: Baseline Migration | Pending |
+| BSL-04 | Phase 2: Baseline Migration | Pending |
+| BSL-05 | Phase 2: Baseline Migration | Pending |
+| BSL-06 | Phase 2: Baseline Migration | Pending |
+| BSL-07 | Phase 2: Baseline Migration | Pending |
+| BSL-08 | Phase 2: Baseline Migration | Pending |
+| PSN-01 | Phase 3: Personalized Migration | Pending |
+| PSN-02 | Phase 3: Personalized Migration | Pending |
+| PSN-03 | Phase 3: Personalized Migration | Pending |
+| PSN-04 | Phase 3: Personalized Migration | Pending |
+| PSN-05 | Phase 3: Personalized Migration | Pending |
+| PSN-06 | Phase 3: Personalized Migration | Pending |
+| PSN-07 | Phase 3: Personalized Migration | Pending |
+| ADP-01 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-02 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-03 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-04 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-05 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-06 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-07 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-08 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| PFR-01 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-02 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-03 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-04 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-05 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-06 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-07 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-08 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-09 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| EVL-01 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-02 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-03 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-04 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-05 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-06 | Phase 6: Evaluation & Reporting Harness | Pending |
+| THS-01 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-02 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-03 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-04 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-05 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-06 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-07 | Phase 7: Thesis Evaluation Run | Pending |
 
 **Coverage:**
 - v1 requirements: 52 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 52 ⚠️ (expected — roadmapper step next)
+- Mapped to phases: 52 ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-19*
-*Last updated: 2026-04-19 after initial definition*
+*Last updated: 2026-04-19 after roadmap creation (traceability populated)*
