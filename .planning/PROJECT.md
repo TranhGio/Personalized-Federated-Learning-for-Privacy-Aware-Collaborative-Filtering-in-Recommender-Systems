@@ -97,6 +97,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 | Per-user-group breakdown (sparse/medium/dense) is a first-class reported metric | Thesis claim about the adaptive method is strongest on sparse users; overall NDCG alone can hide the effect | — Pending |
 | Centralized baselines (SVD, centralized NCF) remain as-is | They are already correct; re-running under LOO+99neg adds noise without changing the story | — Pending |
 | DP / privacy quantification deferred to future work | Scope containment for a soft-deadline thesis; utility under cross-device is the primary novelty | — Pending |
+| Research agents route through the Codex MCP server | User preference: Codex MCP is already configured in this session and gives better research outputs than web search alone | — Pending |
 
 ## Evolution
 
