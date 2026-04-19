@@ -107,11 +107,18 @@ options.num-supernodes = 6040
 
 # GPU-enabled simulation federation (requires PyTorch with CUDA support)
 # Run with: flwr run . local-sim-gpu
+#
+# Per-client resource allocation is tuned for cross-device simulation (N=6040, BPR-MF).
+# BPR-MF per-client footprint: ~15-50 MB VRAM (user_emb 3MB + item_emb 2MB + Adam state + batch activations).
+# With num-gpus=0.05, ~20 concurrent clients fit on a single consumer GPU with 8+ GB VRAM.
+# num-cpus=1 keeps the CPU scheduler from bottlenecking (one thread per client for dataloader/negsampling).
+# For larger models (e.g. deep NCF, embedding-dim=256), raise num-gpus to 0.1-0.2.
+# For a lighter-weight smoke test on a low-end GPU, pass `fraction-train=0.01` via --run-config.
 [tool.flwr.federations.local-sim-gpu]
 options.num-supernodes = 6040
 # Cross-device default (BSL-01). Opt into cross-silo via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"
-options.backend.client-resources.num-cpus = 12
-options.backend.client-resources.num-gpus = 0.2
+options.backend.client-resources.num-cpus = 1
+options.backend.client-resources.num-gpus = 0.05
 
 # Remote federation example for use with SuperLink
 [tool.flwr.federations.remote-federation]
