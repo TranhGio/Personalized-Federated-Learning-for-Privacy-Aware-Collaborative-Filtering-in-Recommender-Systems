@@ -8,18 +8,19 @@ source:
   - 02-baseline-migration-04-SUMMARY.md
   - 02-baseline-migration-VERIFICATION.md (human_verification items)
 started: 2026-04-19T15:45:00Z
-updated: 2026-04-19T16:10:00Z
+updated: 2026-04-19T16:25:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: End-to-end via `scripts/run.py` launcher (GPU)
+number: 3
+name: Determinism — same seed, byte-identical client selections (GPU)
 expected: |
-  Run the canonical cross-device launcher via scripts/run.py, which exercises a
-  different code path than `flwr run .` — the launcher applies the mode resolver
-  at federation level, generates the run_id, and writes the sibling manifest.
-  This confirms the Phase 2 D-25 "launcher is canonical entry point" contract.
+  Re-run the Test 2 command TWO times back-to-back with the same `run-seed=42`.
+  The `selected_clients_per_round` lists must be byte-identical across both
+  runs (server_rng is the Phase 1 FND-06 deterministic RNG). The eval
+  NDCG@10 / HR@10 may differ slightly (GPU non-determinism ~1e-4) but
+  client selection is a pure-Python hash-based draw and must match exactly.
 awaiting: user response
 
 ## GPU Tuning Notes (applied before Test 1)
@@ -115,44 +116,58 @@ expected: |
   - scripts/run.py subprocess path works end-to-end (D-25 "canonical launcher")
   - Launcher injects `mode=benchmark_cross_device` automatically from positional arg
     (no need to repeat it in --run-config)
-result: [pending]
+result: pass
+notes: |
+  Passed after 3 launcher-fix commits (848529e, 4c85afb, 227d366):
+  1. 848529e — scripts/run.py: hardcoded --federation local-simulation → made
+     configurable via --federation CLI arg; flipped baseline pyproject default to
+     local-sim-gpu. This alone got GPU execution.
+  2. 4c85afb — _build_run_config: auto-quote string values (bare-word strings like
+     "benchmark_cross_device" are not valid TOML values; flwr rejects them).
+  3. 227d366 — _build_run_config: drop num-supernodes from run_config (federation-
+     level option; flwr's fuse_dicts rejects run-config keys not in app config).
+  Final verified run_id: 20260419-101756-badbb7. Manifest fingerprint clean
+  (mode=benchmark_cross_device, num_supernodes=6040, partition_mode=natural,
+  weight_policy=num_positives, foundation_contract_sha256=fe181daf...).
+  Training signal: round 1 NDCG@10=0.106 → round 2 NDCG@10=0.206 (~2x in 5 local
+  epochs). Best-round restore picked round 2 correctly. Per-group sufficient stats
+  (8+19+33=60 for round 1; 11+25+24=60 for round 2) sum correctly.
 
 ### 3. Determinism — same seed, byte-identical selections (GPU)
 expected: |
-  Re-run the Test 2 command with the same seed — two runs back-to-back:
+  Re-run the same command twice back-to-back with no config changes. The baseline
+  pyproject already hard-codes `run-seed=42` as the app config default, so we don't
+  need to set it in --run-config.
 
   ```bash
   python scripts/run.py baseline benchmark_cross_device \
-      --federation local-sim-gpu \
-      --run-config "num-server-rounds=2 fraction-train=0.01 model-type=bpr run-seed=42"
-  # capture run_id_1 from console output
+      --run-config 'num-server-rounds=2 fraction-train=0.01 model-type=bpr'
+  # capture run_id_1 from console output (latest file in results/federated/)
 
   python scripts/run.py baseline benchmark_cross_device \
-      --federation local-sim-gpu \
-      --run-config "num-server-rounds=2 fraction-train=0.01 model-type=bpr run-seed=42"
+      --run-config 'num-server-rounds=2 fraction-train=0.01 model-type=bpr'
   # capture run_id_2
   ```
 
-  Compare selected clients across both runs:
+  Compare selected clients across the last two runs:
 
   ```bash
   python -c "
   import json, glob
-  files = sorted(glob.glob('results/federated/*_results.json'))[-2:]
+  files = sorted(glob.glob('/home/bes/Desktop/vinh/federated-learning/results/federated/*_results.json'))[-2:]
   a, b = [json.load(open(f)) for f in files]
   print('files:', files)
   print('selected_clients match:', a['selected_clients_per_round'] == b['selected_clients_per_round'])
-  print('ndcg@10 close:', abs(a['final_metrics']['sampled_ndcg@10'] - b['final_metrics']['sampled_ndcg@10']) < 1e-9)
+  print('ndcg@10 diff:', abs(a['final_metrics']['sampled_ndcg@10'] - b['final_metrics']['sampled_ndcg@10']))
   "
   ```
 
-  Expected: both booleans `True`. `selected_clients_per_round` must be byte-identical
-  (server_rng determinism); `ndcg@10` should also match to within FP tolerance since
-  eval negatives are seeded per (user, round).
-
-  GPU non-determinism note: if `ndcg@10` differs slightly (~1e-4), that's expected
-  from CUDA kernel non-determinism — the CLIENT SELECTION match is the actual
-  thesis-relevant invariant.
+  Expected:
+  - `selected_clients match: True` — byte-identical server_rng client selection
+    (Phase 1 FND-06 contract).
+  - `ndcg@10 diff: ~0.0` or very small (< 1e-4). If slightly nonzero, that's
+    GPU kernel non-determinism in gradient accumulation — NOT a bug, NOT a
+    thesis-blocker. Client selection is the load-bearing determinism invariant.
 result: [pending]
 
 ### 4. W&B project is `federated-cf-cross-device`
@@ -168,9 +183,9 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 1
+passed: 2
 issues: 0
-pending: 3
+pending: 2
 skipped: 0
 blocked: 0
 
