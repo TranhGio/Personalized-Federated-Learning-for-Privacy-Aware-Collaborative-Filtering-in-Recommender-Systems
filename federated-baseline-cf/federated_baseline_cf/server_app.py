@@ -11,7 +11,10 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 from flwr.common import (
+    Code,
+    EvaluateRes,
     FitRes,
+    Status,
     ndarrays_to_parameters,
     parameters_to_ndarrays,
 )
@@ -26,6 +29,24 @@ from federated_baseline_cf.task import (
 )
 from federated_baseline_cf.dataset import load_full_data
 from federated_baseline_cf.early_stopping import EarlyStopping
+
+# Phase 2 Plan 04: foundation + strategy imports (BSL-04, BSL-06, BSL-08, D-25, D-26, D-27).
+from fedrec_foundation.bundle import verify_bundle
+from fedrec_foundation.manifest import (
+    build_run_manifest,
+    embed_manifest_in_result,
+    generate_run_id,
+    write_manifest_sibling,
+)
+from fedrec_foundation.mode import (
+    log_mode_and_overrides,
+    resolve_mode_defaults,
+)
+from fedrec_foundation.paths import data_derived
+from fedrec_foundation.rng import server_rng
+from fedrec_foundation.split import load_split_manifest
+
+from federated_baseline_cf.strategy import BaselineFedAvg, BaselineFedProx
 
 # Create ServerApp
 app = ServerApp()
@@ -180,17 +201,43 @@ def print_evaluation_metrics(round_num: int, metrics: Dict[str, float], context:
 def main(grid: Grid, context: Context) -> None:
     """Main entry point for the ServerApp."""
 
-    # Read run config
-    fraction_train: float = context.run_config["fraction-train"]
-    num_rounds: int = context.run_config["num-server-rounds"]
-    lr: float = context.run_config["lr"]
+    # =========================================================================
+    # Phase 2: mode resolver owns canonical hyperparams; pyproject values are
+    # fallback only (D-25). Overrides visible per D-19, captured in manifest.overrides.
+    # =========================================================================
+    mode = str(context.run_config.get("mode", "cross_silo_legacy"))
+    profile = resolve_mode_defaults(mode)
+    print(
+        f"\n[MODE] Resolved profile mode={profile.mode!r} "
+        f"num_supernodes={profile.num_supernodes} "
+        f"weight_policy={profile.weight_policy!r} "
+        f"primary_evaluator={profile.primary_evaluator!r}"
+    )
+    overrides = log_mode_and_overrides(mode, profile, context.run_config)
+    if overrides:
+        # D-19 loud warning per key — already printed inside log_mode_and_overrides; add a SUMMARY line.
+        print(
+            f"⚠ OVERRIDE: {len(overrides)} key(s) diverge from mode default. "
+            f"Run is NOT comparable to benchmark thesis table."
+        )
+
+    run_seed = int(context.run_config.get("run-seed", 42))
+
+    # Read run config: profile is the source of truth; context.run_config overrides win (D-25).
+    num_rounds: int = int(context.run_config.get("num-server-rounds", profile.num_server_rounds))
+    fraction_train: float = float(context.run_config.get("fraction-train", profile.fraction_train))
+    lr: float = float(context.run_config.get("lr", profile.lr))
     model_type: str = context.run_config.get("model-type", "bpr")
-    embedding_dim: int = context.run_config.get("embedding-dim", 64)
-    dropout: float = context.run_config.get("dropout", 0.1)
+    embedding_dim: int = int(context.run_config.get("embedding-dim", profile.embedding_dim))
+    dropout: float = float(context.run_config.get("dropout", 0.1))
 
     # FedProx configuration
-    strategy_name: str = context.run_config.get("strategy", "fedavg").lower()
-    proximal_mu: float = context.run_config.get("proximal-mu", 0.0)
+    strategy_name: str = str(context.run_config.get("strategy", "fedavg")).lower()
+    proximal_mu: float = float(context.run_config.get("proximal-mu", 0.0))
+
+    # D-25 additional Phase-2 contract keys (fallback to profile where profile has them).
+    weight_policy: str = str(context.run_config.get("weight-policy", profile.weight_policy))
+    checkpoint_rule: str = str(context.run_config.get("checkpoint-rule", profile.checkpoint_rule))
 
     # Early stopping configuration
     early_stopping_enabled = context.run_config.get("early-stopping-enabled", False)
@@ -229,7 +276,21 @@ def main(grid: Grid, context: Context) -> None:
             "early_stopping_patience": early_stopping_patience,
             "early_stopping_metric": early_stopping_metric,
         }
-        wandb_project = context.run_config.get("wandb-project", "federated-cf")
+        # D-25: expose mode + run_seed + contract keys so W&B dashboards can filter by mode.
+        wandb_config.update({
+            "mode": mode,
+            "run_seed": run_seed,
+            "weight_policy": weight_policy,
+            "partition_mode": profile.partition_mode,
+            "checkpoint_rule": checkpoint_rule,
+        })
+        # Cross-device runs go to a dedicated W&B project per PROJECT.md constraint; legacy stays on "federated-cf".
+        default_project = (
+            "federated-cf-cross-device"
+            if mode in ("benchmark_cross_device", "paper_compat_pfedrec")
+            else "federated-cf"
+        )
+        wandb_project = context.run_config.get("wandb-project", default_project)
         wandb_entity = context.run_config.get("wandb-entity", "")
         wandb_run_name = context.run_config.get("wandb-run-name", "")
         wandb.init(
@@ -256,18 +317,19 @@ def main(grid: Grid, context: Context) -> None:
 
     arrays = ArrayRecord(global_model.state_dict())
 
-    # Initialize strategy based on configuration
+    # BSL-06: BaselineFedAvg / BaselineFedProx overrides aggregate_evaluate to
+    # emit headline metrics from SUMMED sufficient stats (not averaged per-client ratios).
     if strategy_name == "fedprox":
-        strategy = FedProx(
+        strategy = BaselineFedProx(
             fraction_fit=fraction_train,
             proximal_mu=proximal_mu,
         )
-        print(f"  Strategy: FedProx (proximal_mu={proximal_mu})")
+        print(f"  Strategy: BaselineFedProx (proximal_mu={proximal_mu})")
     else:
-        strategy = FedAvg(
+        strategy = BaselineFedAvg(
             fraction_fit=fraction_train,
         )
-        print(f"  Strategy: FedAvg")
+        print(f"  Strategy: BaselineFedAvg")
 
     # Start federated learning
     print(f"\nStarting Federated Learning with {num_rounds} rounds...")
@@ -283,6 +345,17 @@ def main(grid: Grid, context: Context) -> None:
     train_metrics_history: Dict[int, Dict] = {}
     eval_metrics_history: Dict[int, Dict] = {}
 
+    # BSL-04: seeded RNG for per-round client selection — deterministic across processes.
+    # Single instance at loop-start => sequence across rounds is stable for a given run_seed.
+    _server_sampler = server_rng(run_seed)
+    selected_clients_per_round: List[List[int]] = []  # D-26: persisted in result JSON + W&B
+
+    # D-27: best-round tracking (in-memory; no disk writes). At training end,
+    # restore the best-round state_dict before running the final centralized evaluation.
+    best_metric: float = float("-inf")
+    best_round_num: int = 0
+    best_arrays = arrays  # fallback if no eval round improves
+
     for round_num in range(1, num_rounds + 1):
         print(f"\n{'='*50}")
         print(f"Round {round_num}/{num_rounds}")
@@ -290,10 +363,17 @@ def main(grid: Grid, context: Context) -> None:
 
         train_config = ConfigRecord({"lr": lr, "proximal_mu": proximal_mu})
 
-        # Get all node IDs and select a fraction for this round
-        node_ids = list(grid.get_node_ids())
+        # BSL-04: seeded per-round client sampling (replaces random.sample).
+        # Sort node IDs so the sampler sees a stable domain; single _server_sampler
+        # instance across rounds => sequence is deterministic for a given run_seed.
+        node_ids = sorted(grid.get_node_ids())
         num_selected = max(1, int(len(node_ids) * fraction_train))
-        selected_node_ids = node_ids[:num_selected]
+        selected_node_ids = _server_sampler.sample(node_ids, num_selected)
+
+        # D-26: persist + log selected client IDs for reproducibility + W&B audit.
+        selected_clients_per_round.append([int(x) for x in selected_node_ids])
+        if wandb_enabled:
+            wandb.log({"round/selected_clients": [int(x) for x in selected_node_ids]}, step=round_num)
 
         print(f"  Selected {num_selected}/{len(node_ids)} clients for training")
 
@@ -388,31 +468,67 @@ def main(grid: Grid, context: Context) -> None:
 
         eval_responses = list(grid.send_and_receive(eval_messages))
 
-        # Parse evaluation responses
-        round_eval_metrics = []
+        # =====================================================================
+        # EVALUATION AGGREGATION (BSL-06 via BaselineFedAvg.aggregate_evaluate)
+        # Wrap each Flower eval response into an EvaluateRes and let the
+        # strategy emit server-side ratios from SUMMED sufficient stats.
+        # =====================================================================
+        eval_results: List[Tuple[ClientProxy, EvaluateRes]] = []
+        round_eval_metrics = []  # retained for RMSE/MAE rating-path fallback (D-18)
         for response in eval_responses:
             if response.has_error():
                 continue
 
             resp_metrics = response.content.get("metrics", MetricRecord())
             metrics_dict = dict(resp_metrics) if resp_metrics else {}
-            num_examples = int(metrics_dict.get("num-examples", 1))
+            num_examples = int(metrics_dict.get("num_training_examples",
+                                                metrics_dict.get("evaluated_users",
+                                                                 metrics_dict.get("num-examples", 1))))
+            eval_res = EvaluateRes(
+                status=Status(code=Code.OK, message="ok"),
+                loss=float(metrics_dict.get("eval_loss", 0.0)),
+                num_examples=num_examples,
+                metrics=metrics_dict,
+            )
+            client_id = str(response.metadata.src_node_id)
+            proxy = DummyClientProxy(client_id)
+            eval_results.append((proxy, eval_res))
             round_eval_metrics.append((num_examples, metrics_dict))
 
-        # Aggregate evaluation metrics
-        if round_eval_metrics:
-            eval_metrics_history[round_num] = weighted_average_metrics(round_eval_metrics)
+        # BSL-06: strategy computes sum-based headline ratios + per-group ratios.
+        if eval_results:
+            _agg_loss, thesis_metrics = strategy.aggregate_evaluate(round_num, eval_results, [])
+            eval_metrics_history[round_num] = dict(thesis_metrics) if thesis_metrics else {}
+
+            # Preserve rating metrics (RMSE/MAE) via the legacy per-client-ratio path — D-18 scope-out.
+            # These keys aren't sufficient-stat aggregated; strategy.aggregate_evaluate returns only
+            # the thesis-table metrics. Merge RMSE/MAE in without clobbering the sufficient-stat ratios.
+            rating_agg = weighted_average_metrics(round_eval_metrics)
+            for rk in ("rmse", "mae", "eval_loss"):
+                if rk in rating_agg and rk not in eval_metrics_history[round_num]:
+                    eval_metrics_history[round_num][rk] = rating_agg[rk]
 
             # Print key metrics
             rmse = eval_metrics_history[round_num].get('rmse', 'N/A')
-            ndcg10 = eval_metrics_history[round_num].get('ndcg@10', 'N/A')
-            s_ndcg10 = eval_metrics_history[round_num].get('sampled_ndcg@10', 'N/A')
+            ndcg10 = eval_metrics_history[round_num].get('sampled_ndcg@10', 'N/A')
+            hr10 = eval_metrics_history[round_num].get('sampled_hr@10', 'N/A')
             rmse_str = f"{rmse:.4f}" if isinstance(rmse, (int, float)) else str(rmse)
             ndcg10_str = f"{ndcg10:.4f}" if isinstance(ndcg10, (int, float)) else str(ndcg10)
-            s_ndcg10_str = f"{s_ndcg10:.4f}" if isinstance(s_ndcg10, (int, float)) else str(s_ndcg10)
+            hr10_str = f"{hr10:.4f}" if isinstance(hr10, (int, float)) else str(hr10)
             print(f"  RMSE: {rmse_str}")
-            print(f"  NDCG@10: {ndcg10_str}")
-            print(f"  Sampled NDCG@10: {s_ndcg10_str}")
+            print(f"  Sampled HR@10: {hr10_str}")
+            print(f"  Sampled NDCG@10: {ndcg10_str}")
+
+            # D-27: track best-round global params (in-memory). No disk writes.
+            if checkpoint_rule in ("best_round_restore", "best_round") and thesis_metrics:
+                current_ndcg = float(thesis_metrics.get("sampled_ndcg@10", 0.0))
+                if round_num == 1 or current_ndcg > best_metric:
+                    best_metric = current_ndcg
+                    best_round_num = round_num
+                    best_arrays = ArrayRecord({
+                        k: v.detach().clone() for k, v in arrays.to_torch_state_dict().items()
+                    })
+                    print(f"  [CHECKPOINT] New best sampled_ndcg@10={best_metric:.4f} at round {best_round_num}")
 
         # Log to wandb
         if wandb_enabled:
@@ -451,6 +567,19 @@ def main(grid: Grid, context: Context) -> None:
         print(f"Early stopping: Triggered at round {actual_rounds}")
         print(f"Best {early_stopping_metric}: {early_stopper.best_metric:.4f} at round {early_stopper.best_round}")
     print("="*70)
+
+    # =========================================================================
+    # D-27: Restore best-round global params before running the final centralized eval.
+    # Canonical reported metric is best_* per STATE.md; last-round is not comparable.
+    # =========================================================================
+    if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
+        print(
+            f"\n[CHECKPOINT] Restoring global params from best round {best_round_num} "
+            f"(sampled_ndcg@10={best_metric:.4f}) before centralized evaluation"
+        )
+        arrays = best_arrays
+    else:
+        print(f"\n[CHECKPOINT] checkpoint_rule={checkpoint_rule!r}: keeping last-round params")
 
     # =========================================================================
     # CENTRALIZED EVALUATION: Run evaluation on server with final model
@@ -562,23 +691,80 @@ def main(grid: Grid, context: Context) -> None:
             "embedding_dim": embedding_dim,
             "dropout": dropout,
             "learning_rate": lr,
+            "mode": mode,
+            "run_seed": run_seed,
+            "weight_policy": weight_policy,
+            "checkpoint_rule": checkpoint_rule,
         },
         "early_stopping": early_stopper.get_summary() if early_stopper else None,
         "timestamp": datetime.now().isoformat(),
         "final_metrics": final_metrics,
         "training_rounds": actual_rounds,
+        "eval_metrics_history": eval_metrics_history,
+        "train_metrics_history": train_metrics_history,
     }
 
-    # Save results to JSON file
+    # =========================================================================
+    # BSL-08: protocol fingerprint manifest (FND-07 + D-15 double-write).
+    # =========================================================================
+    run_id = generate_run_id()
+    # Verify the bundle ONCE; raises if tampered. Reads fingerprints from foundation_index.json.
+    foundation_idx = verify_bundle(data_derived())
+    # raw_data_hash + builder_version live on the SplitManifest (single source of truth per IMP-2).
+    split_manifest = load_split_manifest(data_derived() / "split_manifest.json")
+    manifest = build_run_manifest(
+        run_id=run_id,
+        mode_profile=profile,
+        run_seed=run_seed,
+        mapping_sha256=foundation_idx.mapping_sha256,
+        split_hash=foundation_idx.split_hash,
+        exclusion_sha256=foundation_idx.exclusion_sha256,
+        foundation_contract_sha256=foundation_idx.foundation_contract_sha256,
+        raw_data_hash=split_manifest.raw_data_hash,
+        builder_version=split_manifest.builder_version,
+        overrides=overrides,
+        module="baseline",
+    )
+
+    # D-26: selected_clients_per_round is a first-class field in the JSON.
+    results_data["selected_clients_per_round"] = selected_clients_per_round
+    results_data["checkpoint"] = {
+        "rule": checkpoint_rule,
+        "best_round": best_round_num,
+        "best_sampled_ndcg@10": best_metric if best_metric != float("-inf") else None,
+    }
+
+    # D-15: double-write (embedded in result JSON + sibling file).
+    embed_manifest_in_result(manifest, results_data)  # mutates in place
+
+    # Save results to JSON file (D-28 flat results/federated/ directory).
     print("\nSaving evaluation results...")
     results_dir = Path("../results/federated")
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    results_filename = results_dir / f"{model_type}_mf_{strategy_name}_mu{proximal_mu}_r{num_rounds}_f{fraction_train}_results.json"
+    # run_id-scoped filename so manifests and results co-locate unambiguously.
+    results_filename = results_dir / f"{run_id}_results.json"
     with open(results_filename, 'w') as f:
-        json.dump(results_data, f, indent=4)
+        json.dump(results_data, f, indent=4, default=str)
 
+    # D-15 sibling.
+    sibling_path = write_manifest_sibling(manifest, results_filename)
     print(f"Results saved to: {results_filename.resolve()}")
+    print(f"Manifest sibling: {sibling_path.resolve()}")
+
+    # W&B: attach manifest fingerprints to the run's config so dashboards can filter/audit.
+    if wandb_enabled:
+        wandb.config.update({
+            "_manifest": {
+                "run_id": manifest.run_id,
+                "mode": manifest.mode,
+                "num_supernodes": manifest.num_supernodes,
+                "foundation_contract_sha256": manifest.foundation_contract_sha256,
+                "split_hash": manifest.split_hash,
+                "run_seed": manifest.run_seed,
+                "checkpoint_rule": manifest.checkpoint_rule,
+            }
+        })
 
     # Finish wandb run
     if wandb_enabled:
