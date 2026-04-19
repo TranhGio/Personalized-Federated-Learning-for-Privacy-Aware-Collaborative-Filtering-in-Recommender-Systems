@@ -85,7 +85,7 @@ early-stopping-min-delta = 0.001
 
 # Weights & Biases (wandb) configuration
 wandb-enabled = true              # Enable/disable wandb logging
-wandb-project = "federated-cf"    # wandb project name
+wandb-project = ""                # empty = route by mode in server_app (cross-device -> federated-cf-cross-device; cross-silo-legacy -> federated-cf). Set a non-empty string here or via --run-config to pin.
 wandb-entity = ""                 # wandb team/entity (optional, uses default if empty)
 wandb-run-name = ""               # Custom run name (optional, auto-generated if empty)
 

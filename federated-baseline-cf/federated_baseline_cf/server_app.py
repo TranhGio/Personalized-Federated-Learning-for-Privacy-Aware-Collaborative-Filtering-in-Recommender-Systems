@@ -290,7 +290,9 @@ def main(grid: Grid, context: Context) -> None:
             if mode in ("benchmark_cross_device", "paper_compat_pfedrec")
             else "federated-cf"
         )
-        wandb_project = context.run_config.get("wandb-project", default_project)
+        # Empty-string in pyproject means "use mode-based default"; explicit non-empty wins.
+        wandb_project_cfg = str(context.run_config.get("wandb-project", "")).strip()
+        wandb_project = wandb_project_cfg if wandb_project_cfg else default_project
         wandb_entity = context.run_config.get("wandb-entity", "")
         wandb_run_name = context.run_config.get("wandb-run-name", "")
         wandb.init(
