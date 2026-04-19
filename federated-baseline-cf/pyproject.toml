@@ -98,7 +98,11 @@ checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; rest
 
 # Default federation to use when running the app
 [tool.flwr.federations]
-default = "local-simulation"
+default = "local-sim-gpu"
+# Baseline defaults to GPU execution. CPU federation (local-simulation) remains available
+# as an opt-in via: flwr run . local-simulation, or via: python scripts/run.py ... --federation local-simulation.
+# Kept because tensors serialize/deserialize via CPU (state_dict caches, wandb logging, hash
+# computation) and the cross-silo-legacy appendix path works fine on CPU.
 
 # Local simulation federation (CPU-only)
 [tool.flwr.federations.local-simulation]

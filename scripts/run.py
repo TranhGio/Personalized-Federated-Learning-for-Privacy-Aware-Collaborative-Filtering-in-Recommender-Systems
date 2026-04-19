@@ -127,6 +127,14 @@ def main(argv: List[str]) -> int:
         help="extra Flower run_config override",
     )
     parser.add_argument(
+        "--federation",
+        default=None,
+        help=(
+            "Flower federation name (e.g. 'local-sim-gpu' or 'local-simulation'). "
+            "When omitted, flwr uses the module's pyproject [tool.flwr.federations] default."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the flwr command without executing (for tests/CI)",
@@ -136,15 +144,10 @@ def main(argv: List[str]) -> int:
     module_dir = MODULE_DIR[args.module]
     run_config = _build_run_config(args.mode, args.run_config)
 
-    cmd = [
-        "flwr",
-        "run",
-        f"./{module_dir}",
-        "--federation",
-        "local-simulation",
-        "--run-config",
-        run_config,
-    ]
+    cmd = ["flwr", "run", f"./{module_dir}"]
+    if args.federation is not None:
+        cmd.extend(["--federation", args.federation])
+    cmd.extend(["--run-config", run_config])
     print(
         f"[launcher] invoking: "
         f"{' '.join(repr(x) if ' ' in x else x for x in cmd)}"
