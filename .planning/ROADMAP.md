@@ -32,7 +32,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   3. A config flag picks ONE primary evaluator (`sampled_loo_99`) and ONE aggregation `weight-policy` per module, both of which appear in the run manifest alongside partition mode, num-supernodes, fractions, seeds, and negative counts.
   4. Setting a single run seed produces identical server-selected client sequences and identical evaluator negative samples across two back-to-back runs of the same config; no evaluator internally calls `random.seed(...)` or `np.random.seed(...)`.
 **Plans**: 6 plans
-  - [ ] 01-foundation-contract-01-PLAN.md — Wave-0 package scaffolding + 14 test stubs (gates Plans 02-05)
+  - [x] 01-foundation-contract-01-PLAN.md — Wave-0 package scaffolding + 14 test stubs (gates Plans 02-05)
   - [ ] 01-foundation-contract-02-PLAN.md — FND-01 mapping + FND-02 split manifest + FND-03 exclusion set + atomic bundle publication
   - [ ] 01-foundation-contract-03-PLAN.md — FND-04 primary evaluator + FND-05 weight-policy + FitMetricsContract (CR-4)
   - [ ] 01-foundation-contract-04-PLAN.md — FND-06 three RNG factories (CR-3) + FND-07 run manifest (IMP-2 composite hash)
@@ -109,7 +109,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Contract | 0/6 | In planning | - |
+| 1. Foundation Contract | 1/6 | In Progress | - |
 | 2. Baseline Migration | 0/0 | Not started | - |
 | 3. Personalized Migration | 0/0 | Not started | - |
 | 4. Adaptive Migration & Bug Fixes | 0/0 | Not started | - |

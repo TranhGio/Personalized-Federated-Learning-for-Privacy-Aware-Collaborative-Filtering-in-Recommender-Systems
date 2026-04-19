@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+last_updated: "2026-04-19T03:07:16.707Z"
+progress:
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 6
+  completed_plans: 1
+---
+
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
 
 **Last updated:** 2026-04-19 after roadmap creation
@@ -6,17 +19,14 @@
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Roadmap complete. Awaiting planning of Phase 1 (Foundation Contract).
+**Current focus:** Phase 01 — foundation-contract
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-- **Milestone:** M1 (Cross-device migration + PFedRec reproduction)
-- **Phase:** — (not started; next = Phase 1: Foundation Contract)
-- **Plan:** — (none yet)
-- **Status:** Roadmap approved; ready for `/gsd:plan-phase 1`
-- **Progress:** [          ] 0% (0/7 phases complete)
+Phase: 01 (foundation-contract) — EXECUTING
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -28,6 +38,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | personalized | — | — | — | — | cross-device run pending |
 | adaptive | — | — | — | — | cross-device run pending |
 | pfedrec (paper_compat) | — | — | — | — | target: HR@10 ≈ 0.729 ± 2pts, NDCG@10 ≈ 0.441 ± 2pts |
+| Phase 01-foundation-contract P01 | 5min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -43,6 +54,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - **DP / privacy quantification** deferred to v2.
 - **Primary evaluator:** `sampled_loo_99` (NCF protocol). `allrank_*` is a namespaced secondary, never mixed into thesis tables.
 - **Canonical reported metric:** `best_*` (best-round restored), not `last_*`.
+- [Phase 01-foundation-contract]: Foundation package lives at scripts/foundation/ (not inside any federated-*-cf/ module and not at repo root) — neutral shared location avoids namespace collision and duplication while respecting PROJECT.md decision to defer fedrec_common/ extraction.
+- [Phase 01-foundation-contract]: Plan 01 uses skip-stub TDD handoff: downstream plans un-skip by deleting pytestmark and replacing NotImplementedError bodies — enumerates all 31 expected FND-01..07 tests at pytest --collect-only while keeping every run green (2 passed, 31 skipped, 0 failed).
+- [Phase 01-foundation-contract]: compute_raw_data_hash concatenation order is LOCKED to ratings.dat || movies.dat || users.dat — every FND-02/FND-07 downstream fingerprint depends on it; any future change invalidates committed split manifests and run manifests.
 
 ### Todos
 
@@ -66,6 +80,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 **Next session entry point:** Run `/gsd:plan-phase 1` to decompose the Foundation Contract phase into executable plans (canonical ID mapping, deterministic split manifest, exclusion set, primary-evaluator declaration, weight policy, run-scoped seeding, run manifest schema).
 
 **Key files to reread on session resume:**
+
 - `.planning/ROADMAP.md` — phase structure and success criteria
 - `.planning/REQUIREMENTS.md` — traceability table
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
