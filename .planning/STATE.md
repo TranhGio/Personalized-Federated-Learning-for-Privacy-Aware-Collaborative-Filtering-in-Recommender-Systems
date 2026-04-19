@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-baseline-migration-03-PLAN.md
-last_updated: "2026-04-19T08:24:44.575Z"
+stopped_at: Completed 02-baseline-migration-05-PLAN.md
+last_updated: "2026-04-19T11:56:54.690Z"
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -26,8 +26,8 @@ progress:
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 02 (baseline-migration) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 02-baseline-migration P01 | 6min | 2 tasks | 7 files |
 | Phase 02-baseline-migration P04 | 7min | 2 tasks | 3 files |
 | Phase 02-baseline-migration P03 | 11min | 2 tasks | 4 files |
+| Phase 02-baseline-migration P05 | 11min | 5 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 02-baseline-migration]: Plan 03 D-24 gradient isolation: gradient-only mask INSUFFICIENT under Adam weight-decay + momentum (RED-step regression caught row 1 moving by 0.3965 L2 norm). Fix = bracket optimizer.step() with _snapshot_non_user_rows / _restore_non_user_rows (snapshot marks user-idx row NaN so restore never overwrites legitimate update). Optimizer-agnostic; works for Adam + SGD. 3 new task.py module-level private helpers — near-duplicate will land in Plans 3/4/5 sibling modules.
 - [Phase 02-baseline-migration]: Plan 03 BSL-05 _sample_negatives_seeded chosen over patching models/bpr_mf.py: BPRMF.sample_negatives uses process-global np.random.randint; extending its signature would have touched models/ (outside D-18 surgical scope) and created asymmetry vs personalized/adaptive modules' own sample_negatives. Inline helper is distribution-equivalent (rejection-uniform) from an np.random.Generator; confines determinism fix to task.py.
 - [Phase 02-baseline-migration]: Plan 03 evaluate_ranking_sampled legacy seed param IGNORED: signature backward-compatible (seed:int=42 still accepted) but docstring explicitly documents it ignored. Seeds derive from (run_seed, user_idx, round_num, 'eval_neg') per BSL-05. Any pre-Phase-2 caller gets new deterministic behavior without code change; silent semantic break is intentional.
+- [Phase 02-baseline-migration]: Plan 05 G-03-01 closure: selected_clients_per_round now stores stable partition_ids (0..N-1), not Flower ephemeral node_ids — server runs a one-shot discovery round broadcasting discover_only=true to build partition_to_node_id before the main loop; _server_sampler.sample(range(N), k) samples in partition-id space. Optional partition_id field added to FitMetricsContract + EvaluateMetricsContract (auto-whitelisted via dataclass fields()).
+- [Phase 02-baseline-migration]: Plan 05 regression guard: test_selected_partitions_byte_identical_across_subprocess_reruns runs scripts/run.py twice and asserts byte-identity of selected_clients_per_round JSON field — catches deterministic-RNG-over-non-deterministic-domain regressions the Plan-04 pure-RNG test could not. @pytest.mark.slow + FEDREC_SKIP_SLOW=1 escape hatch.
 
 ### Todos
 
@@ -126,7 +129,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
-**Stopped at:** Completed 02-baseline-migration-03-PLAN.md
+**Stopped at:** Completed 02-baseline-migration-05-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
