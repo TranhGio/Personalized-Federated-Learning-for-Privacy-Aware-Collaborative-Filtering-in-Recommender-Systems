@@ -50,7 +50,7 @@ Migrate `federated-pfedrec`, close the IJCAI-23 reference gap, and reproduce pub
 
 Migrate `federated-personalized-cf` (split learning with local user embeddings).
 
-- [ ] **PSN-01**: `federated-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
+- [x] **PSN-01**: `federated-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
 - [ ] **PSN-02**: Benchmark-mode one-user assertion in `client_app.py`.
 - [ ] **PSN-03**: Training negatives exclude the held-out test positive (FND-03).
 - [ ] **PSN-04**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics (FND-04, FND-05, FND-06).
@@ -145,7 +145,7 @@ Deferred beyond this thesis cycle.
 | BSL-06 | Phase 2: Baseline Migration | Complete |
 | BSL-07 | Phase 2: Baseline Migration | Complete |
 | BSL-08 | Phase 2: Baseline Migration | Complete |
-| PSN-01 | Phase 3: Personalized Migration | Pending |
+| PSN-01 | Phase 3: Personalized Migration | Complete |
 | PSN-02 | Phase 3: Personalized Migration | Pending |
 | PSN-03 | Phase 3: Personalized Migration | Pending |
 | PSN-04 | Phase 3: Personalized Migration | Pending |

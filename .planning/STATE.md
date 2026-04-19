@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 3 context gathered
-last_updated: "2026-04-19T15:04:50.070Z"
+stopped_at: Completed 03-personalized-migration-02-PLAN.md (PSN-01 closed)
+last_updated: "2026-04-19T16:16:05.926Z"
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 16
+  completed_plans: 12
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -20,14 +20,14 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 02 — baseline-migration
+**Current focus:** Phase 03 — personalized-migration
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 03 (personalized-migration) — EXECUTING
+Plan: 1 of 5
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 02-baseline-migration P04 | 7min | 2 tasks | 3 files |
 | Phase 02-baseline-migration P03 | 11min | 2 tasks | 4 files |
 | Phase 02-baseline-migration P05 | 11min | 5 tasks | 6 files |
+| Phase 03-personalized-migration P02 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 02-baseline-migration]: Plan 03 evaluate_ranking_sampled legacy seed param IGNORED: signature backward-compatible (seed:int=42 still accepted) but docstring explicitly documents it ignored. Seeds derive from (run_seed, user_idx, round_num, 'eval_neg') per BSL-05. Any pre-Phase-2 caller gets new deterministic behavior without code change; silent semantic break is intentional.
 - [Phase 02-baseline-migration]: Plan 05 G-03-01 closure: selected_clients_per_round now stores stable partition_ids (0..N-1), not Flower ephemeral node_ids — server runs a one-shot discovery round broadcasting discover_only=true to build partition_to_node_id before the main loop; _server_sampler.sample(range(N), k) samples in partition-id space. Optional partition_id field added to FitMetricsContract + EvaluateMetricsContract (auto-whitelisted via dataclass fields()).
 - [Phase 02-baseline-migration]: Plan 05 regression guard: test_selected_partitions_byte_identical_across_subprocess_reruns runs scripts/run.py twice and asserts byte-identity of selected_clients_per_round JSON field — catches deterministic-RNG-over-non-deterministic-domain regressions the Plan-04 pure-RNG test could not. @pytest.mark.slow + FEDREC_SKIP_SLOW=1 escape hatch.
+- [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: PSN-01 closed fully in-file — federated-personalized-cf/pyproject.toml declares partition-mode=natural + num-supernodes=6040 in BOTH local-simulation and local-sim-gpu federation blocks; 6 Phase-3 foundation-contract keys including new reuse-cache=false (D-09); pytest dev dep exclusively owned by this plan (Wave-1 write-race eliminated).
+- [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: D-17 rip-and-replace completed in federated-personalized-cf/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data + load_full_data delegate mapping/split/exclusion to fedrec_foundation. D-18 preserved: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users verbatim. client_app.py/server_app.py/task.py untouched (Plans 03/04 own them).
+- [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (tightens baseline Plan 02 which only raised in one). Error message includes D-02, cross-device, pre-Phase-3 tokens — matches test assertion. Cross-phase contract: Phases 3+ modules whose cross-silo path is permanently frozen raise at every dataset entry point.
 
 ### Todos
 
@@ -129,7 +133,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
-**Stopped at:** Phase 3 context gathered
+**Stopped at:** Completed 03-personalized-migration-02-PLAN.md (PSN-01 closed)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
