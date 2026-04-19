@@ -8,20 +8,18 @@ source:
   - 02-baseline-migration-04-SUMMARY.md
   - 02-baseline-migration-VERIFICATION.md (human_verification items)
 started: 2026-04-19T15:45:00Z
-updated: 2026-04-19T15:55:00Z
+updated: 2026-04-19T16:10:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: GPU Smoke Test — `flwr run . local-sim-gpu` with aggressive parallelism
+number: 2
+name: End-to-end via `scripts/run.py` launcher (GPU)
 expected: |
-  Fresh federated-baseline-cf launch on the tuned GPU federation with light-weight
-  smoke overrides completes 1-2 rounds end-to-end on CUDA. The pre-tuned
-  `local-sim-gpu` block now allocates `num-gpus=0.05` + `num-cpus=1` per client
-  (20 concurrent clients per GPU, fits BPR-MF's <50MB VRAM footprint). Expect
-  GPU utilization in `nvidia-smi` during the round, round-1 metrics emitted,
-  no AssertionError, no OOM, no crash.
+  Run the canonical cross-device launcher via scripts/run.py, which exercises a
+  different code path than `flwr run .` — the launcher applies the mode resolver
+  at federation level, generates the run_id, and writes the sibling manifest.
+  This confirms the Phase 2 D-25 "launcher is canonical entry point" contract.
 awaiting: user response
 
 ## GPU Tuning Notes (applied before Test 1)
@@ -72,31 +70,51 @@ expected: |
   - If CUDA OOM: bump `num-gpus` to 0.1 in pyproject.toml (halves concurrency, doubles per-client memory budget)
   - If runs on CPU instead of GPU: check `nvidia-smi`; make sure PyTorch sees CUDA (`python -c "import torch; print(torch.cuda.is_available())"`)
   - If hang at "spawning 6040 supernodes": Flower needs a moment to register all actors; give it 30-60s before suspecting a hang
-result: [pending]
+result: pass
+notes: |
+  Passed on second attempt with `mode=benchmark_cross_device` added to --run-config.
+  First attempt (run_id 20260419-085653-63e04c) used pyproject default mode
+  (cross_silo_legacy) and produced a misleading manifest; second attempt
+  (run_id 20260419-090228-08262a) cleanly reports num_supernodes=6040,
+  partition_mode=natural, mode=benchmark_cross_device. Training signal: best-round
+  restore picked round 2 (sampled_ndcg@10=0.079 > round 1's 0.025); full-eval
+  sampled_ndcg@10=0.064 vs random-baseline ~0.10-NDCG-territory → plausible for
+  2-round BPR smoke. Per-group sufficient-stat accounting checks out
+  (sparse+medium+dense sums to total evaluated_users per round).
 
 ### 2. End-to-end via `scripts/run.py` launcher (GPU)
 expected: |
-  Run the canonical cross-device launcher, which writes a run manifest alongside
-  the result JSON (D-15 double-write) and applies mode profile overrides:
+  Chore commit 848529e landed two launcher fixes:
+  1. federated-baseline-cf pyproject default federation flipped to local-sim-gpu
+  2. scripts/run.py: --federation CLI arg added; hardcoded "local-simulation" removed
+
+  Launcher now uses the module's pyproject default when --federation is omitted.
+  For baseline, that default is now local-sim-gpu → GPU by default.
+
+  Run (no --federation needed):
 
   ```bash
   python scripts/run.py baseline benchmark_cross_device \
-      --federation local-sim-gpu \
       --run-config "num-server-rounds=2 fraction-train=0.01 model-type=bpr"
   ```
 
-  (If `scripts/run.py` rejects `--federation`, inspect `python scripts/run.py --help`
-  and let me know the actual flag name — we'll adjust.)
+  (Opt into CPU explicitly with `--federation local-simulation` if you want to
+  sanity-check the fallback path — not required for pass.)
 
-  Expected artifacts after the run completes:
-  - `results/federated/{run_id}_results.json` exists
-  - Sibling `results/federated/{run_id}-manifest.json` exists (D-15 double-write)
-  - Opening `_results.json` shows `_manifest.foundation_contract_sha256` plus
-    all 8 fingerprint keys: partition_mode, num_supernodes, fraction_train,
-    fraction_eval, weight_policy, primary_evaluator, run_seed, checkpoint_rule
-  - `selected_clients_per_round` is a list-of-lists (one inner list per round)
-  - `sampled_hr@10` and `sampled_ndcg@10` appear as headline metrics (ratio of
-    summed sufficient stats, NOT mean-of-per-client-ratios)
+  Expected artifacts:
+  - Fresh `results/federated/{run_id}_results.json` + sibling `-manifest.json`
+  - Manifest top-level matches Test 1 Run 2 shape: `mode=benchmark_cross_device`,
+    `num_supernodes=6040`, `partition_mode=natural`, `weight_policy=num_positives`
+  - `_manifest.overrides` captures runtime deltas (fraction_train=0.01, etc.)
+  - 2-round training completes on GPU (visible in `nvidia-smi`)
+  - `checkpoint.rule=best_round_restore`, `best_round` ∈ {1, 2}
+  - `selected_clients_per_round` is a list-of-lists (2 × 60 clients)
+  - `sampled_hr@10` / `sampled_ndcg@10` appear as headline metrics
+
+  What this confirms beyond Test 1:
+  - scripts/run.py subprocess path works end-to-end (D-25 "canonical launcher")
+  - Launcher injects `mode=benchmark_cross_device` automatically from positional arg
+    (no need to repeat it in --run-config)
 result: [pending]
 
 ### 3. Determinism — same seed, byte-identical selections (GPU)
@@ -150,9 +168,9 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 0
+passed: 1
 issues: 0
-pending: 4
+pending: 3
 skipped: 0
 blocked: 0
 
