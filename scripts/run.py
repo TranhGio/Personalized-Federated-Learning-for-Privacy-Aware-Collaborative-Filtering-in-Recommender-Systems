@@ -30,9 +30,14 @@ Examples
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from typing import List, Sequence
+
+# Mirrors flwr.common.config.parse_config_args regex: matches space-separated
+# KEY=VAL pairs where VAL may be single-quoted, double-quoted, or bare.
+_PAIR_RE = re.compile(r"(\S+?)=(\'[^\']*\'|\"[^\"]*\"|\S+)")
 
 
 # ============================================================================
@@ -67,11 +72,36 @@ MODE_NUM_SUPERNODES = {
 }
 
 
+def _quote_value_for_flwr(v: str) -> str:
+    """Return ``v`` in a form ``flwr run --run-config`` accepts.
+
+    Flower's ``parse_config_args`` (flwr/common/config.py) rebuilds the
+    ``--run-config`` string into TOML before parsing with ``tomli``. Bare-word
+    values like ``benchmark_cross_device`` or ``bpr`` are not valid TOML values,
+    so we must quote non-numeric / non-boolean strings. Values that are already
+    quoted, numeric, or boolean pass through unchanged.
+    """
+    if not v:
+        return '""'
+    if (v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'"):
+        return v
+    try:
+        float(v)
+        return v
+    except ValueError:
+        pass
+    if v.lower() in ("true", "false"):
+        return v.lower()
+    return f'"{v}"'
+
+
 def _build_run_config(mode: str, extra_kv: Sequence[str]) -> str:
     """Build a single space-separated key=value string for ``--run-config``.
 
     Always includes ``num-supernodes`` (from the mode table) and ``mode``
     (so the in-app assertion can verify the launcher agreed).
+
+    String values are auto-quoted so they survive Flower's TOML parser.
 
     Parameters
     ----------
@@ -79,6 +109,8 @@ def _build_run_config(mode: str, extra_kv: Sequence[str]) -> str:
         Mode identifier (key of :data:`MODE_NUM_SUPERNODES`).
     extra_kv : Sequence[str]
         User-supplied ``KEY=VAL`` strings (from ``--run-config`` flags).
+        Each element is one KEY=VAL pair; pass multiple pairs by supplying
+        ``--run-config`` multiple times on the command line.
 
     Returns
     -------
@@ -98,9 +130,17 @@ def _build_run_config(mode: str, extra_kv: Sequence[str]) -> str:
     for item in extra_kv:
         if "=" not in item:
             raise SystemExit(f"--run-config expects KEY=VAL pairs; got {item!r}")
-        k, _, v = item.partition("=")
-        base[k] = v
-    return " ".join(f"{k}={v}" for k, v in base.items())
+        # Support both single-pair ("a=1") and space-separated multi-pair
+        # ("a=1 b=2 c=3") forms in one --run-config flag, matching flwr's own
+        # regex semantics.
+        matches = _PAIR_RE.findall(item)
+        if not matches:
+            raise SystemExit(f"--run-config could not parse pairs: {item!r}")
+        for k, v in matches:
+            base[k] = v
+    return " ".join(
+        f"{k}={_quote_value_for_flwr(v)}" for k, v in base.items()
+    )
 
 
 def main(argv: List[str]) -> int:
