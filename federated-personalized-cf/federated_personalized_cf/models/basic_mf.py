@@ -1,36 +1,37 @@
-"""Basic Matrix Factorization with MSE loss (Personalized Split Architecture)."""
+"""Basic Matrix Factorization with MSE loss — Single-row Split Architecture (D-01, D-03, PSN-06).
+
+Phase 3 Plan 01 refactor: BasicMF mirrors BPRMF's collapse from a full per-user embedding
+table to a single ``local_user_row`` nn.Parameter + ``local_user_bias`` nn.Parameter. The
+client holds one user's row; forward no longer accepts ``user_ids``.
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 from collections import OrderedDict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 
 class BasicMF(nn.Module):
-    """
-    Basic Matrix Factorization for Collaborative Filtering.
-
-    This is a Personalized model with SPLIT ARCHITECTURE for federated learning:
-    Uses MSE loss for rating prediction.
+    """Basic Matrix Factorization (single-row per-client contract).
 
     Architecture:
-        prediction = global_bias + user_bias + item_bias + dot(user_emb, item_emb)
+        prediction = global_bias + local_user_bias + item_bias[i] + dot(local_user_row, item_emb[i])
 
-    Split Learning Parameter Classification:
+    Split Learning Parameter Classification (D-03):
         GLOBAL (aggregated via FedAvg/FedProx):
-            - item_embeddings.weight: Item latent factors
-            - item_bias.weight: Item popularity bias
-            - global_bias: Overall rating mean
+            - item_embeddings.weight
+            - item_bias.weight
+            - global_bias
 
-        LOCAL (private, not aggregated):
-            - user_embeddings.weight: User latent factors (personalized)
-            - user_bias.weight: User rating tendencies (personalized)
+        LOCAL (private, cached client-side):
+            - local_user_row   (shape: (embedding_dim,))
+            - local_user_bias  (shape: (1,))
     """
 
     # Parameter classification for split learning
     _GLOBAL_PARAMS = ('item_embeddings.weight', 'item_bias.weight', 'global_bias')
-    _LOCAL_PARAMS = ('user_embeddings.weight', 'user_bias.weight')
+    _LOCAL_PARAMS = ('local_user_row', 'local_user_bias')
 
     def __init__(
         self,
@@ -39,178 +40,123 @@ class BasicMF(nn.Module):
         embedding_dim: int = 64,
         dropout: float = 0.0,
     ):
-        """
-        Initialize Basic Matrix Factorization model.
+        """Initialize Basic Matrix Factorization model.
 
-        Args:
-            num_users: Total number of users in the system
-            num_items: Total number of items in the catalog
-            embedding_dim: Dimensionality of user/item latent factors
-                          Typical values: 32, 64, 128, 256
-            dropout: Dropout rate for embeddings (0.0 = no dropout)
-                    Helps prevent overfitting on sparse data
+        Parameters
+        ----------
+        num_users : int
+            Retained for API compatibility but NOT stored as ``self.num_users`` —
+            a client holds one user under D-01 (single-row contract).
+        num_items : int
+            Catalog size.
+        embedding_dim : int
+            Latent factor dimensionality.
+        dropout : float
+            Dropout rate (0.0 disables).
         """
         super().__init__()
 
-        self.num_users = num_users
         self.num_items = num_items
         self.embedding_dim = embedding_dim
 
-        # User embeddings (latent factors)
-        self.user_embeddings = nn.Embedding(num_users, embedding_dim)
+        # D-01 single-user local row (replaces the pre-refactor ghost user table)
+        self.local_user_row = nn.Parameter(torch.empty(embedding_dim))
+        self.local_user_bias = nn.Parameter(torch.zeros(1))
 
-        # Item embeddings (latent factors)
+        # Item embeddings (GLOBAL)
         self.item_embeddings = nn.Embedding(num_items, embedding_dim)
-
-        # User biases (captures user rating tendencies)
-        self.user_bias = nn.Embedding(num_users, 1)
-
-        # Item biases (captures item popularity)
         self.item_bias = nn.Embedding(num_items, 1)
 
-        # Global bias (overall rating mean)
+        # Global bias (overall rating mean, GLOBAL)
         self.global_bias = nn.Parameter(torch.zeros(1))
 
-        # Dropout for regularization
+        # Dropout
         self.dropout = nn.Dropout(dropout) if dropout > 0 else None
 
-        # Initialize weights
+        # Weight init
         self._init_weights()
 
     def _init_weights(self):
-        """
-        Initialize model weights following best practices.
-
-        Initialization strategy (from 2024 research):
-            - Embeddings: Xavier/Glorot initialization
-            - Biases: Small random values
-            - Global bias: Zero (will learn mean rating)
-        """
-        # Xavier initialization for embeddings
-        init.xavier_uniform_(self.user_embeddings.weight)
+        """Xavier-uniform init on embeddings; zero init on biases."""
+        init.xavier_uniform_(self.local_user_row.view(1, -1))
         init.xavier_uniform_(self.item_embeddings.weight)
-
-        # Small random initialization for biases
-        init.normal_(self.user_bias.weight, mean=0.0, std=0.01)
+        init.zeros_(self.local_user_bias)
         init.normal_(self.item_bias.weight, mean=0.0, std=0.01)
-
-        # Global bias stays at zero initially
         init.zeros_(self.global_bias)
 
-    def forward(self, user_ids, item_ids):
+    def forward(self, item_ids):
+        """Forward pass: predict ratings for the client user against given items.
+
+        Parameters
+        ----------
+        item_ids : torch.LongTensor
+            Item indices, shape ``(batch_size,)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Predicted ratings, shape ``(batch_size,)``.
         """
-        Forward pass: predict ratings for user-item pairs.
-
-        Args:
-            user_ids: Tensor of user indices, shape (batch_size,)
-            item_ids: Tensor of item indices, shape (batch_size,)
-
-        Returns:
-            predictions: Predicted ratings, shape (batch_size,)
-
-        Prediction formula:
-            r̂_ui = μ + b_u + b_i + q_i^T * p_u
-
-        Where:
-            μ = global_bias
-            b_u = user_bias[u]
-            b_i = item_bias[i]
-            p_u = user_embeddings[u]
-            q_i = item_embeddings[i]
-        """
-        # Get embeddings
-        user_emb = self.user_embeddings(user_ids)  # (batch_size, embedding_dim)
         item_emb = self.item_embeddings(item_ids)  # (batch_size, embedding_dim)
+        user_row = self.local_user_row            # (embedding_dim,)
 
-        # Apply dropout if enabled
         if self.dropout is not None:
-            user_emb = self.dropout(user_emb)
+            user_row = self.dropout(user_row)
             item_emb = self.dropout(item_emb)
 
-        # Get biases
-        user_b = self.user_bias(user_ids).squeeze()  # (batch_size,)
-        item_b = self.item_bias(item_ids).squeeze()  # (batch_size,)
-
-        # Dot product of embeddings
-        interaction = torch.sum(user_emb * item_emb, dim=1)  # (batch_size,)
-
-        # Final prediction
-        predictions = self.global_bias + user_b + item_b + interaction
-
+        item_b = self.item_bias(item_ids).squeeze(-1)  # (batch_size,)
+        interaction = torch.sum(item_emb * user_row, dim=-1)  # (batch_size,)
+        predictions = self.global_bias + self.local_user_bias + item_b + interaction
         return predictions
 
-    def predict(self, user_ids, item_ids):
-        """
-        Predict ratings (inference mode).
-
-        Args:
-            user_ids: User indices
-            item_ids: Item indices
-
-        Returns:
-            Predicted ratings, clamped to valid range
-        """
+    def predict(self, item_ids):
+        """Predict ratings (inference mode). Clamped to MovieLens rating range [1, 5]."""
         self.eval()
         with torch.no_grad():
-            predictions = self.forward(user_ids, item_ids)
-            # Clamp to rating range [1, 5] for MovieLens
+            predictions = self.forward(item_ids)
             predictions = torch.clamp(predictions, min=1.0, max=5.0)
         return predictions
 
-    def recommend(self, user_id, top_k=10, exclude_items=None):
-        """
-        Generate top-K recommendations for a user.
+    def recommend(self, top_k: int = 10, exclude_items: Optional[Set[int]] = None):
+        """Generate top-K recommendations for the client user.
 
-        Args:
-            user_id: User index (single user)
-            top_k: Number of recommendations to return
-            exclude_items: Set of item indices to exclude (already rated)
+        Parameters
+        ----------
+        top_k : int
+            Number of recommendations.
+        exclude_items : Set[int], optional
+            Items to exclude (already rated by the client user).
 
-        Returns:
-            top_items: List of top-K item indices
-            top_scores: List of corresponding scores
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            ``(top_items, top_scores)``, both CPU numpy arrays.
         """
         self.eval()
         with torch.no_grad():
-            # Get device from model parameters
             device = next(self.parameters()).device
-
-            # Get user embedding
-            user_ids = torch.LongTensor([user_id]).to(device)
-            user_emb = self.user_embeddings(user_ids)  # (1, embedding_dim)
-            user_b = self.user_bias(user_ids)  # (1, 1)
-
-            # Get all item embeddings and biases
             all_item_ids = torch.arange(self.num_items, device=device)
             item_embs = self.item_embeddings(all_item_ids)  # (num_items, embedding_dim)
-            item_bs = self.item_bias(all_item_ids).squeeze()  # (num_items,)
+            item_bs = self.item_bias(all_item_ids).squeeze(-1)  # (num_items,)
 
-            # Compute scores for all items
             scores = (
                 self.global_bias
-                + user_b.squeeze()
+                + self.local_user_bias
                 + item_bs
-                + torch.matmul(item_embs, user_emb.T).squeeze()
+                + torch.matmul(item_embs, self.local_user_row)
             )
 
-            # Exclude already rated items
             if exclude_items is not None:
                 scores[list(exclude_items)] = float('-inf')
 
-            # Get top-K
             top_scores, top_items = torch.topk(scores, k=min(top_k, len(scores)))
 
         return top_items.cpu().numpy(), top_scores.cpu().numpy()
 
     def get_embedding_weights(self):
-        """
-        Get current embedding weights (for regularization or analysis).
-
-        Returns:
-            Dictionary of embedding weights
-        """
+        """Return key model tensors for regularization or analysis."""
         return {
-            'user_embeddings': self.user_embeddings.weight,
+            'local_user_row': self.local_user_row,
             'item_embeddings': self.item_embeddings.weight,
         }
 
@@ -219,121 +165,64 @@ class BasicMF(nn.Module):
     # =========================================================================
 
     def get_global_parameters(self) -> OrderedDict:
-        """
-        Get only global parameters for federated aggregation.
-
-        Returns:
-            OrderedDict with keys: item_embeddings.weight, item_bias.weight, global_bias
-            Values are detached tensor copies on CPU.
-
-        Note:
-            - Returns OrderedDict to maintain consistent key ordering for ArrayRecord
-            - Tensors are moved to CPU for serialization
-        """
+        """Return only GLOBAL parameters for federated aggregation."""
         global_params = OrderedDict()
         full_state = self.state_dict()
-
         for name in self._GLOBAL_PARAMS:
             if name in full_state:
                 global_params[name] = full_state[name].cpu().clone()
-
         return global_params
 
     def set_global_parameters(self, global_state_dict: Dict[str, torch.Tensor]) -> None:
-        """
-        Update only global parameters from aggregated server weights.
-
-        Args:
-            global_state_dict: Dictionary containing item_embeddings.weight,
-                              item_bias.weight, global_bias
-
-        Note:
-            Local parameters (user embeddings) are preserved.
-        """
+        """Update only GLOBAL parameters from the aggregated server tensors."""
         current_state = self.state_dict()
-
         for name in self._GLOBAL_PARAMS:
             if name in global_state_dict:
                 current_state[name] = global_state_dict[name]
-
         self.load_state_dict(current_state, strict=True)
 
     def get_local_parameters(self) -> OrderedDict:
-        """
-        Get local (user) parameters for client-side persistence.
-
-        Returns:
-            OrderedDict with keys: user_embeddings.weight, user_bias.weight
-            Values are detached tensor copies on CPU.
-
-        Note:
-            Used to save user embeddings between federated rounds.
-        """
-        local_params = OrderedDict()
-        full_state = self.state_dict()
-
-        for name in self._LOCAL_PARAMS:
-            if name in full_state:
-                local_params[name] = full_state[name].cpu().clone()
-
-        return local_params
+        """Return the 2-key LOCAL parameter payload (local_user_row, local_user_bias)."""
+        state = OrderedDict()
+        state["local_user_row"] = self.local_user_row.detach().cpu().clone()
+        state["local_user_bias"] = self.local_user_bias.detach().cpu().clone()
+        return state
 
     def set_local_parameters(
         self,
         local_state_dict: Dict[str, torch.Tensor],
-        strict: bool = False
+        strict: bool = False,
     ) -> Tuple[List[str], List[str]]:
+        """Load the 2-key LOCAL parameter payload back into the model.
+
+        Parameters
+        ----------
+        local_state_dict : Dict[str, torch.Tensor]
+            Must include ``local_user_row`` and ``local_user_bias``.
+        strict : bool
+            Retained for API parity with the ghost-table version; unused.
+
+        Returns
+        -------
+        Tuple[List[str], List[str]]
+            ``(loaded_keys, missing_keys)``.
         """
-        Load local (user) parameters from persistence.
+        loaded: List[str] = []
+        missing: List[str] = []
 
-        Args:
-            local_state_dict: Saved local parameters
-            strict: If True, raise error on shape mismatch.
-                   If False, partially load what fits.
+        if "local_user_row" in local_state_dict:
+            self.local_user_row.data.copy_(local_state_dict["local_user_row"])
+            loaded.append("local_user_row")
+        else:
+            missing.append("local_user_row")
 
-        Returns:
-            Tuple of (loaded_keys, missing_keys)
+        if "local_user_bias" in local_state_dict:
+            self.local_user_bias.data.copy_(local_state_dict["local_user_bias"])
+            loaded.append("local_user_bias")
+        else:
+            missing.append("local_user_bias")
 
-        Edge case handling:
-            - If saved embeddings have fewer users than model, new users get
-              initialized with Xavier uniform (kept from model init)
-            - If saved embeddings have more users, extras are ignored
-        """
-        loaded_keys = []
-        missing_keys = []
-        current_state = self.state_dict()
-
-        for name in self._LOCAL_PARAMS:
-            if name not in local_state_dict:
-                missing_keys.append(name)
-                continue
-
-            saved_tensor = local_state_dict[name]
-            current_tensor = current_state[name]
-
-            # Check if shapes match
-            if saved_tensor.shape == current_tensor.shape:
-                # Perfect match - load directly
-                current_state[name] = saved_tensor
-                loaded_keys.append(name)
-            elif saved_tensor.shape[0] < current_tensor.shape[0]:
-                # New users in this round - partial load
-                num_saved = saved_tensor.shape[0]
-                current_state[name][:num_saved] = saved_tensor
-                loaded_keys.append(f"{name}[:{num_saved}]")
-            elif strict:
-                raise ValueError(
-                    f"Shape mismatch for {name}: "
-                    f"saved {saved_tensor.shape} vs current {current_tensor.shape}"
-                )
-            else:
-                # Saved has more users than model expects (unusual)
-                # Truncate to fit
-                current_state[name] = saved_tensor[:current_tensor.shape[0]]
-                loaded_keys.append(f"{name}[:truncated]")
-
-        self.load_state_dict(current_state, strict=True)
-        return loaded_keys, missing_keys
+        return loaded, missing
 
     def get_global_parameter_names(self) -> List[str]:
         """Return list of global parameter names in consistent order."""
