@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Dict
 
 import torch
-from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
+from flwr.app import ArrayRecord, ConfigRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
 # Phase 2 Plan 03 foundation imports (D-21/D-22/BSL-02/BSL-03/BSL-05/BSL-07).
@@ -226,6 +226,7 @@ def train(msg: Message, context: Context):
         num_positives=num_positives,
         num_training_examples=num_training_examples,
         round_num=round_num,
+        partition_id=partition_id,
     ).to_dict()
     # Defense-in-depth: validate before sending to catch contract drift.
     validate_fit_metrics(fit_metrics)
@@ -266,11 +267,27 @@ def evaluate(msg: Message, context: Context):
       the client's user-group receives the non-zero values; the other
       two groups receive zeros.
     """
+    # G-03-01 discovery-round short-circuit: server uses this to build
+    # partition_id -> node_id mapping before round 1 so the per-round
+    # sampler can work in partition-id space (stable 0..N-1) instead of
+    # Flower's ephemeral node_id space (os.urandom, not seedable).
+    partition_id = int(context.node_config["partition-id"])
+    config = msg.content.get("config") or ConfigRecord()
+    if bool(config.get("discover_only", False)):
+        payload = EvaluateMetricsContract(
+            hit_count_overall_at10=0,
+            ndcg_sum_overall_at10=0.0,
+            evaluated_users=0,
+            partition_id=partition_id,
+        ).to_dict()
+        validate_evaluate_metrics(payload)
+        content = RecordDict({"metrics": MetricRecord(payload)})
+        return Message(content=content, reply_to=msg)
+
     mode = context.run_config.get("mode", "cross_silo_legacy")
     profile = resolve_mode_defaults(mode)
     overrides = log_mode_and_overrides(mode, profile, context.run_config)
 
-    partition_id = int(context.node_config["partition-id"])
     num_partitions = int(context.node_config["num-partitions"])
     round_num = int(msg.content["config"].get("round_num", 1))
     run_seed = int(context.run_config.get("run-seed", 42))
@@ -415,6 +432,7 @@ def evaluate(msg: Message, context: Context):
         hit_count_dense_at10=per_group["dense"]["hit"],
         ndcg_sum_dense_at10=per_group["dense"]["ndcg"],
         evaluated_users_dense=per_group["dense"]["users"],
+        partition_id=partition_id,
     ).to_dict()
     # Defense-in-depth: reject free-form extras before sending (D-21).
     validate_evaluate_metrics(eval_payload)
