@@ -19,7 +19,7 @@ requirements:
 must_haves:
   truths:
     - "FitMetricsContract accepts per-group sufficient-stat keys (hit_count_sparse@10, evaluated_users_sparse, ndcg_sum_sparse@10, hit_count_medium@10, evaluated_users_medium, ndcg_sum_medium@10, hit_count_dense@10, evaluated_users_dense, ndcg_sum_dense@10, hit_count@10, evaluated_users, ndcg_sum@10) as dataclass fields; validate_fit_metrics still checks original required keys plus the new per-group keys."
-    - "EvaluateMetricsContract exists as a separate dataclass with required fields (eval_loss, sampled_hr_at_10, sampled_ndcg_at_10, evaluated_users, hit_count_at_10, ndcg_sum_at_10) plus the same 6 optional per-group keys as FitMetricsContract; EVAL_METRICS_REQUIRED_KEYS frozenset + validate_evaluate_metrics(payload) are exported. D-21/D-22 strict-contract guarantee extends to the evaluate wire payload (Plan 03 Task 2 consumes it)."
+    - "EvaluateMetricsContract exists as a separate dataclass using the SAME `_at10` (no underscore before 10) naming convention as FitMetricsContract and the strategy `_sum_sufficient_stats` reader. Required fields (hit_count_overall_at10, ndcg_sum_overall_at10, evaluated_users) are what the server aggregator consumes; 9 optional per-group keys (hit_count_{sparse,medium,dense}_at10, ndcg_sum_{sparse,medium,dense}_at10, evaluated_users_{sparse,medium,dense}) mirror FitMetricsContract; 3 optional diagnostic keys (eval_loss, sampled_hr_at10, sampled_ndcg_at10) are cached client-side for logs only and are NOT consumed for aggregation (server re-computes ratios from summed sufficient stats). EVAL_METRICS_REQUIRED_KEYS frozenset + validate_evaluate_metrics(payload) are exported. D-21/D-22 strict-contract guarantee extends to the evaluate wire payload (Plan 03 Task 2 consumes it). Iteration 2 fix: field names now match the strategy reader exactly — previous `_at_10`-vs-`_at10` drift would have silently zeroed all evaluate-side aggregation in production."
     - "BaselineFedAvg(FedAvg) and BaselineFedProx(FedProx) subclasses exist in federated_baseline_cf/strategy.py; each exposes aggregate_evaluate(server_round, results, failures) that sums sufficient stats across clients and returns (overall_loss, {'sampled_hr@10': hit_count/evaluated_users, 'sampled_ndcg@10': ndcg_sum/evaluated_users, 'sampled_hr@10/sparse': ..., 'sampled_ndcg@10/sparse': ..., 'sampled_hr@10/medium': ..., 'sampled_ndcg@10/medium': ..., 'sampled_hr@10/dense': ..., 'sampled_ndcg@10/dense': ..., 'evaluated_users': ..., 'evaluated_users_sparse': ..., 'evaluated_users_medium': ..., 'evaluated_users_dense': ...})."
     - "Aggregation does NOT average per-client ratios — it returns sum(hit_count) / sum(evaluated_users). The strategy's aggregate_fit() method is INHERITED unchanged from flwr.server.strategy.FedAvg / FedProx."
     - "pytest federated-baseline-cf/tests/test_strategy.py -v exits 0 with at least 3 GREEN tests."
@@ -59,7 +59,7 @@ Ship the contract extension and strategy scaffold that BSL-06 (sufficient-stat a
 
 Purpose: Under D-22 the `FitMetricsContract` is the single source of truth for everything that crosses the client/server boundary on the FIT side; per-group sufficient stats must be first-class fields of the contract, not free-form metrics extras. On the EVALUATE side (Plan 03 Task 2 consumer) the same strict-contract discipline is required, so this plan introduces a sibling `EvaluateMetricsContract` with matching per-group fields plus a `validate_evaluate_metrics(payload)` checker — otherwise D-21's "no free-form extras" guarantee is unenforceable because Plan 03's evaluate payload carries extra keys (`eval_loss`, `sampled_hr@10`, `sampled_ndcg@10`) that `validate_fit_metrics` does not check. Per D-20, baseline aggregation lives in a `BaselineFedAvg(FedAvg)` subclass that overrides `aggregate_evaluate` to compute headline metrics ONCE from summed sufficient statistics (server-side ratio), rather than averaging per-client ratios (which silently double-counts sparse users and produces mis-weighted thesis-table numbers). Plan 04 instantiates this strategy; Plan 03 populates these contract fields client-side; extending both contracts in Wave 1 unblocks both.
 
-Output: (1) Extended `FitMetricsContract` with 12 new per-group + overall sufficient-stat fields — backwards-compatible (all new fields are `Optional` with `None` default). (2) New `EvaluateMetricsContract` with 6 required fields (`eval_loss`, `sampled_hr_at_10`, `sampled_ndcg_at_10`, `evaluated_users`, `hit_count_at_10`, `ndcg_sum_at_10`) plus 6 optional per-group fields (`hit_count_{sparse,medium,dense}_at_10`, `evaluated_users_{sparse,medium,dense}`, `ndcg_sum_{sparse,medium,dense}_at_10` — naming mirrors FitMetricsContract's `_at10` Python-identifier convention); `EVAL_METRICS_REQUIRED_KEYS` frozenset; `validate_evaluate_metrics(payload)` function. (3) New `federated_baseline_cf/strategy.py` with `BaselineFedAvg(FedAvg)` and `BaselineFedProx(FedProx)` that override `aggregate_evaluate` to emit the correct server-side ratio. (4) pytest test harness in `federated-baseline-cf/tests/` mirroring Phase 1 layout (conftest.py fixtures + per-module tests). (5) New `scripts/foundation/tests/test_evaluate_metrics.py` covering the new contract. (pyproject.toml dev-dep declaration is OWNED by Plan 02 Task 1 — this plan does NOT touch pyproject.toml to avoid a Wave-1 write race with Plan 02.)
+Output: (1) Extended `FitMetricsContract` with 12 new per-group + overall sufficient-stat fields — backwards-compatible (all new fields are `Optional` with `None` default). (2) New `EvaluateMetricsContract` with 3 required fields (`hit_count_overall_at10`, `ndcg_sum_overall_at10`, `evaluated_users`) plus 9 optional per-group fields (`hit_count_{sparse,medium,dense}_at10`, `ndcg_sum_{sparse,medium,dense}_at10`, `evaluated_users_{sparse,medium,dense}`) and 3 optional diagnostic fields (`eval_loss`, `sampled_hr_at10`, `sampled_ndcg_at10` — diagnostic caches only; NOT consumed for aggregation, since the server re-computes the headline ratios from summed sufficient stats via `_sum_sufficient_stats` + `_sufficient_stats_to_thesis_metrics`). **Unified naming convention (iteration 2 fix): EvaluateMetricsContract field names now match FitMetricsContract AND the strategy's `_sum_sufficient_stats` reader — no more `_at_10`-with-underscore vs `_at10`-without-underscore drift. Previous iteration used two distinct suffixes which silently zeroed all evaluate-side metrics in production (tests bypassed it by constructing strategy-shape dicts directly).** `EVAL_METRICS_REQUIRED_KEYS` frozenset; `validate_evaluate_metrics(payload)` function. (3) New `federated_baseline_cf/strategy.py` with `BaselineFedAvg(FedAvg)` and `BaselineFedProx(FedProx)` that override `aggregate_evaluate` to emit the correct server-side ratio. (4) pytest test harness in `federated-baseline-cf/tests/` mirroring Phase 1 layout (conftest.py fixtures + per-module tests). (5) New `scripts/foundation/tests/test_evaluate_metrics.py` covering the new contract. (pyproject.toml dev-dep declaration is OWNED by Plan 02 Task 1 — this plan does NOT touch pyproject.toml to avoid a Wave-1 write race with Plan 02.)
 </objective>
 
 <execution_context>
@@ -151,15 +151,15 @@ def classify_user_group(n_interactions: int) -> str: ...   # "sparse" | "medium"
     - Test 2 (RED→GREEN, test_fit_metrics_per_group_optional, in test_weight_policy.py): FitMetricsContract(train_loss=0.5, num_positives=30, num_training_examples=150).to_dict() STILL works (does not raise), and the 12 new per-group fields default to None and are DROPPED by to_dict — i.e., backward-compatible.
     - Test 3 (RED→GREEN, test_fit_metrics_forward_compat_with_per_group_extension, in test_weight_policy.py): from_dict({"train_loss": 0.1, "num_positives": 2, "num_training_examples": 10, "hit_count_overall_at10": 1, "ndcg_sum_overall_at10": 0.63, "evaluated_users": 1, "alpha": 0.42}) succeeds (unknown "alpha" is filtered; known per-group "hit_count_overall_at10" is populated; missing per-group fields remain None).
     - Existing 12 tests in test_weight_policy.py remain GREEN with zero edits.
-    - Test 4 (RED→GREEN, test_evaluate_metrics_required_keys_enforced, in test_evaluate_metrics.py): validate_evaluate_metrics({"eval_loss": 0.5, "sampled_hr_at_10": 0.1, "sampled_ndcg_at_10": 0.05, "evaluated_users": 1, "hit_count_at_10": 0, "ndcg_sum_at_10": 0.0}) succeeds; validate_evaluate_metrics({"eval_loss": 0.5}) raises ValueError with `missing required keys` message.
-    - Test 5 (RED→GREEN, test_evaluate_metrics_per_group_fields, in test_evaluate_metrics.py): EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at_10=0.3, sampled_ndcg_at_10=0.15, evaluated_users=10, hit_count_at_10=3, ndcg_sum_at_10=1.5, hit_count_sparse_at_10=1, ndcg_sum_sparse_at_10=0.5, evaluated_users_sparse=4, hit_count_medium_at_10=2, ndcg_sum_medium_at_10=1.0, evaluated_users_medium=6, hit_count_dense_at_10=0, ndcg_sum_dense_at_10=0.0, evaluated_users_dense=0).to_dict() returns a dict with all 15 keys present and None-dropped. All 6 required keys present even when optional per-group keys are absent.
-    - Test 6 (RED→GREEN, test_evaluate_metrics_forward_compat, in test_evaluate_metrics.py): EvaluateMetricsContract.from_dict({"eval_loss": 0.5, "sampled_hr_at_10": 0.1, "sampled_ndcg_at_10": 0.05, "evaluated_users": 1, "hit_count_at_10": 0, "ndcg_sum_at_10": 0.0, "train_loss": 0.3}) succeeds; unknown key "train_loss" is filtered; optional per-group fields default to None.
+    - Test 4 (RED→GREEN, test_evaluate_metrics_required_keys_enforced, in test_evaluate_metrics.py): validate_evaluate_metrics({"eval_loss": 0.5, "sampled_hr_at10": 0.1, "sampled_ndcg_at10": 0.05, "evaluated_users": 1, "hit_count_overall_at10": 0, "ndcg_sum_overall_at10": 0.0}) succeeds; validate_evaluate_metrics({"eval_loss": 0.5}) raises ValueError with `missing required keys` message.
+    - Test 5 (RED→GREEN, test_evaluate_metrics_per_group_fields, in test_evaluate_metrics.py): EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at10=0.3, sampled_ndcg_at10=0.15, evaluated_users=10, hit_count_overall_at10=3, ndcg_sum_overall_at10=1.5, hit_count_sparse_at10=1, ndcg_sum_sparse_at10=0.5, evaluated_users_sparse=4, hit_count_medium_at10=2, ndcg_sum_medium_at10=1.0, evaluated_users_medium=6, hit_count_dense_at10=0, ndcg_sum_dense_at10=0.0, evaluated_users_dense=0).to_dict() returns a dict with all 15 keys present and None-dropped. All 6 required keys present even when optional per-group keys are absent.
+    - Test 6 (RED→GREEN, test_evaluate_metrics_forward_compat, in test_evaluate_metrics.py): EvaluateMetricsContract.from_dict({"eval_loss": 0.5, "sampled_hr_at10": 0.1, "sampled_ndcg_at10": 0.05, "evaluated_users": 1, "hit_count_overall_at10": 0, "ndcg_sum_overall_at10": 0.0, "train_loss": 0.3}) succeeds; unknown key "train_loss" is filtered; optional per-group fields default to None.
     - Test 7 (RED→GREEN, test_evaluate_metrics_rejects_wrong_types, in test_evaluate_metrics.py): EvaluateMetricsContract(eval_loss="not-a-float", ...) raises ValueError (wraps TypeError per Phase 1 CR-4 pattern).
   </behavior>
   <action>
 Extend `scripts/foundation/fedrec_foundation/fit_metrics.py` by adding 12 optional per-group and overall sufficient-stat fields to the `FitMetricsContract` dataclass, keeping all existing fields and behavior identical. Do NOT add the new keys to `FIT_METRICS_REQUIRED_KEYS`. Do NOT change `validate_fit_metrics` semantics — it validates only the original three required keys (train_loss, num_positives, num_training_examples).
 
-In the same file, ADD a sibling `EvaluateMetricsContract` dataclass + `EVAL_METRICS_REQUIRED_KEYS` frozenset + `validate_evaluate_metrics(payload)` function. This is a separate public API from FitMetricsContract. The evaluate-side payload (constructed in Plan 03 Task 2) must validate via `validate_evaluate_metrics(payload)` — NOT `validate_fit_metrics(payload)` — which is why a sibling contract is required (D-21: "No free-form extras in the metrics dict" — the evaluate payload carries `eval_loss`, `sampled_hr_at_10`, `sampled_ndcg_at_10` that are NOT in FIT_METRICS_REQUIRED_KEYS).
+In the same file, ADD a sibling `EvaluateMetricsContract` dataclass + `EVAL_METRICS_REQUIRED_KEYS` frozenset + `validate_evaluate_metrics(payload)` function. This is a separate public API from FitMetricsContract. The evaluate-side payload (constructed in Plan 03 Task 2) must validate via `validate_evaluate_metrics(payload)` — NOT `validate_fit_metrics(payload)` — which is why a sibling contract is required (D-21: "No free-form extras in the metrics dict" — the evaluate payload carries `eval_loss`, `sampled_hr_at10`, `sampled_ndcg_at10` that are NOT in FIT_METRICS_REQUIRED_KEYS).
 
 Use TDD:
 1. First run `pytest scripts/foundation/tests/test_weight_policy.py -v` to confirm 12 tests GREEN baseline.
@@ -199,16 +199,13 @@ class FitMetricsContract:
     evaluated_users_dense: Optional[int] = None
 ```
 
-Exact new additions for `EvaluateMetricsContract` (naming: `_at_10` with an UNDERSCORE between `at` and `10` to visually distinguish eval-side field names from FitMetricsContract's `_at10` — both are valid Python identifiers; planner picked this convention to avoid accidental copy-paste confusion when Plan 03 Task 2 constructs the evaluate payload):
+Exact new additions for `EvaluateMetricsContract` (naming: **`_at10` — no underscore between `at` and `10` — unified with FitMetricsContract AND with the strategy's `_sum_sufficient_stats` key tuple** in Task 2 of this plan; iteration 2 fix removes the previous `_at_10`-vs-`_at10` drift that silently zeroed all evaluate-side aggregation in production):
 
 ```python
 EVAL_METRICS_REQUIRED_KEYS: FrozenSet[str] = frozenset({
-    "eval_loss",
-    "sampled_hr_at_10",
-    "sampled_ndcg_at_10",
+    "hit_count_overall_at10",
+    "ndcg_sum_overall_at10",
     "evaluated_users",
-    "hit_count_at_10",
-    "ndcg_sum_at_10",
 })
 
 
@@ -216,24 +213,29 @@ EVAL_METRICS_REQUIRED_KEYS: FrozenSet[str] = frozenset({
 class EvaluateMetricsContract:
     """Strict-contract wire payload for Flower @app.evaluate() responses (D-21, D-22).
 
-    Required fields MUST be present in any ``to_dict()`` output:
-      - ``eval_loss`` : float — per-client weighted average loss (informational).
-      - ``sampled_hr_at_10`` : float — overall HR@10 (client-local ratio; server
-        re-aggregates via sufficient-stat sums in BaselineFedAvg.aggregate_evaluate).
-      - ``sampled_ndcg_at_10`` : float — overall NDCG@10 (client-local ratio).
+    Required fields MUST be present in any ``to_dict()`` output (these are
+    the canonical sufficient-stat keys that :func:`_sum_sufficient_stats` reads
+    server-side; aggregation is sum-based, NOT averaged per-client ratios):
+      - ``hit_count_overall_at10`` : int — client's overall hit-count sufficient stat.
+      - ``ndcg_sum_overall_at10`` : float — client's overall NDCG-sum sufficient stat.
       - ``evaluated_users`` : int — client's evaluated-user count (denominator
         for server-side ratio reconstruction).
-      - ``hit_count_at_10`` : int — client's overall hit-count sufficient stat.
-      - ``ndcg_sum_at_10`` : float — client's overall NDCG-sum sufficient stat.
+
+    Optional diagnostic fields (cached client-side for per-round logs only; NOT
+    consumed by the server aggregator, since the server re-computes the
+    headline ratios from summed sufficient stats):
+      - ``eval_loss`` : Optional[float] — per-client weighted average loss.
+      - ``sampled_hr_at10`` : Optional[float] — client-local HR@10 ratio.
+      - ``sampled_ndcg_at10`` : Optional[float] — client-local NDCG@10 ratio.
 
     Optional per-group fields (mirror FitMetricsContract's 6 per-group keys):
-      - ``hit_count_{sparse,medium,dense}_at_10`` : Optional[int]
-      - ``ndcg_sum_{sparse,medium,dense}_at_10`` : Optional[float]
+      - ``hit_count_{sparse,medium,dense}_at10`` : Optional[int]
+      - ``ndcg_sum_{sparse,medium,dense}_at10`` : Optional[float]
       - ``evaluated_users_{sparse,medium,dense}`` : Optional[int]
 
     The server's ``BaselineFedAvg.aggregate_evaluate`` (Phase 2 Plan 01 Task 2)
     reads these sufficient stats and emits server-side ratios; client-local
-    ratios (``sampled_hr_at_10`` / ``sampled_ndcg_at_10``) are informational
+    ratios (``sampled_hr_at10`` / ``sampled_ndcg_at10``) are informational
     only (they're what Flower shows in its per-round dump before our strategy
     override runs).
 
@@ -241,19 +243,19 @@ class EvaluateMetricsContract:
     ----------
     eval_loss : float
         Informational per-client weighted average loss.
-    sampled_hr_at_10 : float
+    sampled_hr_at10 : float
         Client-local HR@10 ratio.
-    sampled_ndcg_at_10 : float
+    sampled_ndcg_at10 : float
         Client-local NDCG@10 ratio.
     evaluated_users : int
         Client's evaluated-user count.
-    hit_count_at_10 : int
+    hit_count_overall_at10 : int
         Client's overall hit-count sufficient stat.
-    ndcg_sum_at_10 : float
+    ndcg_sum_overall_at10 : float
         Client's overall NDCG-sum sufficient stat.
-    hit_count_sparse_at_10, ndcg_sum_sparse_at_10, evaluated_users_sparse : optional
-    hit_count_medium_at_10, ndcg_sum_medium_at_10, evaluated_users_medium : optional
-    hit_count_dense_at_10, ndcg_sum_dense_at_10, evaluated_users_dense : optional
+    hit_count_sparse_at10, ndcg_sum_sparse_at10, evaluated_users_sparse : optional
+    hit_count_medium_at10, ndcg_sum_medium_at10, evaluated_users_medium : optional
+    hit_count_dense_at10, ndcg_sum_dense_at10, evaluated_users_dense : optional
         Per-group sufficient-stat fields (D-22). Optional for backwards
         compatibility; Plan 03 Task 2 populates all three groups
         (sparse/medium/dense), with the client's group receiving the
@@ -264,21 +266,23 @@ class EvaluateMetricsContract:
     EvaluateMetricsContract
         Dataclass instance.
     """
-    eval_loss: float
-    sampled_hr_at_10: float
-    sampled_ndcg_at_10: float
+    # --- Required fields (sufficient stats; unified naming with FitMetricsContract + strategy reader). ---
+    hit_count_overall_at10: int
+    ndcg_sum_overall_at10: float
     evaluated_users: int
-    hit_count_at_10: int
-    ndcg_sum_at_10: float
-    # --- Per-group fields (D-22): same 6 groups as FitMetricsContract. ---
-    hit_count_sparse_at_10: Optional[int] = None
-    ndcg_sum_sparse_at_10: Optional[float] = None
+    # --- Optional diagnostic fields (cached client-side; NOT consumed by server aggregator). ---
+    eval_loss: Optional[float] = None
+    sampled_hr_at10: Optional[float] = None
+    sampled_ndcg_at10: Optional[float] = None
+    # --- Optional per-group fields (D-22): same 6 groups as FitMetricsContract. ---
+    hit_count_sparse_at10: Optional[int] = None
+    ndcg_sum_sparse_at10: Optional[float] = None
     evaluated_users_sparse: Optional[int] = None
-    hit_count_medium_at_10: Optional[int] = None
-    ndcg_sum_medium_at_10: Optional[float] = None
+    hit_count_medium_at10: Optional[int] = None
+    ndcg_sum_medium_at10: Optional[float] = None
     evaluated_users_medium: Optional[int] = None
-    hit_count_dense_at_10: Optional[int] = None
-    ndcg_sum_dense_at_10: Optional[float] = None
+    hit_count_dense_at10: Optional[int] = None
+    ndcg_sum_dense_at10: Optional[float] = None
     evaluated_users_dense: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Union[int, float]]:
@@ -414,14 +418,22 @@ from fedrec_foundation.fit_metrics import (
 
 
 def test_evaluate_metrics_required_keys_enforced() -> None:
-    # Valid payload with all 6 required keys (and no extras beyond known fields).
+    # Valid payload with all 3 required sufficient-stat keys (and no extras
+    # beyond known fields). Diagnostic keys eval_loss / sampled_hr_at10 /
+    # sampled_ndcg_at10 are optional — may be absent without raising.
     validate_evaluate_metrics({
-        "eval_loss": 0.5,
-        "sampled_hr_at_10": 0.1,
-        "sampled_ndcg_at_10": 0.05,
+        "hit_count_overall_at10": 0,
+        "ndcg_sum_overall_at10": 0.0,
         "evaluated_users": 1,
-        "hit_count_at_10": 0,
-        "ndcg_sum_at_10": 0.0,
+    })
+    # Valid payload with required + optional diagnostics + optional per-group.
+    validate_evaluate_metrics({
+        "hit_count_overall_at10": 0,
+        "ndcg_sum_overall_at10": 0.0,
+        "evaluated_users": 1,
+        "eval_loss": 0.5,
+        "sampled_hr_at10": 0.1,
+        "sampled_ndcg_at10": 0.05,
     })
     # Missing required keys -> ValueError.
     with pytest.raises(ValueError, match="missing required keys"):
@@ -429,54 +441,53 @@ def test_evaluate_metrics_required_keys_enforced() -> None:
     # Free-form extra -> ValueError (D-21: no free-form extras).
     with pytest.raises(ValueError, match="free-form extras"):
         validate_evaluate_metrics({
-            "eval_loss": 0.5,
-            "sampled_hr_at_10": 0.1,
-            "sampled_ndcg_at_10": 0.05,
+            "hit_count_overall_at10": 0,
+            "ndcg_sum_overall_at10": 0.0,
             "evaluated_users": 1,
-            "hit_count_at_10": 0,
-            "ndcg_sum_at_10": 0.0,
             "freeform_field": 1.0,  # not a known contract field
         })
 
 
 def test_evaluate_metrics_per_group_fields() -> None:
     contract = EvaluateMetricsContract(
-        eval_loss=0.5, sampled_hr_at_10=0.3, sampled_ndcg_at_10=0.15,
-        evaluated_users=10, hit_count_at_10=3, ndcg_sum_at_10=1.5,
-        hit_count_sparse_at_10=1, ndcg_sum_sparse_at_10=0.5, evaluated_users_sparse=4,
-        hit_count_medium_at_10=2, ndcg_sum_medium_at_10=1.0, evaluated_users_medium=6,
-        hit_count_dense_at_10=0, ndcg_sum_dense_at_10=0.0, evaluated_users_dense=0,
+        eval_loss=0.5, sampled_hr_at10=0.3, sampled_ndcg_at10=0.15,
+        evaluated_users=10, hit_count_overall_at10=3, ndcg_sum_overall_at10=1.5,
+        hit_count_sparse_at10=1, ndcg_sum_sparse_at10=0.5, evaluated_users_sparse=4,
+        hit_count_medium_at10=2, ndcg_sum_medium_at10=1.0, evaluated_users_medium=6,
+        hit_count_dense_at10=0, ndcg_sum_dense_at10=0.0, evaluated_users_dense=0,
     )
     d = contract.to_dict()
     for key in EVAL_METRICS_REQUIRED_KEYS:
         assert key in d, f"missing required field {key}"
     for group in ("sparse", "medium", "dense"):
-        assert f"hit_count_{group}_at_10" in d
-        assert f"ndcg_sum_{group}_at_10" in d
+        assert f"hit_count_{group}_at10" in d
+        assert f"ndcg_sum_{group}_at10" in d
         assert f"evaluated_users_{group}" in d
 
 
 def test_evaluate_metrics_forward_compat() -> None:
     # Unknown keys are filtered; optional per-group fields default None.
     contract = EvaluateMetricsContract.from_dict({
-        "eval_loss": 0.5, "sampled_hr_at_10": 0.1, "sampled_ndcg_at_10": 0.05,
-        "evaluated_users": 1, "hit_count_at_10": 0, "ndcg_sum_at_10": 0.0,
+        "eval_loss": 0.5, "sampled_hr_at10": 0.1, "sampled_ndcg_at10": 0.05,
+        "evaluated_users": 1, "hit_count_overall_at10": 0, "ndcg_sum_overall_at10": 0.0,
         "train_loss": 0.3,  # unknown — filtered (not in EvaluateMetricsContract fields)
     })
     assert contract.eval_loss == 0.5
-    assert contract.hit_count_sparse_at_10 is None  # optional default
+    assert contract.hit_count_sparse_at10 is None  # optional default
 
 
 def test_evaluate_metrics_rejects_wrong_types() -> None:
     # Type errors wrap as ValueError per Phase 1 CR-4 pattern.
     # NOTE: dataclass field annotations do NOT enforce runtime types; we rely on
     # the from_dict TypeError-wrap path, so this test exercises missing-required-keys.
+    # The 3 required keys are hit_count_overall_at10 / ndcg_sum_overall_at10 /
+    # evaluated_users; eval_loss is an optional diagnostic field.
     with pytest.raises(ValueError):
-        EvaluateMetricsContract.from_dict({"eval_loss": 0.5})  # missing 5 required keys
+        EvaluateMetricsContract.from_dict({"eval_loss": 0.5})  # missing 3 required keys
 ```
   </action>
   <verify>
-    <automated>cd scripts/foundation && pytest tests/test_weight_policy.py tests/test_evaluate_metrics.py -v && python -c "from fedrec_foundation.fit_metrics import FitMetricsContract, EvaluateMetricsContract, FIT_METRICS_REQUIRED_KEYS, EVAL_METRICS_REQUIRED_KEYS, validate_evaluate_metrics; c = FitMetricsContract(train_loss=0.1, num_positives=2, num_training_examples=10, hit_count_overall_at10=1, evaluated_users=1); assert c.hit_count_overall_at10 == 1 and FIT_METRICS_REQUIRED_KEYS == ('train_loss', 'num_positives', 'num_training_examples'); e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at_10=0.1, sampled_ndcg_at_10=0.05, evaluated_users=1, hit_count_at_10=0, ndcg_sum_at_10=0.0); validate_evaluate_metrics(e.to_dict()); print('ok')"</automated>
+    <automated>cd scripts/foundation && pytest tests/test_weight_policy.py tests/test_evaluate_metrics.py -v && python -c "from fedrec_foundation.fit_metrics import FitMetricsContract, EvaluateMetricsContract, FIT_METRICS_REQUIRED_KEYS, EVAL_METRICS_REQUIRED_KEYS, validate_evaluate_metrics; c = FitMetricsContract(train_loss=0.1, num_positives=2, num_training_examples=10, hit_count_overall_at10=1, evaluated_users=1); assert c.hit_count_overall_at10 == 1 and FIT_METRICS_REQUIRED_KEYS == ('train_loss', 'num_positives', 'num_training_examples'); e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at10=0.1, sampled_ndcg_at10=0.05, evaluated_users=1, hit_count_overall_at10=0, ndcg_sum_overall_at10=0.0); validate_evaluate_metrics(e.to_dict()); print('ok')"</automated>
   </verify>
   <acceptance_criteria>
     - `grep -n "hit_count_overall_at10\|evaluated_users_sparse\|evaluated_users_dense" scripts/foundation/fedrec_foundation/fit_metrics.py` returns at least 3 matches.
@@ -488,7 +499,7 @@ def test_evaluate_metrics_rejects_wrong_types() -> None:
     - `pytest scripts/foundation/tests/test_evaluate_metrics.py -v 2>&1 | grep -E "passed|failed"` shows 4 passed, 0 failed.
     - `python -c "from fedrec_foundation.fit_metrics import FitMetricsContract; FitMetricsContract(train_loss=0.5, num_positives=5, num_training_examples=25)"` exits 0 (backward compat).
     - `python -c "from fedrec_foundation.fit_metrics import validate_fit_metrics; validate_fit_metrics({'train_loss': 0.1, 'num_positives': 1, 'num_training_examples': 5})"` exits 0 (Phase 1 contract preserved).
-    - `python -c "from fedrec_foundation.fit_metrics import EvaluateMetricsContract, validate_evaluate_metrics; e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at_10=0.1, sampled_ndcg_at_10=0.05, evaluated_users=1, hit_count_at_10=0, ndcg_sum_at_10=0.0); validate_evaluate_metrics(e.to_dict())"` exits 0.
+    - `python -c "from fedrec_foundation.fit_metrics import EvaluateMetricsContract, validate_evaluate_metrics; e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at10=0.1, sampled_ndcg_at10=0.05, evaluated_users=1, hit_count_overall_at10=0, ndcg_sum_overall_at10=0.0); validate_evaluate_metrics(e.to_dict())"` exits 0.
   </acceptance_criteria>
   <done>FitMetricsContract has 12 new optional sufficient-stat fields; EvaluateMetricsContract + EVAL_METRICS_REQUIRED_KEYS + validate_evaluate_metrics exist; 15 + 4 = 19 tests GREEN across test_weight_policy.py + test_evaluate_metrics.py; Phase 1 contract semantics preserved.</done>
 </task>
@@ -877,14 +888,14 @@ Full-phase verification for Plan 01:
 2. `pytest scripts/foundation/tests/test_evaluate_metrics.py -v` — shows 4 passed.
 3. `pytest federated-baseline-cf/tests/test_strategy.py -v` — shows 5 passed.
 4. Contract backward compat: `python -c "from fedrec_foundation.fit_metrics import FitMetricsContract, validate_fit_metrics, FIT_METRICS_REQUIRED_KEYS; assert FIT_METRICS_REQUIRED_KEYS == ('train_loss','num_positives','num_training_examples'); c = FitMetricsContract(train_loss=0.1, num_positives=1, num_training_examples=5); assert c.hit_count_sparse_at10 is None; validate_fit_metrics(c.to_dict()); print('ok')"` exits 0.
-5. EvaluateMetricsContract smoke: `python -c "from fedrec_foundation.fit_metrics import EvaluateMetricsContract, validate_evaluate_metrics, EVAL_METRICS_REQUIRED_KEYS; e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at_10=0.1, sampled_ndcg_at_10=0.05, evaluated_users=1, hit_count_at_10=0, ndcg_sum_at_10=0.0); validate_evaluate_metrics(e.to_dict()); print('ok')"` exits 0.
+5. EvaluateMetricsContract smoke: `python -c "from fedrec_foundation.fit_metrics import EvaluateMetricsContract, validate_evaluate_metrics, EVAL_METRICS_REQUIRED_KEYS; e = EvaluateMetricsContract(eval_loss=0.5, sampled_hr_at10=0.1, sampled_ndcg_at10=0.05, evaluated_users=1, hit_count_overall_at10=0, ndcg_sum_overall_at10=0.0); validate_evaluate_metrics(e.to_dict()); print('ok')"` exits 0.
 6. Strategy smoke test: `python -c "from federated_baseline_cf.strategy import BaselineFedAvg, BaselineFedProx; assert BaselineFedAvg.aggregate_fit.__qualname__ == 'FedAvg.aggregate_fit'; print('ok')"` exits 0 (inheritance check at runtime).
 7. Wave-1 write-race invariant: `git diff --name-only federated-baseline-cf/pyproject.toml` shows NO diff attributable to Plan 01 (Plan 02 Task 1 owns pyproject.toml).
 </verification>
 
 <success_criteria>
 - FitMetricsContract has 12 new optional per-group/overall sufficient-stat fields; `FIT_METRICS_REQUIRED_KEYS` unchanged; `validate_fit_metrics` semantics unchanged (Phase 1 contract intact).
-- EvaluateMetricsContract + `EVAL_METRICS_REQUIRED_KEYS` (6 required keys) + `validate_evaluate_metrics(payload)` exist and enforce D-21 strict-contract (rejects free-form extras) + D-22 per-group fields (optional, mirrors FitMetricsContract's 6-group layout).
+- EvaluateMetricsContract + `EVAL_METRICS_REQUIRED_KEYS` (3 required sufficient-stat keys: `hit_count_overall_at10`, `ndcg_sum_overall_at10`, `evaluated_users` — unified with FitMetricsContract + strategy `_sum_sufficient_stats` reader) + 3 optional diagnostic fields (`eval_loss`, `sampled_hr_at10`, `sampled_ndcg_at10` — cached client-side; NOT consumed for aggregation) + 9 optional per-group fields + `validate_evaluate_metrics(payload)` enforce D-21 strict-contract (rejects free-form extras) + D-22 per-group fields. Iteration 2 unified-naming fix: field names now match the strategy reader exactly, preventing the silent-zero-metrics bug from iteration 1 (dict keys on the wire must match dict keys read by `_sum_sufficient_stats`).
 - `BaselineFedAvg(FedAvg)` and `BaselineFedProx(FedProx)` exist; each overrides `aggregate_evaluate` to compute `sampled_hr@10` / `sampled_ndcg@10` (overall + per-group) as sum-based ratios.
 - `aggregate_fit` is inherited unchanged (D-23 preserved).
 - 15 + 4 + 5 = 24 GREEN tests across `test_weight_policy.py` + `test_evaluate_metrics.py` + `test_strategy.py`.

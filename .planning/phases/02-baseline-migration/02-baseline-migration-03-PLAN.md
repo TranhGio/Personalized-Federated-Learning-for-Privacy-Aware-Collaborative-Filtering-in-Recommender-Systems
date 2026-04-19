@@ -26,7 +26,7 @@ must_haves:
     - "Gradients for `user_embeddings.weight` and (if `use_bias=True`) `user_bias.weight` are zeroed on all rows EXCEPT this client's user_idx rows after `loss.backward()` and BEFORE `optimizer.step()`. Optimizer-agnostic (works for Adam + SGD)."
     - "`evaluate_ranking_sampled` drops `random.seed(seed)` (line 758 stripped) and accepts a `rng: numpy.random.Generator` argument; the 99-negative sampling uses `rng.choice(negative_candidates, size=num_negatives, replace=False)` with the same exclusion-set guard."
     - "BSL-05 stripping is verified across BOTH task.py AND client_app.py (iteration 1 WARNING 2 fix): per-task acceptance criteria greps `client_app.py` for `^import random$|random\\.seed(|random\\.sample(` and expects 0 matches; test_task_rng.py extends `test_random_seed_calls_stripped` to read client_app.py too."
-    - "`client_app.py::@app.train()` returns `FitMetricsContract.to_dict()` (strict contract per D-21); `@app.evaluate()` returns `EvaluateMetricsContract.to_dict()` validated by `validate_evaluate_metrics(payload)` per D-21/D-22 (iteration 1 WARNING 1 fix — no free-form `eval_loss` / `sampled_hr@10` / `sampled_ndcg@10` keys leaking past the contract)."
+    - "`client_app.py::@app.train()` returns `FitMetricsContract.to_dict()` (strict contract per D-21); `@app.evaluate()` returns `EvaluateMetricsContract.to_dict()` validated by `validate_evaluate_metrics(payload)` per D-21/D-22 (iteration 1 WARNING 1 + iteration 2 unified-naming fix — the previously free-form `eval_loss` / `sampled_hr_at10` / `sampled_ndcg_at10` keys are now named, optional, diagnostic fields of EvaluateMetricsContract; field names match FitMetricsContract and the strategy `_sum_sufficient_stats` reader so aggregation is no longer silently zeroed)."
     - "Primary evaluator path uses only FND-04 `sampled_loo_99` (selected via `get_primary_evaluator(mode)`); `allrank_*` metrics stay namespaced (BSL-07)."
   artifacts:
     - path: "federated-baseline-cf/federated_baseline_cf/client_app.py"
@@ -150,24 +150,29 @@ From fedrec_foundation.fit_metrics (post-Plan-01 extension, iteration 1 WARNING 
     evaluated_users_dense: Optional[int] = None
     def to_dict(self) -> Dict[str, Union[int, float]]: ...       # drops None
 
-# NEW in Plan 01 iteration 1 WARNING 1 fix:
-EVAL_METRICS_REQUIRED_KEYS = frozenset({"eval_loss", "sampled_hr_at_10", "sampled_ndcg_at_10",
-                                        "evaluated_users", "hit_count_at_10", "ndcg_sum_at_10"})
+# NEW in Plan 01 (iteration 2 unified-naming fix): field names match FitMetricsContract
+# AND the strategy's `_sum_sufficient_stats` reader — no more `_at_10`-vs-`_at10` drift.
+# Required keys = the 3 sufficient-stat fields the server aggregator consumes.
+# Diagnostic fields (eval_loss, sampled_hr_at10, sampled_ndcg_at10) are OPTIONAL caches.
+EVAL_METRICS_REQUIRED_KEYS = frozenset({"hit_count_overall_at10", "ndcg_sum_overall_at10", "evaluated_users"})
 @dataclass class EvaluateMetricsContract:
-    eval_loss: float
-    sampled_hr_at_10: float
-    sampled_ndcg_at_10: float
+    # Required (sufficient stats consumed by server aggregator):
+    hit_count_overall_at10: int
+    ndcg_sum_overall_at10: float
     evaluated_users: int
-    hit_count_at_10: int
-    ndcg_sum_at_10: float
-    hit_count_sparse_at_10: Optional[int] = None
-    ndcg_sum_sparse_at_10: Optional[float] = None
+    # Optional diagnostic caches (NOT consumed for aggregation — server re-computes):
+    eval_loss: Optional[float] = None
+    sampled_hr_at10: Optional[float] = None
+    sampled_ndcg_at10: Optional[float] = None
+    # Optional per-group fields (D-22):
+    hit_count_sparse_at10: Optional[int] = None
+    ndcg_sum_sparse_at10: Optional[float] = None
     evaluated_users_sparse: Optional[int] = None
-    hit_count_medium_at_10: Optional[int] = None
-    ndcg_sum_medium_at_10: Optional[float] = None
+    hit_count_medium_at10: Optional[int] = None
+    ndcg_sum_medium_at10: Optional[float] = None
     evaluated_users_medium: Optional[int] = None
-    hit_count_dense_at_10: Optional[int] = None
-    ndcg_sum_dense_at_10: Optional[float] = None
+    hit_count_dense_at10: Optional[int] = None
+    ndcg_sum_dense_at10: Optional[float] = None
     evaluated_users_dense: Optional[int] = None
     def to_dict(self) -> Dict[str, Union[int, float]]: ...   # drops None
 def validate_evaluate_metrics(payload: Dict[str, Union[int, float]]) -> None: ...
@@ -692,13 +697,18 @@ def evaluate(msg: Message, context: Context):
     BSL-05: evaluator RNG seeded from np_rng(run_seed, user_idx, round_num, 'eval_neg').
     BSL-07: primary evaluator selected via get_primary_evaluator(mode); allrank_* stays namespaced.
     D-21: returns EvaluateMetricsContract.to_dict() — strict contract wire payload
-    validated by validate_evaluate_metrics (iteration 1 WARNING 1 fix: previously
-    the payload carried free-form `eval_loss` / `sampled_hr@10` / `sampled_ndcg@10`
-    keys mixed with FitMetricsContract fields; those are now the REQUIRED keys of
-    the EvaluateMetricsContract, and validate_evaluate_metrics rejects free-form
+    validated by validate_evaluate_metrics (iteration 1 WARNING 1 fix + iteration 2
+    unified-naming fix: previously the payload carried free-form `eval_loss` /
+    `sampled_hr@10` / `sampled_ndcg@10` keys mixed with FitMetricsContract fields;
+    those are now OPTIONAL diagnostic fields of EvaluateMetricsContract renamed
+    to `eval_loss` / `sampled_hr_at10` / `sampled_ndcg_at10` (Python-identifier-
+    safe suffix unified with FitMetricsContract + strategy `_sum_sufficient_stats`
+    reader). The REQUIRED keys are the 3 sufficient-stat fields
+    `hit_count_overall_at10` / `ndcg_sum_overall_at10` / `evaluated_users` that
+    the server aggregator consumes. validate_evaluate_metrics rejects free-form
     extras that are NOT known contract fields).
     D-22: per-group sufficient stats travel as OPTIONAL contract fields
-    (hit_count_{sparse,medium,dense}_at_10, ndcg_sum_..._at_10,
+    (hit_count_{sparse,medium,dense}_at10, ndcg_sum_{sparse,medium,dense}_at10,
     evaluated_users_{sparse,medium,dense}).
     """
     mode = context.run_config.get("mode", "cross_silo_legacy")
@@ -771,38 +781,40 @@ def evaluate(msg: Message, context: Context):
     per_group[user_group]["users"] = evaluated_users
 
     # D-21 + D-22 strict-contract wire payload (iteration 1 WARNING 1 fix).
-    # EvaluateMetricsContract has 6 REQUIRED keys (eval_loss, sampled_hr_at_10,
-    # sampled_ndcg_at_10, evaluated_users, hit_count_at_10, ndcg_sum_at_10) and 9
-    # OPTIONAL per-group keys. validate_evaluate_metrics rejects free-form extras
-    # that are NOT known contract fields — no key leakage past the contract.
+    # EvaluateMetricsContract has 3 REQUIRED sufficient-stat keys (hit_count_overall_at10,
+    # ndcg_sum_overall_at10, evaluated_users) that the server's _sum_sufficient_stats
+    # reader consumes directly, plus 3 OPTIONAL diagnostic keys (eval_loss, sampled_hr_at10,
+    # sampled_ndcg_at10) and 9 OPTIONAL per-group keys. validate_evaluate_metrics rejects
+    # free-form extras that are NOT known contract fields — no key leakage past the
+    # contract. Field names unified with FitMetricsContract + strategy reader (iteration 2).
     eval_loss = 0.0   # no training in evaluate path; keep 0.0 for Flower's loss averaging
     eval_payload = EvaluateMetricsContract(
         eval_loss=float(eval_loss),
-        sampled_hr_at_10=float(sampled_metrics.get("sampled_hr@10", 0.0)),
-        sampled_ndcg_at_10=float(sampled_metrics.get("sampled_ndcg@10", 0.0)),
+        sampled_hr_at10=float(sampled_metrics.get("sampled_hr@10", 0.0)),
+        sampled_ndcg_at10=float(sampled_metrics.get("sampled_ndcg@10", 0.0)),
         evaluated_users=evaluated_users,
-        hit_count_at_10=hit10,
-        ndcg_sum_at_10=ndcg10,
-        hit_count_sparse_at_10=per_group["sparse"]["hit"],
-        ndcg_sum_sparse_at_10=per_group["sparse"]["ndcg"],
+        hit_count_overall_at10=hit10,
+        ndcg_sum_overall_at10=ndcg10,
+        hit_count_sparse_at10=per_group["sparse"]["hit"],
+        ndcg_sum_sparse_at10=per_group["sparse"]["ndcg"],
         evaluated_users_sparse=per_group["sparse"]["users"],
-        hit_count_medium_at_10=per_group["medium"]["hit"],
-        ndcg_sum_medium_at_10=per_group["medium"]["ndcg"],
+        hit_count_medium_at10=per_group["medium"]["hit"],
+        ndcg_sum_medium_at10=per_group["medium"]["ndcg"],
         evaluated_users_medium=per_group["medium"]["users"],
-        hit_count_dense_at_10=per_group["dense"]["hit"],
-        ndcg_sum_dense_at_10=per_group["dense"]["ndcg"],
+        hit_count_dense_at10=per_group["dense"]["hit"],
+        ndcg_sum_dense_at10=per_group["dense"]["ndcg"],
         evaluated_users_dense=per_group["dense"]["users"],
     ).to_dict()
     # Defense-in-depth: reject free-form extras before sending.
     validate_evaluate_metrics(eval_payload)
 
     # Note for Plan 04: the server's BaselineFedAvg.aggregate_evaluate consumes
-    # the per-group suffix `_at_10` fields via the same code path as the FIT-side
-    # `_at10` fields. The two naming conventions (with vs without underscore
-    # before `10`) are kept distinct on purpose so the server's sum-stat
-    # aggregator (which reads FitMetricsContract fields `hit_count_sparse_at10`
-    # et al.) does NOT accidentally double-count the evaluate-side fields. See
-    # Plan 04's BaselineFedAvg.aggregate_evaluate for the field-name mapping.
+    # these fields directly via `_sum_sufficient_stats` which reads the SAME
+    # `_at10` (no underscore before 10) keys as FitMetricsContract — unified
+    # naming convention (iteration 2 fix removed the previous `_at_10`-vs-`_at10`
+    # drift that would have silently zeroed all evaluate-side aggregation in
+    # production because the strategy's key tuple did not match this payload's
+    # keys). See Plan 04's BaselineFedAvg.aggregate_evaluate for the reader.
     metric_record = MetricRecord(eval_payload)
     content = RecordDict({"metrics": metric_record})
     return Message(content=content, reply_to=msg)
@@ -886,16 +898,16 @@ def test_evaluate_metrics_contract_payload_shape() -> None:
         EvaluateMetricsContract, validate_evaluate_metrics,
     )
     d = EvaluateMetricsContract(
-        eval_loss=0.0, sampled_hr_at_10=1.0, sampled_ndcg_at_10=0.63,
-        evaluated_users=1, hit_count_at_10=1, ndcg_sum_at_10=0.63,
-        hit_count_sparse_at_10=1, ndcg_sum_sparse_at_10=0.63, evaluated_users_sparse=1,
-        hit_count_medium_at_10=0, ndcg_sum_medium_at_10=0.0, evaluated_users_medium=0,
-        hit_count_dense_at_10=0, ndcg_sum_dense_at_10=0.0, evaluated_users_dense=0,
+        eval_loss=0.0, sampled_hr_at10=1.0, sampled_ndcg_at10=0.63,
+        evaluated_users=1, hit_count_overall_at10=1, ndcg_sum_overall_at10=0.63,
+        hit_count_sparse_at10=1, ndcg_sum_sparse_at10=0.63, evaluated_users_sparse=1,
+        hit_count_medium_at10=0, ndcg_sum_medium_at10=0.0, evaluated_users_medium=0,
+        hit_count_dense_at10=0, ndcg_sum_dense_at10=0.0, evaluated_users_dense=0,
     ).to_dict()
     validate_evaluate_metrics(d)  # no free-form extras allowed
-    for key in ("eval_loss", "sampled_hr_at_10", "sampled_ndcg_at_10",
-                "evaluated_users", "hit_count_at_10", "ndcg_sum_at_10",
-                "hit_count_sparse_at_10", "evaluated_users_medium", "evaluated_users_dense"):
+    for key in ("eval_loss", "sampled_hr_at10", "sampled_ndcg_at10",
+                "evaluated_users", "hit_count_overall_at10", "ndcg_sum_overall_at10",
+                "hit_count_sparse_at10", "evaluated_users_medium", "evaluated_users_dense"):
         assert key in d, f"missing {key}"
     # Negative guard: a payload with FitMetricsContract-style keys MUST fail.
     with pytest.raises(ValueError, match="free-form extras|missing required"):
@@ -916,7 +928,7 @@ def test_evaluate_metrics_contract_payload_shape() -> None:
     - `grep -c "np_rng(run_seed" federated-baseline-cf/federated_baseline_cf/client_app.py` returns at least 1.
     - `grep -c "get_primary_evaluator(mode)" federated-baseline-cf/federated_baseline_cf/client_app.py` returns 1.
     - `grep -c "\"num-examples\":" federated-baseline-cf/federated_baseline_cf/client_app.py` returns 0 (D-21: no free-form `num-examples`).
-    - `grep -c "hit_count_sparse_at_10" federated-baseline-cf/federated_baseline_cf/client_app.py` returns at least 1 (evaluate-side per-group field).
+    - `grep -c "hit_count_sparse_at10" federated-baseline-cf/federated_baseline_cf/client_app.py` returns at least 1 (evaluate-side per-group field).
     - BSL-05 cross-file regression (iteration 1 WARNING 2 fix): `grep -c "random\\.seed(\\|random\\.sample(\\|^import random$" federated-baseline-cf/federated_baseline_cf/client_app.py` returns 0.
     - `python -c "from federated_baseline_cf.client_app import app; assert hasattr(app, 'train') or 'train' in dir(app); print('ok')"` exits 0.
     - `pytest federated-baseline-cf/tests/test_client_assertion.py -v 2>&1 | grep -E "passed|failed"` shows 5 passed, 0 failed (4 prior + 1 new EvaluateMetricsContract shape test).
@@ -945,7 +957,7 @@ Full-phase verification for Plan 03:
 - BSL-05 observable: no `random.seed()` / `import random` in task.py OR client_app.py (iteration 1 WARNING 2 fix: cross-file check); `evaluate_ranking_sampled` seeds via `np_rng(run_seed, user_idx, round_num, 'eval_neg')`.
 - BSL-07 observable: `get_primary_evaluator(mode)` is called; `allrank_*` not populated into thesis-table fields.
 - D-21 observable: FIT payload uses FitMetricsContract.to_dict() (validated with validate_fit_metrics); EVALUATE payload uses EvaluateMetricsContract.to_dict() (validated with validate_evaluate_metrics — iteration 1 WARNING 1 fix: no free-form extras leaking past the contract).
-- D-22 observable: per-group sufficient-stat keys appear in both payload types (FIT: `_at10` suffix; EVAL: `_at_10` suffix — two distinct naming schemes to make cross-payload field drift self-evident if it ever occurs).
+- D-22 observable: per-group sufficient-stat keys appear in both payload types using the SAME unified `_at10` suffix (no underscore before 10) — matches FitMetricsContract AND the strategy's `_sum_sufficient_stats` key tuple in Plan 01 Task 2 (iteration 2 fix: previous `_at_10`-vs-`_at10` drift would have silently zeroed all evaluate-side aggregation).
 - D-24 observable: post-training-step, only user_idx's row of user_embeddings.weight has changed (test asserts this on a tiny model).
 - 4 + 5 = 9 GREEN tests across test_task_rng.py + test_client_assertion.py.
 - D-18 surgical guard preserved (iteration 1 WARNING 3 reinforcement): pre-existing uncommitted hunks outside BSL-02/03/05/07 rip scope remain untouched. Executor confirms via `git diff --stat` before committing.
