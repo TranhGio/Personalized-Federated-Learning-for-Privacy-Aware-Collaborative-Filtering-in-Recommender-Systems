@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 2 context gathered
-last_updated: "2026-04-19T06:39:22.745Z"
+stopped_at: Completed 02-baseline-migration-02-PLAN.md
+last_updated: "2026-04-19T07:54:19.318Z"
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 10
+  completed_plans: 7
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -20,15 +20,14 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 01 — foundation-contract is COMPLETE (all 6 plans shipped). Ready for Phase 02 (baseline-migration) or the Phase 1 verification gate.
+**Current focus:** Phase 02 — baseline-migration
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
-Next: Phase 02 (baseline-migration) or run the Phase 1 verifier / transition gate.
+Phase: 02 (baseline-migration) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -45,6 +44,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 01-foundation-contract P03 | 3min | 2 tasks | 5 files |
 | Phase 01-foundation-contract P04 | 4min | 2 tasks | 4 files |
 | Phase 01-foundation-contract P06 | 6min | 2 tasks | 6 files |
+| Phase 02-baseline-migration P02 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -79,6 +79,10 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 01-foundation-contract]: Plan 06 PEP 440 plain-name dep (not direct reference): fedrec-foundation appears as a bare dep name in each federated-*-cf/pyproject.toml without a URL. Hatchling does not resolve local file URIs at build time; direct-reference breaks editable-install semantics. Plain-name costs a load-bearing install-order step (foundation first) but works with every module's existing pip install -e . flow and matches docs/setup.md.
 - [Phase 01-foundation-contract]: Plan 06 closes Phase 1: after wiring foundation as a local-path dep into all 4 modules' pyproject.toml, every federated module can now 'from fedrec_foundation.X import ...' freely — no sys.path hacks, no fallback imports, no conditional guards. Phases 2-5 inherit this contract via editable install. The one-time user-setup rule is 'pip install -e scripts/foundation/' BEFORE 'pip install -e federated-*-cf/'; that order is enforced by docs/setup.md and by the comment inside each pyproject.toml.
 - [Phase 01-foundation-contract]: Plan 06 test design — subprocess-based cross-module import smoke test: 'test_cross_module_imports' parametrized across 4 modules uses subprocess.run(cwd=<module_dir>) to mirror 'flwr run .' execution semantics rather than in-process importlib. 'test_pyproject_declares_foundation_dep' is a cheap textual regression guard. Both land in scripts/foundation/tests/test_integration.py; full foundation suite goes from 65 to 70 GREEN tests.
+- [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: BSL-01 closed fully in-file — federated-baseline-cf/pyproject.toml declares partition-mode=natural + num-supernodes=6040 in BOTH local-simulation and local-sim-gpu federation blocks; flwr run . now resolves cross-device without relying on scripts/run.py launcher. Pre-existing partition-mode='natural' WIP from prior work preserved via surgical edit discipline.
+- [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: pytest dev dep exclusively owned by Plan 02 Task 1 — [project.optional-dependencies] dev = ['pytest>=7.0'] declared in baseline/pyproject.toml to eliminate iter-1 BLOCKER 1 Wave-1 write-race with Plan 01. Test plans 01/02/03/04 install pytest via pip install -e '.[dev]'.
+- [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: D-17 rip-and-replace completed in federated-baseline-cf/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data and load_full_data keep signatures but delegate mapping/split/exclusion to fedrec_foundation. partition_mode='dirichlet' now raises NotImplementedError; split_mode='random' raises ValueError. Cross-phase contract: dataset.py is a thin (~440 LOC) foundation adapter; Plans 03/04/05 follow this shape.
+- [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: D-18 surgical-edit discipline enforced — pre-existing uncommitted WIP in MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users preserved verbatim in dataset.py. Pre-existing WIP in client_app.py, server_app.py, task.py UNTOUCHED (Plans 03 and 04 own those). git diff --stat verified delta shape consistent with D-17 scope only. Duplicate eval-num-negatives declaration auto-fixed to avoid TOML duplicate-key error.
 
 ### Todos
 
@@ -111,7 +115,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
-**Stopped at:** Phase 2 context gathered
+**Stopped at:** Completed 02-baseline-migration-02-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

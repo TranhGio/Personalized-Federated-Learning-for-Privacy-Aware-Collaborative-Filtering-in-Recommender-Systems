@@ -23,7 +23,7 @@ Shared protocol contract consumed by all four modules. Everything downstream dep
 
 Migrate `federated-baseline-cf` to cross-device.
 
-- [ ] **BSL-01**: `federated-baseline-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`; cross-silo remains as an explicit opt-in via config override.
+- [x] **BSL-01**: `federated-baseline-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`; cross-silo remains as an explicit opt-in via config override.
 - [ ] **BSL-02**: `client_app.py` asserts exactly one local user per client in benchmark mode.
 - [ ] **BSL-03**: Training negative sampling uses the FND-03 exclusion set so the held-out test item is NEVER drawn as a training negative.
 - [ ] **BSL-04**: Server-side `random.sample(node_ids, ...)` is replaced with a seeded RNG derived from the run seed (FND-06); selected client IDs are logged per round.
@@ -137,7 +137,7 @@ Deferred beyond this thesis cycle.
 | FND-05 | Phase 1: Foundation Contract | Complete |
 | FND-06 | Phase 1: Foundation Contract | Complete |
 | FND-07 | Phase 1: Foundation Contract | Complete |
-| BSL-01 | Phase 2: Baseline Migration | Pending |
+| BSL-01 | Phase 2: Baseline Migration | Complete |
 | BSL-02 | Phase 2: Baseline Migration | Pending |
 | BSL-03 | Phase 2: Baseline Migration | Pending |
 | BSL-04 | Phase 2: Baseline Migration | Pending |
