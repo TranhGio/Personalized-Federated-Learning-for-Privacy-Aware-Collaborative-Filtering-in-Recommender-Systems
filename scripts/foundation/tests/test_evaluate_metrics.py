@@ -77,3 +77,70 @@ def test_evaluate_metrics_rejects_wrong_types() -> None:
     # evaluated_users; eval_loss is an optional diagnostic field.
     with pytest.raises(ValueError):
         EvaluateMetricsContract.from_dict({"eval_loss": 0.5})  # missing 3 required keys
+
+
+# ======================================================================
+# G-03-01 extension: optional partition_id field on both contracts.
+# Discovery round echoes partition_id so the server can build a
+# partition_id -> node_id map; per-round sampling then runs in stable
+# partition-id space, not Flower's ephemeral os.urandom-seeded node_id space.
+# ======================================================================
+
+
+def test_fit_metrics_contract_accepts_partition_id() -> None:
+    """G-03-01: FitMetricsContract accepts and serializes partition_id."""
+    from fedrec_foundation.fit_metrics import FitMetricsContract
+
+    payload = FitMetricsContract(
+        train_loss=0.1,
+        num_positives=5,
+        num_training_examples=25,
+        partition_id=1234,
+    ).to_dict()
+    assert payload.get("partition_id") == 1234
+    # Other required keys still present.
+    assert payload["train_loss"] == 0.1
+    assert payload["num_positives"] == 5
+    assert payload["num_training_examples"] == 25
+
+
+def test_evaluate_metrics_contract_accepts_partition_id() -> None:
+    """G-03-01: EvaluateMetricsContract accepts and serializes partition_id."""
+    payload = EvaluateMetricsContract(
+        hit_count_overall_at10=0,
+        ndcg_sum_overall_at10=0.0,
+        evaluated_users=0,
+        partition_id=42,
+    ).to_dict()
+    assert payload.get("partition_id") == 42
+    # Required sufficient-stat keys still present.
+    assert payload["hit_count_overall_at10"] == 0
+    assert payload["ndcg_sum_overall_at10"] == 0.0
+    assert payload["evaluated_users"] == 0
+
+
+def test_validate_evaluate_metrics_allows_partition_id() -> None:
+    """G-03-01: partition_id is now a known field; strict validator permits it."""
+    # Should not raise.
+    validate_evaluate_metrics({
+        "hit_count_overall_at10": 0,
+        "ndcg_sum_overall_at10": 0.0,
+        "evaluated_users": 0,
+        "partition_id": 42,
+    })
+
+
+def test_validate_evaluate_metrics_still_rejects_unknown_extras() -> None:
+    """G-03-01 regression guard: partition_id is known, anything else is NOT.
+
+    The strict-contract (D-21) guarantee must hold: free-form extras still
+    raise ValueError. Only partition_id was whitelisted via dataclass fields().
+    """
+    with pytest.raises(ValueError, match="free-form extras"):
+        validate_evaluate_metrics({
+            "hit_count_overall_at10": 0,
+            "ndcg_sum_overall_at10": 0.0,
+            "evaluated_users": 0,
+            "partition_id": 42,
+            "foo": "bar",  # not a known contract field — must still raise.
+        })

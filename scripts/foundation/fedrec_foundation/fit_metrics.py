@@ -91,6 +91,13 @@ class FitMetricsContract:
     hit_count_dense_at10: Optional[int] = None
     ndcg_sum_dense_at10: Optional[float] = None
     evaluated_users_dense: Optional[int] = None
+    # --- G-03-01 extension: client echoes its partition_id ---
+    # Optional int; server uses discovery-round responses to build a
+    # partition_id -> node_id mapping so per-round client sampling can run
+    # in stable partition-id space (0..N-1) instead of Flower's ephemeral
+    # os.urandom-seeded node_id space. Omitting the field keeps the Phase 1
+    # contract backwards-compatible.
+    partition_id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Union[int, float]]:
         """Return a dict suitable for a Flower ``FitRes.metrics`` merge.
@@ -265,6 +272,11 @@ class EvaluateMetricsContract:
     hit_count_dense_at10: Optional[int] = None
     ndcg_sum_dense_at10: Optional[float] = None
     evaluated_users_dense: Optional[int] = None
+    # --- G-03-01 extension: client echoes its partition_id ---
+    # Optional int; discovery-round responses populate ONLY this field so the
+    # server can build partition_id -> node_id before the main training loop.
+    # Normal evaluate responses also populate it for audit-trail purposes.
+    partition_id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Union[int, float]]:
         """Serialize to a JSON-ready dict; drops None-valued optional fields.
