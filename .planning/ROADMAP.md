@@ -34,7 +34,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 **Plans**: 6 plans
   - [x] 01-foundation-contract-01-PLAN.md — Wave-0 package scaffolding + 14 test stubs (gates Plans 02-05)
   - [ ] 01-foundation-contract-02-PLAN.md — FND-01 mapping + FND-02 split manifest + FND-03 exclusion set + atomic bundle publication
-  - [ ] 01-foundation-contract-03-PLAN.md — FND-04 primary evaluator + FND-05 weight-policy + FitMetricsContract (CR-4)
+  - [x] 01-foundation-contract-03-PLAN.md — FND-04 primary evaluator + FND-05 weight-policy + FitMetricsContract (CR-4)
   - [ ] 01-foundation-contract-04-PLAN.md — FND-06 three RNG factories (CR-3) + FND-07 run manifest (IMP-2 composite hash)
   - [ ] 01-foundation-contract-05-PLAN.md — Mode resolver (D-06..D-11) + scripts/run.py launcher (CR-2)
   - [ ] 01-foundation-contract-06-PLAN.md — Add fedrec-foundation as local-path dep to all 4 modules + cross-module smoke test

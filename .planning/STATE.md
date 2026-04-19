@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-04-19T03:07:16.707Z"
+last_updated: "2026-04-19T03:14:49.889Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -26,7 +26,7 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation-contract) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | adaptive | — | — | — | — | cross-device run pending |
 | pfedrec (paper_compat) | — | — | — | — | target: HR@10 ≈ 0.729 ± 2pts, NDCG@10 ≈ 0.441 ± 2pts |
 | Phase 01-foundation-contract P01 | 5min | 2 tasks | 19 files |
+| Phase 01-foundation-contract P03 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -57,6 +58,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 01-foundation-contract]: Foundation package lives at scripts/foundation/ (not inside any federated-*-cf/ module and not at repo root) — neutral shared location avoids namespace collision and duplication while respecting PROJECT.md decision to defer fedrec_common/ extraction.
 - [Phase 01-foundation-contract]: Plan 01 uses skip-stub TDD handoff: downstream plans un-skip by deleting pytestmark and replacing NotImplementedError bodies — enumerates all 31 expected FND-01..07 tests at pytest --collect-only while keeping every run green (2 passed, 31 skipped, 0 failed).
 - [Phase 01-foundation-contract]: compute_raw_data_hash concatenation order is LOCKED to ratings.dat || movies.dat || users.dat — every FND-02/FND-07 downstream fingerprint depends on it; any future change invalidates committed split manifests and run manifests.
+- [Phase 01-foundation-contract]: Plan 03 closed-enum whitelist on get_primary_evaluator: typos in run config's mode string must fail loud (ValueError 'Unknown mode'); matches CONVENTIONS.md factory-function-on-unknown-enum rule used by create_alpha_computer and get_model.
+- [Phase 01-foundation-contract]: Plan 03 FitMetricsContract.from_dict wraps dataclass TypeError as ValueError('...missing required field: ...') — Codex CR-4 polish; callers now get a clear error surface with field names instead of cryptic 'FitMetricsContract.__init__() missing N required positional arguments' TypeError.
+- [Phase 01-foundation-contract]: Plan 03 FND-04 + FND-05 + CR-4 ship as 3 foundation modules (evaluator.py, weight_policy.py, fit_metrics.py) with 15 GREEN tests. Cross-phase contract: every Phase 2-5 client_app.py @app.train() handler MUST build its return dict via FitMetricsContract.to_dict() so server-side compute_aggregation_weight has the inputs it needs.
 
 ### Todos
 
