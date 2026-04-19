@@ -6,7 +6,9 @@ Plan 02 ships:
 - test_build_creates_all_artifacts
 - test_ml1m_counts_6040_3706 (empirical anchor; skipped if real ML-1M absent)
 
-Plan 06 may append additional integration tests in its own regions.
+Plan 06 appends (IMP-1 cross-module integration):
+- test_cross_module_imports (parametrized across 4 federated-*-cf/ modules)
+- test_pyproject_declares_foundation_dep (pyproject.toml dep declaration)
 """
 from __future__ import annotations
 
@@ -125,3 +127,80 @@ def test_ml1m_counts_6040_3706() -> None:
     m = build_mapping(ratings)
     assert m.num_users == 6040
     assert m.num_items == 3706
+
+
+# ---------------------------------------------------------------------------
+# Cross-module import smoke test (Plan 06 / IMP-1)
+# ---------------------------------------------------------------------------
+
+_MODULES = (
+    "federated-baseline-cf",
+    "federated-pfedrec",
+    "federated-personalized-cf",
+    "federated-adaptive-personalized-cf",
+)
+
+_FOUNDATION_SUBMODULES = (
+    "fedrec_foundation",
+    "fedrec_foundation.mapping",
+    "fedrec_foundation.split",
+    "fedrec_foundation.exclusion",
+    "fedrec_foundation.evaluator",
+    "fedrec_foundation.weight_policy",
+    "fedrec_foundation.fit_metrics",
+    "fedrec_foundation.rng",
+    "fedrec_foundation.manifest",
+    "fedrec_foundation.mode",
+)
+
+
+def _repo_root() -> Path:
+    """Walk up from this test to the repo root (containing data/ml-1m)."""
+    here = Path(__file__).resolve()
+    for p in [here.parent] + list(here.parents):
+        if (p / "data" / "ml-1m").exists():
+            return p
+    pytest.skip("Repo root with data/ml-1m not located")
+
+
+@pytest.mark.parametrize("module_dir", _MODULES)
+def test_cross_module_imports(module_dir: str) -> None:
+    """Each of the four federated modules can import every foundation submodule.
+
+    Runs a subprocess with cwd set to the module's directory to mirror
+    `flwr run .` behavior. Requires that the user has already run
+    `pip install -e scripts/foundation/` (documented in docs/setup.md).
+    """
+    root = _repo_root()
+    mod_path = root / module_dir
+    if not mod_path.exists():
+        pytest.skip(f"{mod_path} not present")
+    import_stmts = "; ".join(f"import {m}" for m in _FOUNDATION_SUBMODULES)
+    script = f"{import_stmts}; print('ok')"
+    r = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(mod_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0, (
+        f"Cross-module import failed in {module_dir}:\n"
+        f"STDOUT={r.stdout!r}\nSTDERR={r.stderr!r}\n"
+        f"Hint: run `pip install -e scripts/foundation/` and "
+        f"`pip install -e {module_dir}/` (see docs/setup.md)."
+    )
+    assert "ok" in r.stdout
+
+
+def test_pyproject_declares_foundation_dep() -> None:
+    """IMP-1: each module's pyproject.toml declares fedrec-foundation as a dep."""
+    root = _repo_root()
+    for mod in _MODULES:
+        pyproject = root / mod / "pyproject.toml"
+        if not pyproject.exists():
+            pytest.skip(f"{pyproject} not present")
+        content = pyproject.read_text()
+        assert "fedrec-foundation" in content, (
+            f"{mod}/pyproject.toml missing fedrec-foundation dependency"
+        )
