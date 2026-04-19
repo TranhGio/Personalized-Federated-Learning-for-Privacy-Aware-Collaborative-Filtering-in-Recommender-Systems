@@ -26,6 +26,9 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
@@ -39,6 +42,7 @@ clientapp = "federated_personalized_cf.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
+# Phase 3 (PSN-01..07): cross-device defaults. fedrec_foundation.mode.resolve_mode_defaults(mode) (Phase 1 Plan 05) is the canonical source for hyperparameters at runtime; these pyproject values are only consulted when mode is unset. Overrides are visible per D-19.
 # Federated Learning parameters
 num-server-rounds = 10
 fraction-train = 1.0
@@ -61,7 +65,7 @@ weight-decay = 1e-5 # L2 regularization strength
 num-negatives = 1   # Number of negative samples per positive (for BPR only)
 
 # Data partitioning
-partition-mode = "natural"  # "natural" (cross-device, 1 user = 1 client) or "dirichlet" (cross-silo)
+partition-mode = "natural"  # "natural" (cross-device, 1 user = 1 client) or "dirichlet" (cross-silo — raises NotImplementedError per D-02)
 alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID, only used when partition-mode="dirichlet")
 
 # Ranking evaluation
@@ -70,7 +74,7 @@ ranking-k-values = "5,10,20"      # K values for Hit Rate, Precision, Recall, ND
 
 # Evaluation protocol
 eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
-eval-num-negatives = 99            # Number of negative samples for sampled evaluation
+# (eval-num-negatives is declared below in the "Phase 3 cross-device / foundation-contract keys" block)
 
 # Early stopping
 early-stopping-enabled = false
@@ -81,9 +85,19 @@ early-stopping-min-delta = 0.001
 
 # Weights & Biases (wandb) configuration
 wandb-enabled = true              # Enable/disable wandb logging
-wandb-project = "federated-personalized-cf"    # wandb project name
+wandb-project = ""                # empty = route by mode in server_app (cross-device -> federated-cf-cross-device; cross-silo-legacy -> federated-cf). Set a non-empty string here or via --run-config to pin.
 wandb-entity = ""                 # wandb team/entity (optional, uses default if empty)
 wandb-run-name = ""               # Custom run name (optional, auto-generated if empty)
+
+# Phase 3 cross-device / foundation-contract keys (PSN-01..07)
+# The canonical runtime source is fedrec_foundation.mode.resolve_mode_defaults(mode).
+# These values are FALLBACK only (consulted when the launcher did not pre-set them).
+mode = "cross_silo_legacy"  # D-25: fallback when scripts/run.py not used; launcher sets "benchmark_cross_device" at federation level. Values: benchmark_cross_device | paper_compat_pfedrec | cross_silo_legacy.
+run-seed = 42  # FND-06: single root seed for py_rng/np_rng/torch_gen/server_rng.
+weight-policy = "num_positives"  # FND-05: aggregation weight policy. Values: uniform | num_positives | num_training_examples.
+eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out positive (sampled_loo_99).
+checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; restore at final evaluation.
+reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs (default: per-run cache).
 
 # Default federation to use when running the app
 [tool.flwr.federations]
@@ -91,12 +105,16 @@ default = "local-simulation"
 
 # Local simulation federation (CPU-only)
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 5
+options.num-supernodes = 6040
+# Cross-device default (PSN-01). Opt into cross-silo via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"
+# (Note: partition-mode=dirichlet raises NotImplementedError per D-02; check out a pre-Phase-3 commit to reproduce legacy cross-silo numbers.)
 
 # GPU-enabled simulation federation (requires PyTorch with CUDA support)
 # Run with: flwr run . local-sim-gpu
 [tool.flwr.federations.local-sim-gpu]
-options.num-supernodes = 5
+options.num-supernodes = 6040
+# Cross-device default (PSN-01). Opt into cross-silo via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"
+# (Note: partition-mode=dirichlet raises NotImplementedError per D-02; check out a pre-Phase-3 commit to reproduce legacy cross-silo numbers.)
 options.backend.client-resources.num-cpus = 12
 options.backend.client-resources.num-gpus = 0.2
 
