@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-04-19T03:14:49.889Z"
+last_updated: "2026-04-19T03:17:48Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -39,6 +39,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | adaptive | — | — | — | — | cross-device run pending |
 | pfedrec (paper_compat) | — | — | — | — | target: HR@10 ≈ 0.729 ± 2pts, NDCG@10 ≈ 0.441 ± 2pts |
 | Phase 01-foundation-contract P01 | 5min | 2 tasks | 19 files |
+| Phase 01-foundation-contract P02 | 8min | 3 tasks | 15 files |
 | Phase 01-foundation-contract P03 | 3min | 2 tasks | 5 files |
 | Phase 01-foundation-contract P04 | 4min | 2 tasks | 4 files |
 
@@ -66,6 +67,12 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 01-foundation-contract]: Plan 04 cross-phase contract for Phases 2-5: every DataLoader(..., shuffle=True) MUST pass `generator=torch_gen(run_seed, user_idx, round_num, 'dataloader')` — CR-3's fourth reproducibility assertion. Without this, DataLoader worker shuffling is non-deterministic even with all three RNG factories seeded. `dataloader` is pre-declared in `_ALLOWED_PURPOSES` for this reason.
 - [Phase 01-foundation-contract]: Plan 04 FND-07 RunManifest carries all four IMP-2 fingerprints (mapping_sha256, split_hash, exclusion_sha256, foundation_contract_sha256) so a single-byte mutation to any foundation input is detectable at the run-manifest level; D-15 double-write (embedded _manifest key in result JSON + sibling <run_id>-manifest.json) guarantees at least one artifact survives partial failure.
 - [Phase 01-foundation-contract]: Plan 04 uses duck-typed `mode_profile: Any` in build_run_manifest — avoids circular import with Plan 05's mode.py while documenting the required attribute surface in the docstring; test_manifest.py's _StubProfile demonstrates the minimal implementation.
+- [Phase 01-foundation-contract]: Plan 02 SplitManifest stores BOTH fingerprints (raw_data_hash + mapping_sha256) as top-level dataclass fields per IMP-2 — consumers (publish_bundle, RunManifest) read directly from the manifest, no side-channel, no post-hoc assignment. `publish_bundle` is LOCKED at 4-param (derived_dir, mapping, split_manifest, exclusion); `build_split` is LOCKED at 5-param with explicit mapping_sha256 + raw_data_hash args. Changing either signature requires a replan.
+- [Phase 01-foundation-contract]: Plan 02 CR-5 train-only user stats: PerUserStats (n_interactions, genre_entropy, n_unique_items, rating_std, user_group) is computed on train rows AFTER removing the LOO test item — prevents Phase 4's adaptive-alpha heuristic from seeing the test item's genre and underestimating its own improvement on sparse users.
+- [Phase 01-foundation-contract]: Plan 02 IMP-3 flat NPZ layout (items + indptr, CSR-style) for data/derived/exclusion_items.npz — 1.5x smaller than keyed-dict at 6040 users, O(1) per-user slice, single np.load call, atomic tempfile + os.replace write that handles np.savez's .npz suffix-append behavior.
+- [Phase 01-foundation-contract]: Plan 02 N-3 atomic bundle: foundation_index.json written LAST by publish_bundle; verify_bundle() re-computes mapping_sha256/exclusion_sha256/foundation_contract_sha256 on every load and raises RuntimeError with "incomplete" sentinel on missing payload or sha mismatch — readers never see a partially-published bundle.
+- [Phase 01-foundation-contract]: Plan 02 empirical CR-1 anchor CONFIRMED on real data/ml-1m/: build_mapping produces 6040 users and 3706 items (NOT 3883 from movies.dat). test_ml1m_counts_6040_3706 in test_integration.py pins this as a regression test.
+- [Phase 01-foundation-contract]: Plan 02 D-04 lock-forever COMMITTED: data/derived/mapping.json + split_manifest.json + exclusion_items.npz + foundation_index.json are committed artifacts (split_hash 5685bed7e4b6, foundation_contract_sha256 fe181dafe6f7, builder_version 1.0.0). save_split_or_verify refuses to overwrite on divergent hash with the sentinel "invalidate all cached results"; the commit IS the lock.
 
 ### Todos
 
