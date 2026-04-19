@@ -27,23 +27,24 @@ must_haves:
     - "Running the builder twice produces the same split_hash and the same test_item_per_user; the second run is a no-op by D-04 lock semantics."
     - "For every user, exclusion_for(user) contains that user's held-out test item AND every training positive for that user."
     - "Built on this repo's ML-1M, the mapping reports exactly 6040 users and 3706 items (NOT 3883 from movies.dat — Codex CR-1 anchor)."
-    - "per_user_stats is computed from TRAIN-ONLY interactions (test item removed first); full_user_stats, if present, is in a separately-keyed section."
+    - "train_user_stats is computed from TRAIN-ONLY interactions (test item removed first) per CR-5."
     - "Bundle publication is atomic: if any of mapping.json / split_manifest.json / exclusion_items.npz write fails, foundation_index.json is not published, and loaders reject the bundle."
+    - "SplitManifest stores raw_data_hash as a dataclass field; publish_bundle reads it directly from split_manifest.raw_data_hash (no post-hoc assignment, no extra parameter)."
   artifacts:
     - path: "scripts/foundation/fedrec_foundation/mapping.py"
       provides: "build_mapping, save_mapping, load_mapping, CanonicalMapping dataclass"
       exports: ["build_mapping", "save_mapping", "load_mapping", "CanonicalMapping", "MAPPING_SCHEMA_VERSION"]
     - path: "scripts/foundation/fedrec_foundation/split.py"
-      provides: "build_split, save_split_or_verify, load_split_manifest, SplitManifest, PerUserStats, compute_split_hash"
+      provides: "build_split, save_split_or_verify, load_split_manifest, SplitManifest (with raw_data_hash field), PerUserStats, compute_split_hash"
       exports: ["SplitManifest", "PerUserStats", "build_split", "save_split_or_verify", "load_split_manifest", "compute_split_hash", "SPLIT_SCHEMA_VERSION", "BUILDER_VERSION"]
     - path: "scripts/foundation/fedrec_foundation/exclusion.py"
-      provides: "build_exclusion, save_exclusion (flat items+indptr), load_exclusion, ExclusionTable"
+      provides: "build_exclusion, save_exclusion (flat items+indptr), load_exclusion, ExclusionTable, exclusion_for module-level helper"
       exports: ["build_exclusion", "save_exclusion", "load_exclusion", "ExclusionTable", "exclusion_for"]
     - path: "scripts/foundation/fedrec_foundation/user_groups.py"
       provides: "classify_user_group with frozen half-open semantics [0,30), [30,100), [100, inf)"
       exports: ["classify_user_group", "USER_GROUP_BOUNDARIES", "BUCKET_SEMANTICS"]
     - path: "scripts/foundation/fedrec_foundation/bundle.py"
-      provides: "publish_bundle(): writes all three payload files first, THEN foundation_index.json last; verify_bundle() on load"
+      provides: "publish_bundle(derived_dir, mapping, split_manifest, exclusion): 4-param signature; reads raw_data_hash from split_manifest.raw_data_hash. verify_bundle() on load."
       exports: ["publish_bundle", "verify_bundle", "FoundationIndex", "compute_foundation_contract_sha256"]
     - path: "scripts/foundation/scripts/build_derived.py"
       provides: "CLI entry point: python -m fedrec_foundation.build"
@@ -51,7 +52,7 @@ must_haves:
       provides: "Canonical raw_user_id -> user_idx + raw_item_id -> item_idx"
       contains: "\"num_users\": 6040"
     - path: "data/derived/split_manifest.json"
-      provides: "LOO split + split_hash + per_user_stats + user_group classification"
+      provides: "LOO split + split_hash + raw_data_hash + train_user_stats + user_group classification"
       contains: "\"bucket_semantics\": \"half_open\""
     - path: "data/derived/exclusion_items.npz"
       provides: "Flat items array + indptr (IMP-3); loaded with allow_pickle=False"
@@ -59,15 +60,23 @@ must_haves:
       provides: "mapping_sha256 + split_hash + exclusion_sha256 + foundation_contract_sha256 + builder_version + created_at"
   key_links:
     - from: "scripts/foundation/scripts/build_derived.py"
-      to: "publish_bundle()"
-      via: "atomic multi-file publication"
-      pattern: "publish_bundle"
+      to: "publish_bundle(derived, mapping, split, exclusion)"
+      via: "atomic multi-file publication; 4-arg signature"
+      pattern: "publish_bundle\\(derived"
     - from: "scripts/foundation/fedrec_foundation/mapping.py::build_mapping"
       to: "sorted(ratings_df[\"movie_id\"].unique())"
       via: "CR-1 fix: ratings-only item set, not movies.dat"
       pattern: "ratings_df\\[.movie_id.\\]\\.unique"
     - from: "scripts/foundation/fedrec_foundation/split.py::build_split"
-      to: "per_user_stats computed AFTER test-item removal"
+      to: "build_split(ratings_df, mapping, movies_df, mapping_sha256, raw_data_hash) -> SplitManifest"
+      via: "IMP-2: fingerprints are explicit parameters; SplitManifest stores raw_data_hash as a field"
+      pattern: "mapping_sha256.*raw_data_hash"
+    - from: "scripts/foundation/fedrec_foundation/split.py::SplitManifest"
+      to: "raw_data_hash: str (dataclass field)"
+      via: "Consumed by Plan 04 RunManifest and by publish_bundle"
+      pattern: "raw_data_hash: str"
+    - from: "scripts/foundation/fedrec_foundation/split.py::build_split"
+      to: "train_user_stats computed AFTER test-item removal"
       via: "CR-5 train-only user stats"
       pattern: "train_user_stats"
 ---
@@ -77,7 +86,7 @@ Implement FND-01 (canonical ID mapping), FND-02 (deterministic LOO split manifes
 
 Purpose: These three artifacts are the hard-dependency every downstream module imports. FND-01 fixes the ID space (6040 users, 3706 items); FND-02 locks the LOO split forever; FND-03 provides the exclusion set that prevents training-negative test-leakage. The atomic publication sentinel (N-3) ensures loaders never read a partially-written bundle.
 
-Output: Three data artifacts + one index sentinel in `data/derived/`, plus four implemented Python modules (`mapping`, `split`, `exclusion`, `user_groups`, `bundle`) and a CLI builder (`scripts/build_derived.py`). All Plan 01 red tests for these modules flip GREEN.
+Output: Three data artifacts + one index sentinel in `data/derived/`, plus four implemented Python modules (`mapping`, `split`, `exclusion`, `user_groups`, `bundle`) and a CLI builder (`scripts/build_derived.py`). All Plan 01 skipped tests for these modules flip GREEN.
 </objective>
 
 <execution_context>
@@ -94,7 +103,7 @@ Output: Three data artifacts + one index sentinel in `data/derived/`, plus four 
 @.planning/codebase/CONVENTIONS.md
 
 <interfaces>
-<!-- These are the EXACT public APIs Plans 03-06 will import. -->
+<!-- These are the EXACT public APIs Plans 03-06 will import. Signatures are LOCKED; changing them requires a replan. -->
 
 From scripts/foundation/fedrec_foundation/mapping.py:
 ```python
@@ -137,17 +146,29 @@ class SplitManifest:
     schema_version: int
     builder_version: str
     created_at: str
-    raw_data_hash: str
+    raw_data_hash: str                    # <-- explicit field; consumed by RunManifest (Plan 04) and publish_bundle
+    mapping_sha256: str                   # fingerprint of the mapping this split was built against
     split_hash: str
     num_train: int
     num_test_users: int
-    test_item_per_user: Dict[int, int]   # user_idx -> item_idx
+    test_item_per_user: Dict[int, int]    # user_idx -> item_idx
     train_user_stats: Dict[int, PerUserStats]
-    bucket_boundaries: list              # [30, 100]
-    bucket_semantics: str                # "half_open"
+    bucket_boundaries: list               # [30, 100]
+    bucket_semantics: str                 # "half_open"
 
 def compute_split_hash(train_keys, test_keys, mapping_sha256: str, raw_data_hash: str) -> str: ...
-def build_split(ratings_df, mapping, movies_df) -> SplitManifest: ...
+
+def build_split(
+    ratings_df,
+    mapping,
+    movies_df,
+    mapping_sha256: str,
+    raw_data_hash: str,
+) -> SplitManifest: ...
+# ^^ 5-param signature. Fingerprints are required inputs; the returned
+# SplitManifest stores them as fields so downstream consumers (publish_bundle,
+# RunManifest) don't need side-channel access.
+
 def save_split_or_verify(manifest: SplitManifest, path) -> None: ...   # D-04 lock
 def load_split_manifest(path) -> SplitManifest: ...
 ```
@@ -160,6 +181,9 @@ from typing import Dict
 def build_exclusion(train_df_canonical, split_manifest) -> Dict[int, np.ndarray]: ...
 def save_exclusion(per_user_items: Dict[int, np.ndarray], path) -> None: ...  # items + indptr
 def load_exclusion(path) -> ExclusionTable: ...
+
+# Module-level helper for callers who don't want the class instance.
+def exclusion_for(npz, user_idx: int) -> np.ndarray: ...
 
 class ExclusionTable:
     def for_user(self, user_idx: int) -> np.ndarray: ...    # O(1) via indptr slice
@@ -194,7 +218,16 @@ class FoundationIndex:
     foundation_contract_sha256: str     # IMP-2
 
 def compute_foundation_contract_sha256(mapping_sha256: str, split_hash: str, exclusion_sha256: str) -> str: ...
-def publish_bundle(derived_dir, mapping, split_manifest, exclusion, raw_data_hash: str) -> FoundationIndex: ...
+
+def publish_bundle(
+    derived_dir,
+    mapping,
+    split_manifest,
+    exclusion,
+) -> FoundationIndex: ...
+# ^^ 4-param signature. raw_data_hash is READ from split_manifest.raw_data_hash
+# (which build_split populated). No extra kwarg, no post-hoc assignment.
+
 def verify_bundle(derived_dir) -> FoundationIndex: ...   # raises on index mismatch/missing
 ```
 </interfaces>
@@ -372,23 +405,28 @@ def test_roundtrip(synthetic_ratings_df: pd.DataFrame, tmp_path: Path) -> None:
     - CLAUDE.md (typing, docstrings)
   </read_first>
   <behavior>
-    - `build_split(ratings_df, mapping, movies_df)` maps raw IDs to canonical idx, stable-sorts by `(user_idx, timestamp, item_idx)` with `kind="mergesort"`, takes `.tail(1)` per `user_idx` as the held-out item. Users with ≤1 interaction are skipped (no LOO possible). Returns `SplitManifest` with `train_user_stats` computed on the TRAIN rows (test item removed).
+    - `SplitManifest` dataclass INCLUDES `raw_data_hash: str` and `mapping_sha256: str` as top-level fields (populated by `build_split` from its input params). This allows consumers (publish_bundle, RunManifest) to read these fingerprints directly from the manifest.
+    - `build_split(ratings_df, mapping, movies_df, mapping_sha256, raw_data_hash)` — 5-param signature. Maps raw IDs to canonical idx, stable-sorts by `(user_idx, timestamp, item_idx)` with `kind="mergesort"`, takes `.tail(1)` per `user_idx` as the held-out item. Users with ≤1 interaction are skipped. Returns `SplitManifest` with `train_user_stats` computed on TRAIN rows (test item removed) AND `raw_data_hash`/`mapping_sha256` populated from the input args.
     - `compute_split_hash(train_keys, test_keys, mapping_sha256, raw_data_hash)` sorts both key lists then SHA-256 of `b"mapping:" + mapping_sha256 + b";raw:" + raw_data_hash + b";train:" + joined + b";test:" + joined`. The mapping + raw-data hashes are INSIDE the split_hash per IMP-2.
     - `save_split_or_verify(manifest, path)`: if path exists, load and compare `split_hash` — if mismatch raise `ValueError("split_hash mismatch: on-disk=X new=Y. A new split would invalidate all cached results. Refusing to overwrite.")`. If match, no-op. If absent, `atomic_write_json`.
     - Per-user genre entropy: for each user, histogram over the set of genres (from movies.dat pipe-delimited genre column) of their TRAIN items, normalize to probabilities, compute `-sum(p * log2(p))`. Rating std: `np.std(user_train_ratings)`. n_interactions: len(user_train_rows). n_unique_items: len(set of user's train items). user_group: `classify_user_group(n_interactions)`.
     - `build_exclusion(train_df_canonical, split_manifest)` groups train rows by `user_idx`, adds `split_manifest.test_item_per_user[u]`, returns `Dict[int, np.ndarray[int32]]` sorted per user.
     - `save_exclusion(per_user_items, path)` writes NPZ with TWO arrays: `items` (flat int32 concat) and `indptr` (int64 offsets, shape `(num_users + 1,)`). IMP-3 layout. Atomic via tempfile + os.replace.
     - `load_exclusion(path)` returns `ExclusionTable(np.load(path, allow_pickle=False))` with `for_user(u) -> items[indptr[u]:indptr[u+1]]`.
+    - Module-level `exclusion_for(npz, user_idx)` returns the same slice directly from a loaded NPZ object (CR-3 helper — for callers that don't want the class wrapper).
     - `test_split.py` tests flip green: `test_hash_deterministic`, `test_timestamp_tiebreak`, `test_split_lock_refuses_overwrite`, `test_train_only_user_stats`.
-    - `test_exclusion.py` tests flip green: `test_includes_test_item`, `test_safe_load`, `test_indptr_layout`.
+    - `test_exclusion.py` tests flip green: `test_includes_test_item`, `test_safe_load`, `test_indptr_layout`, `test_module_level_exclusion_for`.
   </behavior>
   <action>
 Start from `01-RESEARCH.md` Pattern 2 (lines 421-573) and Pattern 3 (lines 589-660), then apply Codex overrides:
 
 1. **`scripts/foundation/fedrec_foundation/split.py`:**
-   - Use the dataclasses `PerUserStats` and `SplitManifest` from research Pattern 2 BUT rename `per_user_stats` field to `train_user_stats` (CR-5). Add fields `bucket_boundaries: list` and `bucket_semantics: str`.
-   - `compute_split_hash` signature changes to `compute_split_hash(train_keys, test_keys, mapping_sha256: str, raw_data_hash: str) -> str`. The hash payload explicitly prefixes both fingerprints (IMP-2).
-   - `build_split(ratings_df, mapping, movies_df)`:
+   - Use the dataclasses `PerUserStats` and `SplitManifest` from research Pattern 2 BUT:
+     - Rename `per_user_stats` field to `train_user_stats` (CR-5).
+     - Add fields `raw_data_hash: str` and `mapping_sha256: str` to `SplitManifest` (so consumers can read both fingerprints directly from the manifest — no side-channel, no post-hoc assignment).
+     - Add fields `bucket_boundaries: list` and `bucket_semantics: str`.
+   - `compute_split_hash` signature: `compute_split_hash(train_keys, test_keys, mapping_sha256: str, raw_data_hash: str) -> str`. Hash payload explicitly prefixes both fingerprints (IMP-2).
+   - `build_split(ratings_df, mapping, movies_df, mapping_sha256: str, raw_data_hash: str) -> SplitManifest`:
      - Map `user_id -> user_idx`, `movie_id -> item_idx`.
      - Stable sort by `(user_idx, timestamp, item_idx)` with `kind="mergesort"`.
      - LOO: `test_idx = sorted_df[sorted_df["user_idx"].isin(eligible)].groupby("user_idx").tail(1).index` — eligible = users with >1 interaction.
@@ -396,12 +434,12 @@ Start from `01-RESEARCH.md` Pattern 2 (lines 421-573) and Pattern 3 (lines 589-6
      - Compute `train_user_stats` over `train_df` ONLY (CR-5): for each user_idx, `n_interactions=len(user_train_df)`, `n_unique_items=user_train_df["item_idx"].nunique()`, `rating_std=float(user_train_df["rating"].std(ddof=0))` (0 if only one interaction), `genre_entropy=_compute_genre_entropy(user_train_df, movies_df)`, `user_group=classify_user_group(n_interactions)`.
      - `_compute_genre_entropy(user_train_df, movies_df)`: merge on item_idx → genre pipe-separated string; explode to per-genre rows; normalize; shannon entropy base-2; return 0.0 if only one genre.
      - `test_item_per_user = {int(u): int(i) for u, i in zip(test_df["user_idx"], test_df["item_idx"])}`.
-     - `split_hash = compute_split_hash(train_keys, test_keys, mapping_sha256, raw_data_hash)` — the caller passes the two fingerprints in.
-   - Actually: refactor so `build_split(ratings_df, mapping, movies_df, mapping_sha256, raw_data_hash)` takes the fingerprints as params. The CLI in Task 4 computes them before calling.
+     - `split_hash = compute_split_hash(train_keys, test_keys, mapping_sha256, raw_data_hash)`.
+     - **Construct the returned `SplitManifest` with `raw_data_hash=raw_data_hash, mapping_sha256=mapping_sha256` fields populated explicitly** — no caller-side post-hoc mutation.
 
-2. **`scripts/foundation/fedrec_foundation/exclusion.py`** — replace the keyed-dict research version with the flat items+indptr layout from CODEX PEER REVIEW §IMP-3 (copy that code block verbatim, lines 112-132 of research CODEX section). The `ExclusionTable` class holds the loaded NPZ and offers `for_user(user_idx: int) -> np.ndarray[int32]` that returns `items[indptr[u]:indptr[u+1]]`. Export a module-level `exclusion_for(npz, user_idx)` helper matching the CODEX CR-3 pseudocode for callers that don't want the class.
+2. **`scripts/foundation/fedrec_foundation/exclusion.py`** — replace the keyed-dict research version with the flat items+indptr layout from CODEX PEER REVIEW §IMP-3 (copy that code block verbatim, lines 112-132 of research CODEX section). The `ExclusionTable` class holds the loaded NPZ and offers `for_user(user_idx: int) -> np.ndarray[int32]` that returns `items[indptr[u]:indptr[u+1]]`. Export a module-level `exclusion_for(npz, user_idx)` helper matching the CODEX CR-3 pseudocode — callable directly on a loaded `np.load(...)` object without constructing an `ExclusionTable`.
 
-3. **Flip `tests/test_split.py` to GREEN** with these four tests:
+3. **Flip `tests/test_split.py` to GREEN** with these four tests (note the 5-arg `build_split` call):
 ```python
 """Tests for fedrec_foundation.split (FND-02 + CR-5 + D-04)."""
 from __future__ import annotations
@@ -434,6 +472,9 @@ def test_hash_deterministic(synthetic_ratings_df, synthetic_movies_df):
     s2 = build_split(synthetic_ratings_df, m, synthetic_movies_df, mapping_sha256="a"*64, raw_data_hash="b"*64)
     assert s1.split_hash == s2.split_hash
     assert len(s1.split_hash) == 64
+    # SplitManifest stores both fingerprints as fields.
+    assert s1.raw_data_hash == "b" * 64
+    assert s1.mapping_sha256 == "a" * 64
 
 
 def test_timestamp_tiebreak(synthetic_movies_df):
@@ -471,34 +512,45 @@ def test_train_only_user_stats(synthetic_ratings_df, synthetic_movies_df):
     u1_idx = m.user2idx[1]
     assert s.train_user_stats[u1_idx].n_interactions == 2
     # The test item is NOT among the unique train items.
-    test_item_u1 = s.test_item_per_user[u1_idx]
-    # n_unique_items counts only train items -> cannot include the test item.
-    # Assert by construction: test item is excluded from group-by.
     assert s.train_user_stats[u1_idx].n_unique_items == 2
 ```
 
-4. **Flip `tests/test_exclusion.py` to GREEN**:
+4. **Flip `tests/test_exclusion.py` to GREEN** (uses a VECTORIZED train/test filter — no row-wise `.apply` lambda):
 ```python
-"""Tests for fedrec_foundation.exclusion (FND-03 + IMP-3 flat layout)."""
+"""Tests for fedrec_foundation.exclusion (FND-03 + IMP-3 flat layout + CR-3 module-level helper)."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from fedrec_foundation.mapping import build_mapping
 from fedrec_foundation.split import build_split
-from fedrec_foundation.exclusion import build_exclusion, save_exclusion, load_exclusion
+from fedrec_foundation.exclusion import (
+    build_exclusion, save_exclusion, load_exclusion, exclusion_for,
+)
 
 
 @pytest.fixture
 def synthetic_movies_df():
-    import pandas as pd
     return pd.DataFrame(
         [(10, "A", "Action"), (20, "B", "Drama"), (30, "C", "Comedy"), (40, "D", "Action")],
         columns=["movie_id", "title", "genres"],
     )
+
+
+def _vectorized_train_split(df_canonical: pd.DataFrame, test_item_per_user: dict) -> pd.DataFrame:
+    """Remove each user's LOO test item via a merge (vectorized; no .apply)."""
+    test_pairs = pd.DataFrame(
+        [(u, i) for u, i in test_item_per_user.items()],
+        columns=["user_idx", "item_idx"],
+    )
+    test_pairs["is_test"] = True
+    merged = df_canonical.merge(test_pairs, on=["user_idx", "item_idx"], how="left")
+    train = merged[merged["is_test"].isna()].drop(columns=["is_test"]).copy()
+    return train
 
 
 def _setup(df, movies_df, tmp_path):
@@ -507,10 +559,7 @@ def _setup(df, movies_df, tmp_path):
     df_c = df.copy()
     df_c["user_idx"] = df_c["user_id"].map(m.user2idx)
     df_c["item_idx"] = df_c["movie_id"].map(m.item2idx)
-    # Remove test rows for the build_exclusion input (train-only).
-    train_c = df_c.drop(df_c.apply(
-        lambda r: s.test_item_per_user.get(r["user_idx"]) == r["item_idx"], axis=1
-    ).pipe(lambda mask: df_c.index[mask]))
+    train_c = _vectorized_train_split(df_c, s.test_item_per_user)
     excl = build_exclusion(train_c, s)
     p = tmp_path / "excl.npz"
     save_exclusion(excl, p)
@@ -523,10 +572,8 @@ def test_includes_test_item(synthetic_ratings_df, synthetic_movies_df, tmp_path)
         u1_idx = m.user2idx[1]
         excluded = tab.for_user(u1_idx)
         assert s.test_item_per_user[u1_idx] in excluded.tolist()
-        # All user-1 training positives are also in excluded.
-        train_items_raw = {20}  # user 1 rated items 10, 20, 30; 30 is held out (most recent by timestamp for user 1)
-        # Need to actually compute: user 1's interactions are (10, t=1000), (20, t=1001), (30, t=1002).
-        # LOO held-out is the last = item 30. Train positives = {10, 20}.
+        # User 1's interactions are (10, t=1000), (20, t=1001), (30, t=1002).
+        # LOO held-out = item 30 (last by timestamp). Train positives = {10, 20}.
         for train_item_raw in (10, 20):
             assert m.item2idx[train_item_raw] in excluded.tolist()
 
@@ -547,27 +594,39 @@ def test_indptr_layout(synthetic_ratings_df, synthetic_movies_df, tmp_path):
         for u_raw in synthetic_ratings_df["user_id"].unique():
             u_idx = m.user2idx[int(u_raw)]
             arr = tab.for_user(u_idx)
-            # Returned array is a SLICE of the flat items array.
             assert arr.dtype == np.int32
-            # Non-empty for every user (every user has at least their test item).
-            assert len(arr) >= 1
+            assert len(arr) >= 1  # every user has at least their test item
+
+
+def test_module_level_exclusion_for(synthetic_ratings_df, synthetic_movies_df, tmp_path):
+    """CR-3: module-level exclusion_for() returns the same slice as ExclusionTable.for_user()."""
+    m, s, p = _setup(synthetic_ratings_df, synthetic_movies_df, tmp_path)
+    npz = np.load(p, allow_pickle=False)
+    with load_exclusion(p) as tab:
+        for u_raw in synthetic_ratings_df["user_id"].unique():
+            u_idx = m.user2idx[int(u_raw)]
+            from_class = tab.for_user(u_idx)
+            from_helper = exclusion_for(npz, u_idx)
+            np.testing.assert_array_equal(from_class, from_helper)
 ```
   </action>
   <verify>
     <automated>cd scripts/foundation &amp;&amp; pytest tests/test_split.py tests/test_exclusion.py -v</automated>
   </verify>
   <acceptance_criteria>
-    - File `scripts/foundation/fedrec_foundation/split.py` defines `SplitManifest`, `PerUserStats`, `build_split`, `save_split_or_verify`, `load_split_manifest`, `compute_split_hash`, `SPLIT_SCHEMA_VERSION`, `BUILDER_VERSION`.
+    - File `scripts/foundation/fedrec_foundation/split.py` defines `SplitManifest` (with `raw_data_hash: str` and `mapping_sha256: str` fields), `PerUserStats`, `build_split` (5-param signature), `save_split_or_verify`, `load_split_manifest`, `compute_split_hash`, `SPLIT_SCHEMA_VERSION`, `BUILDER_VERSION`.
+    - `grep "raw_data_hash: str" scripts/foundation/fedrec_foundation/split.py` matches (SplitManifest field).
     - `grep "train_user_stats" scripts/foundation/fedrec_foundation/split.py` matches (CR-5 field name).
     - `grep "invalidate all cached results" scripts/foundation/fedrec_foundation/split.py` matches (D-04 error message).
-    - `grep "mapping_sha256" scripts/foundation/fedrec_foundation/split.py` matches (IMP-2 hash input).
-    - File `scripts/foundation/fedrec_foundation/exclusion.py` defines `build_exclusion`, `save_exclusion`, `load_exclusion`, `ExclusionTable`.
+    - `grep "mapping_sha256.*raw_data_hash" scripts/foundation/fedrec_foundation/split.py` matches (IMP-2 hash inputs as build_split params).
+    - File `scripts/foundation/fedrec_foundation/exclusion.py` defines `build_exclusion`, `save_exclusion`, `load_exclusion`, `ExclusionTable`, and module-level `exclusion_for`.
     - `grep "indptr" scripts/foundation/fedrec_foundation/exclusion.py` matches (IMP-3 flat layout).
     - `grep "allow_pickle=False" scripts/foundation/fedrec_foundation/exclusion.py` matches (D-05 no-pickle).
+    - `grep "^def exclusion_for" scripts/foundation/fedrec_foundation/exclusion.py` matches (module-level helper exported).
     - `cd scripts/foundation && pytest tests/test_split.py -v` prints 4 passed.
-    - `cd scripts/foundation && pytest tests/test_exclusion.py -v` prints 3 passed.
+    - `cd scripts/foundation && pytest tests/test_exclusion.py -v` prints 4 passed.
   </acceptance_criteria>
-  <done>FND-02 + FND-03 implemented; split is deterministic + lock-forever; exclusion uses flat layout + no-pickle loading.</done>
+  <done>FND-02 + FND-03 implemented; split is deterministic + lock-forever; SplitManifest stores both fingerprints as fields; exclusion uses flat layout + no-pickle loading + module-level helper.</done>
 </task>
 
 <task type="auto" tdd="true">
@@ -589,15 +648,17 @@ def test_indptr_layout(synthetic_ratings_df, synthetic_movies_df, tmp_path):
     - .planning/phases/01-foundation-contract/01-VALIDATION.md (integration test row list: `test_build_idempotent`, `test_bundle_atomic_publication`, `test_build_creates_all_artifacts`, `test_ml1m_counts_6040_3706`)
   </read_first>
   <behavior>
-    - `FoundationIndex` dataclass + `publish_bundle(derived_dir, mapping, split_manifest, exclusion, raw_data_hash)` that:
+    - `FoundationIndex` dataclass + `publish_bundle(derived_dir, mapping, split_manifest, exclusion) -> FoundationIndex` — 4-param signature. Reads `raw_data_hash` from `split_manifest.raw_data_hash` internally.
+    - `publish_bundle` order:
       1. Writes `mapping.json` via `save_mapping` to `derived_dir`.
       2. Writes `split_manifest.json` via `save_split_or_verify`.
       3. Writes `exclusion_items.npz` via `save_exclusion`.
       4. Computes `mapping_sha256 = sha256_file(mapping.json)`, `exclusion_sha256 = sha256_file(exclusion_items.npz)`, `foundation_contract_sha256 = sha256(mapping_sha256 + split_hash + exclusion_sha256)`.
       5. Writes `foundation_index.json` (LAST) via `atomic_write_json` with all four fingerprints + `builder_version` + `created_at`.
     - `verify_bundle(derived_dir) -> FoundationIndex`: loads index; recomputes `mapping_sha256`/`exclusion_sha256` and `foundation_contract_sha256`; raises `RuntimeError("Bundle incomplete or corrupted...")` if any fingerprint mismatches. Loaders (future code) call `verify_bundle` before reading any payload.
-    - CLI `python -m fedrec_foundation.build` (implemented as `scripts/foundation/scripts/build_derived.py` + a `fedrec_foundation/__main__.py` that reexports it, OR a `build` submodule entry). Wires Tasks 1–2 together on the real ML-1M files in `data/ml-1m/`. Produces `data/derived/mapping.json` with exactly 6040 users and 3706 items (empirical anchor).
-    - Integration tests flip green: `test_build_idempotent` (running build twice is a no-op), `test_bundle_atomic_publication` (deleting one payload file then calling `verify_bundle` raises), `test_build_creates_all_artifacts`, `test_ml1m_counts_6040_3706`.
+    - CLI `python -m fedrec_foundation.build` wires Tasks 1-2 together on the real ML-1M files in `data/ml-1m/`. Produces `data/derived/mapping.json` with exactly 6040 users and 3706 items (empirical anchor). The CLI calls `build_split(..., mapping_sha256=mapping_sha, raw_data_hash=raw_data_hash)` — fingerprints are now SplitManifest fields, so the CLI does NOT mutate `split.raw_data_hash` after the fact.
+    - CLI uses a VECTORIZED train-set filter (merge-based) — not a row-wise `.apply` lambda — for the 1M-row ML-1M DataFrame.
+    - Integration tests flip green: `test_build_idempotent`, `test_bundle_atomic_publication`, `test_build_creates_all_artifacts`, `test_ml1m_counts_6040_3706`.
   </behavior>
   <action>
 1. Create `scripts/foundation/fedrec_foundation/bundle.py`:
@@ -649,12 +710,21 @@ def publish_bundle(
     split_manifest: SplitManifest,
     exclusion: Dict[int, "np.ndarray"],
 ) -> FoundationIndex:
-    """Atomically publish the 4-file bundle. Index file is written LAST."""
+    """Atomically publish the 4-file bundle. Index file is written LAST.
+
+    Reads ``raw_data_hash`` from ``split_manifest.raw_data_hash`` — no
+    extra parameter needed (the manifest owns that fingerprint after
+    build_split populates it). 4-param signature is the LOCKED contract.
+    """
     derived_dir.mkdir(parents=True, exist_ok=True)
     mapping_path = derived_dir / "mapping.json"
     split_path = derived_dir / "split_manifest.json"
     excl_path = derived_dir / "exclusion_items.npz"
     index_path = derived_dir / "foundation_index.json"
+
+    # raw_data_hash is a SplitManifest field (populated by build_split).
+    # We don't take it as a parameter — single source of truth.
+    _ = split_manifest.raw_data_hash  # sanity-touch; used by RunManifest later
 
     # Step 1-3: payload files (each atomic individually).
     save_mapping(mapping, str(mapping_path))
@@ -712,7 +782,7 @@ def verify_bundle(derived_dir: Path) -> FoundationIndex:
     return idx
 ```
 
-2. Create `scripts/foundation/scripts/build_derived.py` AND a thin `scripts/foundation/fedrec_foundation/__main__.py` that invokes it, so `python -m fedrec_foundation.build` works. Wire Tasks 1-2 together:
+2. Create `scripts/foundation/scripts/build_derived.py` AND a thin `scripts/foundation/fedrec_foundation/__main__.py` that invokes it, so `python -m fedrec_foundation.build` works. Wire Tasks 1-2 together. Use the VECTORIZED merge filter (no `.apply`):
 ```python
 # scripts/foundation/scripts/build_derived.py
 """CLI: python -m fedrec_foundation.build
@@ -748,6 +818,17 @@ def _load_ml1m(ml1m: Path):
     return ratings, movies
 
 
+def _vectorized_train_split(df_canonical: pd.DataFrame, test_item_per_user: dict) -> pd.DataFrame:
+    """Filter TRAIN rows via a merge (vectorized; O(N log N), not O(N) per-row)."""
+    test_pairs = pd.DataFrame(
+        [(u, i) for u, i in test_item_per_user.items()],
+        columns=["user_idx", "item_idx"],
+    )
+    test_pairs["is_test"] = True
+    merged = df_canonical.merge(test_pairs, on=["user_idx", "item_idx"], how="left")
+    return merged[merged["is_test"].isna()].drop(columns=["is_test"]).copy()
+
+
 def main() -> int:
     derived = data_derived()
     ml1m = ml1m_dir()
@@ -766,22 +847,21 @@ def main() -> int:
     mapping_sha = sha256_file(mapping_path)
 
     # 2. Split (LOCK-FOREVER via save_split_or_verify).
+    # build_split returns a SplitManifest with raw_data_hash + mapping_sha256
+    # stored as fields — no post-hoc mutation.
     split = build_split(
         ratings_df, mapping, movies_df,
         mapping_sha256=mapping_sha, raw_data_hash=raw_data_hash,
     )
-    split.raw_data_hash = raw_data_hash  # ensure stored
 
-    # 3. Exclusion (built from train-only canonical rows).
+    # 3. Exclusion (built from train-only canonical rows; vectorized filter).
     df_c = ratings_df.copy()
     df_c["user_idx"] = df_c["user_id"].map(mapping.user2idx)
     df_c["item_idx"] = df_c["movie_id"].map(mapping.item2idx)
-    train_c = df_c[~df_c.apply(
-        lambda r: split.test_item_per_user.get(r["user_idx"]) == r["item_idx"], axis=1
-    )].copy()
+    train_c = _vectorized_train_split(df_c, split.test_item_per_user)
     exclusion = build_exclusion(train_c, split)
 
-    # 4. Atomic bundle publication (index last).
+    # 4. Atomic bundle publication (4-arg signature; raw_data_hash read from split).
     idx = publish_bundle(derived, mapping, split, exclusion)
     print(f"[build] mapping: {mapping.num_users} users, {mapping.num_items} items")
     print(f"[build] split_hash={idx.split_hash[:12]}...")
@@ -793,24 +873,31 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-And `scripts/foundation/fedrec_foundation/__main__.py`:
+And `scripts/foundation/fedrec_foundation/build.py`:
 ```python
-"""Enable `python -m fedrec_foundation.build`."""
+"""Enable `python -m fedrec_foundation.build`.
+
+Thin shim re-exporting scripts/build_derived.py::main so the CLI is
+discoverable as a module entry point. We add the scripts/ directory
+to sys.path at import time.
+"""
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-# Add the scripts/ directory so `from scripts.build_derived import main` works.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from build_derived import main   # type: ignore
+from build_derived import main  # type: ignore  # noqa: E402
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-Actually, simpler: add a `fedrec_foundation/build.py` submodule that contains `main()` directly, and `python -m fedrec_foundation.build` invokes its `__main__` block. Update `pyproject.toml` to include `fedrec_foundation.build` in the wheel. Pick whichever import structure works cleanly with `python -m`; document the chosen structure in code comments.
+Update `scripts/foundation/pyproject.toml` `[tool.hatch.build.targets.wheel]` if needed so `fedrec_foundation.build` is included.
 
-3. Flip `tests/test_integration.py` to GREEN:
+3. Flip `tests/test_integration.py` to GREEN (using the vectorized filter):
 ```python
 """Integration tests for foundation bundle publication + ML-1M anchors."""
 from __future__ import annotations
@@ -839,17 +926,25 @@ def synthetic_movies_df():
     )
 
 
+def _vectorized_train_split(df_canonical: pd.DataFrame, test_item_per_user: dict) -> pd.DataFrame:
+    test_pairs = pd.DataFrame(
+        [(u, i) for u, i in test_item_per_user.items()],
+        columns=["user_idx", "item_idx"],
+    )
+    test_pairs["is_test"] = True
+    merged = df_canonical.merge(test_pairs, on=["user_idx", "item_idx"], how="left")
+    return merged[merged["is_test"].isna()].drop(columns=["is_test"]).copy()
+
+
 def _build_small_bundle(df, movies_df, derived):
     m = build_mapping(df)
     s = build_split(df, m, movies_df, mapping_sha256="a"*64, raw_data_hash="b"*64)
     df_c = df.copy()
     df_c["user_idx"] = df_c["user_id"].map(m.user2idx)
     df_c["item_idx"] = df_c["movie_id"].map(m.item2idx)
-    train_c = df_c[~df_c.apply(
-        lambda r: s.test_item_per_user.get(r["user_idx"]) == r["item_idx"], axis=1
-    )]
+    train_c = _vectorized_train_split(df_c, s.test_item_per_user)
     excl = build_exclusion(train_c, s)
-    return publish_bundle(derived, m, s, excl)
+    return publish_bundle(derived, m, s, excl)  # 4-arg signature
 
 
 def test_build_idempotent(synthetic_ratings_df, synthetic_movies_df, tmp_path):
@@ -898,15 +993,20 @@ def test_ml1m_counts_6040_3706(tmp_path, monkeypatch):
     <automated>cd scripts/foundation &amp;&amp; pytest tests/test_integration.py -v &amp;&amp; cd .. &amp;&amp; python -m fedrec_foundation.build &amp;&amp; ls -la data/derived/</automated>
   </verify>
   <acceptance_criteria>
-    - File `scripts/foundation/fedrec_foundation/bundle.py` defines `publish_bundle`, `verify_bundle`, `FoundationIndex`, `compute_foundation_contract_sha256`.
-    - Either `scripts/foundation/fedrec_foundation/build.py` or `scripts/foundation/fedrec_foundation/__main__.py` exists such that `python -m fedrec_foundation.build` from repo root succeeds.
+    - File `scripts/foundation/fedrec_foundation/bundle.py` defines `publish_bundle` (4-param signature: `derived_dir, mapping, split_manifest, exclusion`), `verify_bundle`, `FoundationIndex`, `compute_foundation_contract_sha256`.
+    - `grep -E "^def publish_bundle\(" scripts/foundation/fedrec_foundation/bundle.py` shows the 4-param signature (no `raw_data_hash` parameter).
+    - `grep "split_manifest.raw_data_hash" scripts/foundation/fedrec_foundation/bundle.py` matches (raw_data_hash is read from the manifest field).
+    - `grep "split.raw_data_hash =" scripts/foundation/scripts/build_derived.py` returns no matches (no post-hoc assignment — the field is populated by build_split).
+    - File `scripts/foundation/fedrec_foundation/build.py` exists such that `python -m fedrec_foundation.build` from repo root succeeds.
     - Running `python -m fedrec_foundation.build` creates 4 files under `data/derived/`: `mapping.json`, `split_manifest.json`, `exclusion_items.npz`, `foundation_index.json`.
     - `python -c "import json; d=json.load(open('data/derived/mapping.json')); assert d['num_users']==6040 and d['num_items']==3706"` succeeds.
+    - `python -c "import json; d=json.load(open('data/derived/split_manifest.json')); assert 'raw_data_hash' in d and len(d['raw_data_hash'])==64"` succeeds (manifest stores raw_data_hash as a top-level field).
     - `python -c "from fedrec_foundation.bundle import verify_bundle; from pathlib import Path; verify_bundle(Path('data/derived'))"` succeeds.
     - `cd scripts/foundation && pytest tests/test_integration.py -v` prints at least 4 passed.
     - Running `python -m fedrec_foundation.build` a SECOND time is a no-op (idempotent, D-04 lock).
+    - Grep the builder and test fixtures for `df.*\.apply\(lambda` in this plan's files — ZERO matches allowed (we use vectorized merge, not row-wise apply).
   </acceptance_criteria>
-  <done>FND-01, FND-02, FND-03 artifacts exist on disk under data/derived/ and are loaded via verify_bundle() gate.</done>
+  <done>FND-01, FND-02, FND-03 artifacts exist on disk under data/derived/ and are loaded via verify_bundle() gate. publish_bundle uses the 4-param signature. No `.apply(lambda)` row-wise filters remain.</done>
 </task>
 
 </tasks>
@@ -914,18 +1014,22 @@ def test_ml1m_counts_6040_3706(tmp_path, monkeypatch):
 <verification>
 - `cd scripts/foundation && pytest tests/test_mapping.py tests/test_split.py tests/test_exclusion.py tests/test_integration.py -v` — all pass (no skips for these modules).
 - `data/derived/mapping.json` exists and has `"num_users": 6040` and `"num_items": 3706`.
-- `data/derived/split_manifest.json` has `"bucket_semantics": "half_open"` and `"bucket_boundaries": [30, 100]` and `"train_user_stats"` block.
+- `data/derived/split_manifest.json` has `"bucket_semantics": "half_open"`, `"bucket_boundaries": [30, 100]`, `"train_user_stats"` block, AND top-level `"raw_data_hash"` + `"mapping_sha256"` fields.
 - `data/derived/foundation_index.json` has `mapping_sha256`, `split_hash`, `exclusion_sha256`, `foundation_contract_sha256`.
 - Running `python -m fedrec_foundation.build` a second time prints success without rewriting (idempotent, D-04 lock).
+- `grep -n "publish_bundle(" scripts/foundation/fedrec_foundation/bundle.py scripts/foundation/scripts/build_derived.py` shows ONLY 4-arg call sites (no 5-arg, no `raw_data_hash=` kwarg).
 </verification>
 
 <success_criteria>
 - FND-01: `data/derived/mapping.json` exists and any module can load via `load_mapping()` to get `num_users=6040, num_items=3706`.
-- FND-02: `data/derived/split_manifest.json` exists, `split_hash` is deterministic, re-building refuses to overwrite on divergence.
-- FND-03: `data/derived/exclusion_items.npz` exists, `load_exclusion(...).for_user(u)` includes that user's test item AND all their training positives, and loads with `allow_pickle=False`.
+- FND-02: `data/derived/split_manifest.json` exists, `split_hash` is deterministic, re-building refuses to overwrite on divergence, and the manifest stores `raw_data_hash` + `mapping_sha256` as dataclass fields (not side-channel).
+- FND-03: `data/derived/exclusion_items.npz` exists, `load_exclusion(...).for_user(u)` includes that user's test item AND all their training positives, and loads with `allow_pickle=False`. Module-level `exclusion_for(npz, u)` returns the same slice.
 - Atomic bundle: `foundation_index.json` is published last; `verify_bundle()` hard-fails if any payload drifts.
+- Signature consistency: `publish_bundle` is 4-param everywhere (interface spec, bundle.py action code, CLI in build_derived.py); `build_split` is 5-param with `mapping_sha256` + `raw_data_hash` as explicit args; `SplitManifest` stores both fingerprints as fields.
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-02-SUMMARY.md` — enumerate the three artifacts' hashes (captured from foundation_index.json), the key file-level decisions (CR-1 ratings-only, CR-5 train-only stats, IMP-2 composite hash, IMP-3 flat NPZ, N-3 atomic index), and confirm the empirical 6040/3706 anchor.
+After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-02-SUMMARY.md` — enumerate the three artifacts' hashes (captured from foundation_index.json), the key file-level decisions (CR-1 ratings-only, CR-5 train-only stats, IMP-2 composite hash, IMP-3 flat NPZ, N-3 atomic index, CR-3 module-level exclusion_for helper), the locked signatures (`build_split` 5-param, `publish_bundle` 4-param, `SplitManifest.raw_data_hash` field), and confirm the empirical 6040/3706 anchor.
 </output>
+</content>
+</invoke>

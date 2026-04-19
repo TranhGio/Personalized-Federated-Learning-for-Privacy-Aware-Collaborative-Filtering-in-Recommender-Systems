@@ -2,7 +2,7 @@
 phase: 01-foundation-contract
 plan: 01
 type: execute
-wave: 1
+wave: 0
 depends_on: []
 files_modified:
   - scripts/foundation/pyproject.toml
@@ -31,7 +31,7 @@ must_haves:
     - "pytest is installable and discovers the scripts/foundation/tests/ directory"
     - "`pip install -e scripts/foundation/` succeeds in a clean environment"
     - "`python -c 'import fedrec_foundation'` succeeds after editable install"
-    - "Every FND-01..07 has at least one Wave-0 test stub that fails with 'NotImplementedError' or 'ImportError' (RED state) until Plans 02-05 implement the modules"
+    - "Every FND-01..07 has at least one Wave-0 test stub in SKIPPED state (waiting for Plans 02-05 to unblock), plus at least one real passing test for the modules Plan 01 implements (hashing)"
   artifacts:
     - path: "scripts/foundation/pyproject.toml"
       provides: "Installable fedrec-foundation package declaration + pytest config"
@@ -58,11 +58,15 @@ must_haves:
 ---
 
 <objective>
-Create the `fedrec-foundation` installable package scaffold and Wave-0 test infrastructure so every downstream plan has a RED → GREEN TDD loop. This plan produces zero FND requirements on its own — it is the gate that unlocks Plans 02-05.
+Create the `fedrec-foundation` installable package scaffold and Wave-0 test infrastructure so every downstream plan has a SKIPPED → GREEN TDD loop. This plan produces zero FND requirements on its own — it is the gate that unlocks Plans 02-05.
 
-Purpose: Plans 02-05 implement FND-01..07. They need a real `pytest` setup, a real installable package, and red test stubs enumerating the expected behaviors. Building all three artifacts in one Wave-0 plan avoids any per-requirement plan having to bootstrap its own test harness (which would make Plans 02-05 slower and less focused).
+Purpose: Plans 02-05 implement FND-01..07. They need a real `pytest` setup, a real installable package, and SKIPPED test stubs enumerating the expected behaviors (each later plan flips its `pytestmark = pytest.mark.skip(...)` off and replaces the stub body). Building all three artifacts in one Wave-0 plan avoids any per-requirement plan having to bootstrap its own test harness (which would make Plans 02-05 slower and less focused).
 
-Output: An installable `fedrec-foundation` package with empty module files, a complete `tests/` directory with 14 test files containing RED-state stubs for every behavior in `01-VALIDATION.md`, and a `docs/setup.md` documenting install order.
+Note on wave label: this plan uses `wave: 0` frontmatter to match the "Wave 0" narrative label used in ROADMAP and VALIDATION.md — bootstrap/setup work that unblocks Wave 1+ parallel plans.
+
+Note on file count: `files_modified` lists 16 files — above the 15-file soft threshold — but ~13 of them are near-identical test stubs (boilerplate). Splitting test-stub generation into a separate plan adds ceremony without reducing cognitive load, so keeping the package scaffold + test stubs together is the deliberate choice.
+
+Output: An installable `fedrec-foundation` package with real paths/atomic/hashing modules, a complete `tests/` directory with 14 test files containing SKIPPED stubs for every behavior in `01-VALIDATION.md`, and a `docs/setup.md` documenting install order.
 </objective>
 
 <execution_context>
@@ -390,17 +394,7 @@ cd scripts/foundation && pytest tests/ -v         # full suite
     - CLAUDE.md (typing style: `typing.Dict` not `dict[str, int]`)
   </read_first>
   <action>
-Create the complete test tree. Every test file contains RED-state stubs — each test imports from `fedrec_foundation.<module>`, which does NOT exist yet for modules beyond paths/atomic/hashing. Those imports will raise `ImportError` and pytest will mark them as errors. Plans 02-05 implement the modules, flipping tests GREEN.
-
-Use this pattern for every unimplemented module (example for `test_mapping.py`):
-```python
-import pytest
-
-pytestmark = pytest.mark.skipif(
-    True,  # flipped to False by Plan 02 when mapping.py lands
-    reason="Plan 02 (FND-01 mapping) implements fedrec_foundation.mapping",
-)
-```
+Create the complete test tree. Every test file (except `test_hashing.py` which Plan 01 implements) starts in SKIPPED state via a module-level `pytestmark = pytest.mark.skip(reason="Plan NN implements fedrec_foundation.<module>")`. Plans 02-05 flip the skip off and replace the stub bodies with real assertions. SKIPPED tests show up as `s` in pytest output — NOT as failures — but `pytest --collect-only` still enumerates every test ID for contract-level visibility.
 
 **`tests/__init__.py`:** empty.
 
@@ -494,16 +488,16 @@ def test_compute_raw_data_hash_order_matters(tmp_path: Path) -> None:
 ```
 
 For every OTHER test file (`test_mapping.py`, `test_split.py`, `test_exclusion.py`, `test_evaluator.py`, `test_weight_policy.py`, `test_rng.py`, `test_mode.py`, `test_manifest.py`, `test_launcher.py`, `test_integration.py`), write a stub file with:
-1. A module-level `pytestmark = pytest.mark.skip(reason="Plan NN implements fedrec_foundation.<module>")` — replace NN with the plan number per the map below.
+1. A module-level `pytestmark = pytest.mark.skip(reason="Plan NN implements fedrec_foundation.<module>")` — replace NN with the plan number per the map below. This produces SKIPPED (not FAILED) — the intent is that `pytest --collect-only` enumerates all test IDs while runs stay green.
 2. ONE test function per row in the VALIDATION.md per-task map (names MUST match the automated-command column of that map so the table updates in-place).
-3. Each test body contains `raise NotImplementedError("Plan NN fills this in")`.
+3. Each test body contains `raise NotImplementedError("Plan NN fills this in")` — safe to leave because the module-level skip prevents execution. Plans 02-05 delete the skip marker and replace the body in the same edit.
 
 Plan-to-file map:
 - `test_mapping.py`: Plan 02 — tests `test_sort_order`, `test_item_mapping_from_ratings_only`, `test_roundtrip` (cover FND-01-a/b/c)
 - `test_split.py`: Plan 02 — tests `test_hash_deterministic`, `test_timestamp_tiebreak`, `test_split_lock_refuses_overwrite`, `test_train_only_user_stats` (FND-02-a/b/c/d)
-- `test_exclusion.py`: Plan 02 — tests `test_includes_test_item`, `test_safe_load`, `test_indptr_layout` (FND-03-a/b/c)
+- `test_exclusion.py`: Plan 02 — tests `test_includes_test_item`, `test_safe_load`, `test_indptr_layout`, `test_module_level_exclusion_for` (FND-03-a/b/c + CR-3 module-level helper coverage)
 - `test_evaluator.py`: Plan 03 — tests `test_primary_evaluator_all_modes` (FND-04-a)
-- `test_weight_policy.py`: Plan 03 — tests `test_num_positives`, `test_unknown_policy_raises`, `test_fit_metrics_contract` (FND-05-a/b/c)
+- `test_weight_policy.py`: Plan 03 — tests `test_num_positives`, `test_unknown_policy_raises`, `test_fit_metrics_contract`, `test_from_dict_missing_required_raises` (FND-05-a/b/c + CR-4 missing-key error handling)
 - `test_rng.py`: Plan 04 — tests `test_derive_rng_stable_across_processes`, `test_tuple_uniqueness`, `test_all_three_rng_factories`, `test_torch_generator_reproducible`, `test_sample_reproducible` (FND-06-a/b/c/d/e)
 - `test_mode.py`: Plan 05 — tests `test_override_logging`, `test_assertion_flags` (mode-a/b)
 - `test_launcher.py`: Plan 05 — tests `test_launcher_sets_num_supernodes` (mode-c)
@@ -523,14 +517,15 @@ pytestmark = pytest.mark.skip(reason="Plan NN implements fedrec_foundation.<modu
 ```
   </action>
   <verify>
-    <automated>cd scripts/foundation &amp;&amp; pytest tests/ --collect-only 2>&amp;1 | grep -E "^(tests/|collected)" | head -40 &amp;&amp; pytest tests/test_hashing.py -v</automated>
+    <automated>cd scripts/foundation &amp;&amp; pytest tests/ --collect-only -q 2>&amp;1 | tail -5 &amp;&amp; pytest tests/test_hashing.py -v</automated>
   </verify>
   <acceptance_criteria>
     - Files `scripts/foundation/tests/{__init__,conftest,test_hashing,test_mapping,test_split,test_exclusion,test_evaluator,test_weight_policy,test_rng,test_mode,test_manifest,test_launcher,test_integration}.py` all exist (13 files in tests/).
-    - `pytest tests/ --collect-only` collects AT LEAST 25 tests (count from VALIDATION.md map).
+    - `pytest tests/ --collect-only -q` collects AT LEAST 25 tests (count from VALIDATION.md map). Collection must succeed even though most are skipped.
     - `pytest tests/test_hashing.py -v` prints `2 passed` (hashing tests are real, not skipped).
-    - `pytest tests/test_mapping.py` reports all tests as SKIPPED with reason mentioning "Plan 02".
-    - `pytest tests/test_rng.py` reports all tests as SKIPPED with reason mentioning "Plan 04".
+    - `pytest tests/test_mapping.py -v` reports all tests as SKIPPED with reason mentioning "Plan 02" (pytest exits 0; `s` markers in output).
+    - `pytest tests/test_rng.py -v` reports all tests as SKIPPED with reason mentioning "Plan 04".
+    - `pytest tests/` (full run) exits 0 with some PASSED (hashing) and the rest SKIPPED — no FAILED.
     - `grep -r "PYTHONHASHSEED" scripts/foundation/tests/test_rng.py` finds at least one match (cross-process subprocess test body present even though skipped).
     - `conftest.py` defines fixtures named `synthetic_ratings_df`, `tmp_derived_dir`, `pythonhashseed_random`.
   </acceptance_criteria>
@@ -542,19 +537,22 @@ pytestmark = pytest.mark.skip(reason="Plan NN implements fedrec_foundation.<modu
 <verification>
 - Run `cd scripts/foundation && pip install -e .` — editable install succeeds.
 - Run `python -c "import fedrec_foundation; from fedrec_foundation.atomic import atomic_write_json; from fedrec_foundation.hashing import compute_raw_data_hash"` — all imports succeed.
-- Run `cd scripts/foundation && pytest tests/ -v` — test_hashing.py has 2 passes; all other tests are skipped with "Plan NN" reason.
-- Run `cd scripts/foundation && pytest tests/ --collect-only 2>&1 | wc -l` — at least 25 tests collected.
+- Run `cd scripts/foundation && pytest tests/ -v` — test_hashing.py has 2 passes; all other tests are SKIPPED with "Plan NN" reason; overall exit 0.
+- Run `cd scripts/foundation && pytest tests/ --collect-only -q | tail -1` — shows at least 25 tests collected.
 - Grep `docs/setup.md` contains the install-order commands.
 </verification>
 
 <success_criteria>
 - `fedrec-foundation` is pip-installable as an editable package.
 - `pytest` discovers the tests directory and runs a passing test_hashing.py.
-- Every FND-01..07 has at least one named RED test stub that Plans 02-05 will implement.
+- Every FND-01..07 has at least one named SKIPPED test stub that Plans 02-05 will unblock and populate with real assertions.
+- `pytest --collect-only` enumerates all ~25+ tests even though most are skipped — VALIDATION.md's test-ID map is enforced at collection time.
 - Install-order documented in `docs/setup.md` (foundation before modules).
 - No code in Plans 02-05 is blocked on package scaffolding.
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-01-SUMMARY.md` per the standard summary template — enumerate the 14 test files, the 3 real source files (paths/atomic/hashing), and the install-order doc. List what's left as stubs (mapping, split, exclusion, evaluator, weight_policy, rng, mode, manifest) so subsequent plans know where to pick up.
+After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-01-SUMMARY.md` per the standard summary template — enumerate the 14 test files, the 3 real source files (paths/atomic/hashing), and the install-order doc. List what's left as SKIPPED stubs (mapping, split, exclusion, evaluator, weight_policy, rng, mode, manifest) so subsequent plans know where to pick up and which `pytestmark` line to delete.
 </output>
+</content>
+</invoke>

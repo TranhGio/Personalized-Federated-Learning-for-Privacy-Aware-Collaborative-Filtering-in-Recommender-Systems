@@ -18,6 +18,7 @@ must_haves:
     - "Downstream code can import `WeightPolicy` enum and `compute_aggregation_weight(metrics, policy)` and get one consistent float back for `uniform` / `num_positives` / `num_training_examples`."
     - "Every downstream client module has a `FitMetricsContract` dataclass it MUST populate in its `@app.train()` return value (CR-4), covering `train_loss`, `num_positives`, `num_training_examples`, plus optional per-module extensions."
     - "`compute_aggregation_weight({'num_positives': 10}, 'num_positives') == 10.0` and unknown policies raise ValueError."
+    - "`FitMetricsContract.from_dict({})` raises ValueError with a message containing 'missing required field' — not a cryptic TypeError."
   artifacts:
     - path: "scripts/foundation/fedrec_foundation/evaluator.py"
       provides: "EvalProtocol enum + get_primary_evaluator(mode) string resolver"
@@ -26,7 +27,7 @@ must_haves:
       provides: "WeightPolicy enum + compute_aggregation_weight(metrics, policy) -> float"
       exports: ["WeightPolicy", "compute_aggregation_weight"]
     - path: "scripts/foundation/fedrec_foundation/fit_metrics.py"
-      provides: "FitMetricsContract dataclass — the client-side fit-metrics contract (CR-4)"
+      provides: "FitMetricsContract dataclass — the client-side fit-metrics contract (CR-4). from_dict wraps TypeError in a clear ValueError."
       exports: ["FitMetricsContract", "FIT_METRICS_REQUIRED_KEYS", "validate_fit_metrics"]
   key_links:
     - from: "scripts/foundation/fedrec_foundation/weight_policy.py::compute_aggregation_weight"
@@ -37,12 +38,16 @@ must_haves:
       to: "@dataclass FitMetricsContract"
       via: "codebase dataclass-first convention"
       pattern: "@dataclass"
+    - from: "scripts/foundation/fedrec_foundation/fit_metrics.py::FitMetricsContract.from_dict"
+      to: "raises ValueError on missing required field"
+      via: "try/except wrap around cls(**filtered)"
+      pattern: "missing required field"
 ---
 
 <objective>
 Implement FND-04 (primary evaluator selector) and FND-05 (aggregation weight policy abstraction + client-side FitMetricsContract dataclass per Codex CR-4). These three tiny modules are the contracts Phases 2–5 will implement against.
 
-Purpose: Without `FitMetricsContract` the weight-policy enum is non-functional — CR-4 flagged that clients currently return only `num-examples` and `num_positives` / `num_training_examples` aren't emitted anywhere. Phase 1 MUST provide the dataclass + the validator so Phases 2–5 have a fixed import surface to populate.
+Purpose: Without `FitMetricsContract` the weight-policy enum is non-functional — CR-4 flagged that clients currently return only `num-examples` and `num_positives` / `num_training_examples` aren't emitted anywhere. Phase 1 MUST provide the dataclass + the validator so Phases 2–5 have a fixed import surface to populate. `from_dict` uses an explicit try/except so a missing required field surfaces as a clear `ValueError` (not a cryptic dataclass `TypeError`).
 
 Output: Three fully-implemented Python modules with passing tests that Plans 02 and 06 depend on (via integration tests).
 </objective>
@@ -104,7 +109,8 @@ class FitMetricsContract:
 
     def to_dict(self) -> Dict[str, Union[int, float]]: ...   # returns FitRes-ready dict
     @classmethod
-    def from_dict(cls, d: Dict[str, Union[int, float]]) -> "FitMetricsContract": ...
+    def from_dict(cls, d: Dict[str, Union[int, float]]) -> "FitMetricsContract":
+        # Raises ValueError (with "missing required field") if required dataclass args missing.
 
 def validate_fit_metrics(metrics: Dict[str, Union[int, float]]) -> None:
     """Raises ValueError if any FIT_METRICS_REQUIRED_KEYS is missing or of wrong type."""
@@ -203,10 +209,13 @@ def test_allrank_is_namespaced() -> None:
       - `NUM_POSITIVES` returns `float(metrics["num_positives"])`; raises `ValueError` with message including "num_positives" if key missing.
       - `NUM_TRAINING_EXAMPLES` returns `float(metrics["num_training_examples"])`; raises `ValueError` if key missing.
       - Unknown policy raises `ValueError` with message "Unknown weight policy: {policy}".
-    - `FitMetricsContract` dataclass with fields `train_loss: float`, `num_positives: int`, `num_training_examples: int`, `round_num: Optional[int] = None` (extensible — downstream modules add their own fields in subclasses). `to_dict()` returns `asdict(self)`; `from_dict(d)` picks known keys only (ignores extras so downstream extensions don't break).
+    - `FitMetricsContract` dataclass with fields `train_loss: float`, `num_positives: int`, `num_training_examples: int`, `round_num: Optional[int] = None`. `to_dict()` returns `asdict(self)` with `None` values dropped.
+    - `FitMetricsContract.from_dict(d)`:
+      - Picks known dataclass field names from `d` (ignores extra keys — forward-compat).
+      - Wraps `cls(**filtered)` in `try/except TypeError` and re-raises as `ValueError("FitMetricsContract.from_dict missing required field: ...")` so callers see a clear message instead of a cryptic dataclass error.
     - `FIT_METRICS_REQUIRED_KEYS = ("train_loss", "num_positives", "num_training_examples")` — exported constant.
     - `validate_fit_metrics(metrics)` checks every required key is present and the right type (int/float); raises `ValueError` otherwise.
-    - Tests flip green: `test_num_positives`, `test_unknown_policy_raises`, `test_fit_metrics_contract`.
+    - Tests flip green: `test_num_positives`, `test_unknown_policy_raises`, `test_fit_metrics_contract`, `test_from_dict_missing_required_raises`.
   </behavior>
   <action>
 Create `scripts/foundation/fedrec_foundation/weight_policy.py` by copying research Pattern 5 (lines 691-731) verbatim. Use `typing.Dict`, `typing.Union`. Add NumPy-style docstrings.
@@ -261,10 +270,24 @@ class FitMetricsContract:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Union[int, float]]) -> "FitMetricsContract":
-        """Construct from a dict, ignoring unknown keys (forward-compat)."""
+        """Construct from a dict, ignoring unknown keys (forward-compat).
+
+        Raises
+        ------
+        ValueError
+            If the input dict is missing a required dataclass field. The
+            underlying dataclass TypeError is caught and re-raised as a
+            clear ValueError so callers don't see cryptic "__init__ missing
+            N required positional arguments" messages.
+        """
         known = {f.name for f in fields(cls)}
         filtered = {k: v for k, v in d.items() if k in known}
-        return cls(**filtered)  # type: ignore[arg-type]
+        try:
+            return cls(**filtered)  # type: ignore[arg-type]
+        except TypeError as e:
+            raise ValueError(
+                f"FitMetricsContract.from_dict missing required field: {e}"
+            ) from e
 
 
 def validate_fit_metrics(metrics: Dict[str, Union[int, float]]) -> None:
@@ -354,6 +377,16 @@ def test_fit_metrics_contract_forward_compat() -> None:
     # Unknown keys ignored (don't crash).
 
 
+def test_from_dict_missing_required_raises() -> None:
+    """CR-4 polish: from_dict wraps dataclass TypeError in a clear ValueError."""
+    # Empty dict -> every required field missing.
+    with pytest.raises(ValueError, match="missing required field"):
+        FitMetricsContract.from_dict({})
+    # Partial dict missing num_positives.
+    with pytest.raises(ValueError, match="missing required field"):
+        FitMetricsContract.from_dict({"train_loss": 0.1, "num_training_examples": 5})
+
+
 def test_validate_fit_metrics_missing_raises() -> None:
     with pytest.raises(ValueError, match="num_positives"):
         validate_fit_metrics({"train_loss": 0.1, "num_training_examples": 10})
@@ -380,10 +413,12 @@ Also update Plan 01's test stub `tests/test_weight_policy.py` if any remnant rem
     - File `scripts/foundation/fedrec_foundation/fit_metrics.py` defines `FitMetricsContract`, `FIT_METRICS_REQUIRED_KEYS`, `validate_fit_metrics`.
     - `grep "num_positives" scripts/foundation/fedrec_foundation/fit_metrics.py` matches.
     - `grep "@dataclass" scripts/foundation/fedrec_foundation/fit_metrics.py` matches.
-    - `cd scripts/foundation && pytest tests/test_weight_policy.py -v` prints at least 10 passed (tests listed in action).
+    - `grep "missing required field" scripts/foundation/fedrec_foundation/fit_metrics.py` matches (CR-4 polish error message).
+    - `cd scripts/foundation && pytest tests/test_weight_policy.py -v` prints at least 11 passed (tests listed in action, including `test_from_dict_missing_required_raises`).
     - `python -c "from fedrec_foundation.fit_metrics import FitMetricsContract, validate_fit_metrics; c=FitMetricsContract(train_loss=0.1, num_positives=5, num_training_examples=10); validate_fit_metrics(c.to_dict())"` succeeds.
+    - `python -c "from fedrec_foundation.fit_metrics import FitMetricsContract; FitMetricsContract.from_dict({})"` fails with a `ValueError` whose message contains `missing required field` (NOT a `TypeError`).
   </acceptance_criteria>
-  <done>FND-05 implemented; weight-policy enum + aggregation weight function work; FitMetricsContract dataclass locks the client-side fit-metrics contract per CR-4.</done>
+  <done>FND-05 implemented; weight-policy enum + aggregation weight function work; FitMetricsContract dataclass locks the client-side fit-metrics contract per CR-4, with clear error messages on missing-field from_dict calls.</done>
 </task>
 
 </tasks>
@@ -391,14 +426,17 @@ Also update Plan 01's test stub `tests/test_weight_policy.py` if any remnant rem
 <verification>
 - `cd scripts/foundation && pytest tests/test_evaluator.py tests/test_weight_policy.py -v` — all tests pass.
 - `python -c "from fedrec_foundation.evaluator import get_primary_evaluator; from fedrec_foundation.weight_policy import compute_aggregation_weight; from fedrec_foundation.fit_metrics import FitMetricsContract; print(get_primary_evaluator('benchmark_cross_device')); print(compute_aggregation_weight({'num_positives': 5}, 'num_positives'))"` prints `sampled_loo_99` then `5.0`.
+- `python -c "from fedrec_foundation.fit_metrics import FitMetricsContract; FitMetricsContract.from_dict({})"` exits non-zero with a `ValueError` containing "missing required field".
 </verification>
 
 <success_criteria>
 - FND-04: `EvalProtocol.SAMPLED_LOO_99.value == "sampled_loo_99"` is the single authoritative primary-evaluator constant.
 - FND-05: `compute_aggregation_weight(metrics, policy)` resolves to the right float per policy; unknown policy raises `ValueError`.
-- CR-4: `FitMetricsContract` dataclass with `num_positives` + `num_training_examples` fields is available as the client-side fit-metrics contract Phases 2-5 populate.
+- CR-4: `FitMetricsContract` dataclass with `num_positives` + `num_training_examples` fields is available as the client-side fit-metrics contract Phases 2-5 populate. `from_dict` wraps dataclass TypeError in a clear ValueError so missing-field calls produce "missing required field: ..." instead of cryptic Python errors.
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-03-SUMMARY.md` — document the three modules' public APIs, note that Phases 2-5 must import `FitMetricsContract` and `validate_fit_metrics` in each client_app.py's `@app.train()` return path (this is the cross-phase contract).
+After completion, create `.planning/phases/01-foundation-contract/01-foundation-contract-03-SUMMARY.md` — document the three modules' public APIs, note that Phases 2-5 must import `FitMetricsContract` and `validate_fit_metrics` in each client_app.py's `@app.train()` return path (this is the cross-phase contract), and record the `from_dict` error-handling behaviour (clear ValueError on missing required fields).
 </output>
+</content>
+</invoke>
