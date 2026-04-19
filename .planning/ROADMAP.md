@@ -31,7 +31,13 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. Running the split builder twice produces the same `split_hash` and the same held-out test item per user (deterministic tiebreaking), and `exclude_items[user]` always contains that held-out item.
   3. A config flag picks ONE primary evaluator (`sampled_loo_99`) and ONE aggregation `weight-policy` per module, both of which appear in the run manifest alongside partition mode, num-supernodes, fractions, seeds, and negative counts.
   4. Setting a single run seed produces identical server-selected client sequences and identical evaluator negative samples across two back-to-back runs of the same config; no evaluator internally calls `random.seed(...)` or `np.random.seed(...)`.
-**Plans**: TBD
+**Plans**: 6 plans
+  - [ ] 01-foundation-contract-01-PLAN.md — Wave-0 package scaffolding + 14 test stubs (gates Plans 02-05)
+  - [ ] 01-foundation-contract-02-PLAN.md — FND-01 mapping + FND-02 split manifest + FND-03 exclusion set + atomic bundle publication
+  - [ ] 01-foundation-contract-03-PLAN.md — FND-04 primary evaluator + FND-05 weight-policy + FitMetricsContract (CR-4)
+  - [ ] 01-foundation-contract-04-PLAN.md — FND-06 three RNG factories (CR-3) + FND-07 run manifest (IMP-2 composite hash)
+  - [ ] 01-foundation-contract-05-PLAN.md — Mode resolver (D-06..D-11) + scripts/run.py launcher (CR-2)
+  - [ ] 01-foundation-contract-06-PLAN.md — Add fedrec-foundation as local-path dep to all 4 modules + cross-module smoke test
 
 ### Phase 2: Baseline Migration
 **Goal**: `federated-baseline-cf` runs as a correct cross-device benchmark — 6040 clients, one user per client in benchmark mode, seeded sampling, sufficient-statistic metrics, test-positive excluded from training negatives, and protocol fingerprint logged.
@@ -103,7 +109,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Contract | 0/0 | Not started | - |
+| 1. Foundation Contract | 0/6 | In planning | - |
 | 2. Baseline Migration | 0/0 | Not started | - |
 | 3. Personalized Migration | 0/0 | Not started | - |
 | 4. Adaptive Migration & Bug Fixes | 0/0 | Not started | - |
