@@ -14,17 +14,19 @@ requirements:
 
 must_haves:
   truths:
-    - "`federated-baseline-cf/pyproject.toml` declares default `partition-mode = \"natural\"` (cross-device, 1 user = 1 client); `[tool.flwr.federations.local-simulation].options.num-supernodes` remains 5 (the CR-2 launcher overrides at federation level) but a comment explicitly names `scripts/run.py baseline benchmark_cross_device` as the canonical entry path that sets 6040."
+    - "`federated-baseline-cf/pyproject.toml` declares default `partition-mode = \"natural\"` (cross-device, 1 user = 1 client) AND sets both `[tool.flwr.federations.local-simulation].options.num-supernodes = 6040` and `[tool.flwr.federations.local-sim-gpu].options.num-supernodes = 6040` so `flwr run .` without the launcher also defaults to cross-device (BSL-01 fully satisfied in-file; ROADMAP Phase 2 success criterion 1 passes)."
+    - "`scripts/run.py baseline benchmark_cross_device` continues to set `num-supernodes=6040` explicitly in its run-config — now a belt-and-suspenders redundancy since pyproject also defaults to 6040. The explicit launcher value is logged in `manifest.overrides` per D-19 (override matches the default, so the warning is informational but benign)."
     - "`federated_baseline_cf/dataset.py` is rewritten as a thin adapter (≤ 200 LOC) that delegates ID mapping, LOO split, and exclusion-set loading to `fedrec_foundation.{mapping, split, exclusion}`; `create_global_mappings`, `create_leave_one_out_split`, and the Dirichlet helpers `compute_user_genre_distribution` / `dirichlet_partition_users` are REMOVED per D-17."
     - "`load_partition_data(partition_id, num_partitions, ...)` returns the same tuple shape (trainloader, testloader, num_users, num_items, user2idx, item2idx) consumed by client_app.py and task.py — so downstream callers keep working without signature changes."
     - "`natural_partition_users(ratings_df, user2idx)` is preserved (same signature, same return shape) but the mapping it consumes now comes from `fedrec_foundation.mapping.load_mapping(data/derived/mapping.json)` — single source of truth with the committed bundle."
     - "Module-level `_partition_cache` is removed because the foundation loaders already satisfy the cross-process-stable cache invariant (bundle verification via `verify_bundle()` at load time)."
+    - "pyproject.toml declares `[project.optional-dependencies] dev = [\"pytest>=7.0\"]` so test plans (Plan 01, Plan 02, Plan 03, Plan 04) can `pip install -e '.[dev]'` and run pytest. This declaration is EXCLUSIVELY OWNED BY THIS TASK to prevent the Wave 1 write race between Plans 01 and 02 (iteration 1 BLOCKER 1)."
   artifacts:
     - path: "federated-baseline-cf/federated_baseline_cf/dataset.py"
       provides: "Thin adapter that delegates to fedrec_foundation loaders (D-17)"
       contains: "from fedrec_foundation.mapping import load_mapping"
     - path: "federated-baseline-cf/pyproject.toml"
-      provides: "partition-mode=natural default (BSL-01)"
+      provides: "partition-mode=natural default (BSL-01) + num-supernodes=6040 in both federations + pytest dev dep"
       contains: "partition-mode = \"natural\""
     - path: "federated-baseline-cf/tests/test_dataset_adapter.py"
       provides: "Adapter tests: mapping/split/exclusion come from foundation; bundle verified"
@@ -45,13 +47,13 @@ must_haves:
 ---
 
 <objective>
-Rip-and-replace `federated_baseline_cf/dataset.py` helpers (`create_global_mappings`, `create_leave_one_out_split`, Dirichlet partitioner) with calls into the Phase 1 foundation loaders (`fedrec_foundation.mapping`, `fedrec_foundation.split`, `fedrec_foundation.exclusion`, `fedrec_foundation.bundle`). Flip `pyproject.toml` `partition-mode` default from `"dirichlet"` to `"natural"` to make cross-device the default per BSL-01.
+Rip-and-replace `federated_baseline_cf/dataset.py` helpers (`create_global_mappings`, `create_leave_one_out_split`, Dirichlet partitioner) with calls into the Phase 1 foundation loaders (`fedrec_foundation.mapping`, `fedrec_foundation.split`, `fedrec_foundation.exclusion`, `fedrec_foundation.bundle`). Flip `pyproject.toml` `partition-mode` default from `"dirichlet"` to `"natural"` AND change both `num-supernodes = 5` federation defaults to `num-supernodes = 6040` so cross-device is the default even when `flwr run .` is invoked without the `scripts/run.py` launcher (fully satisfies BSL-01 + ROADMAP Phase 2 success criterion 1). This task also adds the `[project.optional-dependencies] dev = ["pytest>=7.0"]` declaration — exclusively owned by this task (not Plan 01 Task 2) to eliminate the Wave 1 pyproject.toml write race identified in iteration 1 revision.
 
-Purpose: Under D-17 the baseline module is FULLY DOWNSTREAM of the committed `data/derived/` bundle — there is a single source of truth for `user2idx`, `item2idx`, `test_item_per_user`, and `exclude_items[u]`. Keeping the module's own `create_global_mappings` would let drift accumulate (e.g., a future mapping edit inside baseline would silently disagree with foundation + personalized + adaptive). Per BSL-01 the module defaults to 1-user-per-client; CR-2 launcher sets `num-supernodes` at the federation level, so the `[tool.flwr.federations.local-simulation].options.num-supernodes = 5` value stays (legacy cross-silo default for `flwr run .` without the launcher) and the module documents that `scripts/run.py baseline benchmark_cross_device` is the canonical entry.
+Purpose: Under D-17 the baseline module is FULLY DOWNSTREAM of the committed `data/derived/` bundle — there is a single source of truth for `user2idx`, `item2idx`, `test_item_per_user`, and `exclude_items[u]`. Keeping the module's own `create_global_mappings` would let drift accumulate (e.g., a future mapping edit inside baseline would silently disagree with foundation + personalized + adaptive). Per BSL-01 the module defaults to 1-user-per-client (6040 supernodes). The CR-2 launcher (`scripts/run.py baseline benchmark_cross_device`) still passes `num-supernodes=6040` explicitly — this is now redundant with the pyproject.toml default but kept as a belt-and-suspenders safety measure. Legacy cross-silo runs opt in via `flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"`.
 
-D-18 surgical migration guard: the working tree already has pre-existing uncommitted hunks in this file. Executor MUST run `git diff federated-baseline-cf/federated_baseline_cf/dataset.py` first to inventory them. This plan ONLY replaces the 3 helpers named above (D-17 scope) and cleans up `_partition_cache`. Any pre-existing hunks in `MovieLensDataset.__init__`, `download_movielens_1m`, `load_movielens_1m`, or `load_full_data` not addressing BSL-01 remain UNTOUCHED.
+D-18 surgical migration guard: the working tree already has pre-existing uncommitted hunks in `dataset.py`. Executor MUST run `git diff federated-baseline-cf/federated_baseline_cf/dataset.py` first to inventory them. This plan ONLY replaces the 3 helpers named above (D-17 scope) and cleans up `_partition_cache`. Any pre-existing hunks in `MovieLensDataset.__init__`, `download_movielens_1m`, `load_movielens_1m`, or `load_full_data` not addressing BSL-01 remain UNTOUCHED.
 
-Output: (1) Thin `dataset.py` (~200 LOC) that delegates to foundation; (2) pyproject.toml `partition-mode = "natural"` default with `eval-num-negatives = 99` and a comment pointing at `scripts/run.py`; (3) `test_dataset_adapter.py` with 3 tests proving mapping/split/exclusion come from foundation.
+Output: (1) Thin `dataset.py` (~200 LOC) that delegates to foundation; (2) pyproject.toml with `partition-mode = "natural"` default, `num-supernodes = 6040` in both `local-simulation` and `local-sim-gpu` federation blocks, 5 new `[tool.flwr.app.config]` keys (mode, run-seed, weight-policy, eval-num-negatives, checkpoint-rule), `[project.optional-dependencies] dev` section, and a comment pointing at `scripts/run.py`; (3) `test_dataset_adapter.py` with 3 tests proving mapping/split/exclusion come from foundation.
 </objective>
 
 <execution_context>
@@ -77,6 +79,7 @@ Output: (1) Thin `dataset.py` (~200 LOC) that delegates to foundation; (2) pypro
 
 @federated-baseline-cf/federated_baseline_cf/dataset.py
 @federated-baseline-cf/pyproject.toml
+@scripts/run.py
 
 <interfaces>
 <!-- Phase 1 foundation loader signatures. Executor calls these — does NOT re-implement. -->
@@ -121,6 +124,17 @@ Committed bundle on disk (read-only):
 - data/derived/split_manifest.json    (split_hash=5685bed7e4b6...)
 - data/derived/exclusion_items.npz    (flat int32 items + int64 indptr)
 - data/derived/foundation_index.json  (foundation_contract_sha256=fe181dafe6f7...)
+
+From scripts/run.py (already confirmed to exist with --dry-run):
+```python
+# --dry-run prints: [launcher] invoking: flwr run ./federated-baseline-cf --federation local-simulation --run-config 'num-supernodes=6040 mode=benchmark_cross_device'
+MODE_NUM_SUPERNODES = {
+    "benchmark_cross_device": 6040,
+    "paper_compat_pfedrec": 6040,
+    "cross_silo_legacy": 5,
+}
+# --dry-run output is grep-able: `grep "num-supernodes=6040"` matches a single line per dry-run invocation.
+```
 </interfaces>
 
 </context>
@@ -128,20 +142,20 @@ Committed bundle on disk (read-only):
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Flip pyproject.toml defaults to cross-device (BSL-01)</name>
+  <name>Task 1: Flip pyproject.toml defaults to cross-device + add pytest dev dep (BSL-01 + BLOCKER 1 fix)</name>
   <files>
     federated-baseline-cf/pyproject.toml
   </files>
   <read_first>
-    - federated-baseline-cf/pyproject.toml (CURRENT state — note line 17-18 foundation dep comment from Phase 1 Plan 06; do NOT touch that comment or the fedrec-foundation dep. Note line 64 `partition-mode = "natural"` — already set by a pre-existing uncommitted hunk; CONFIRM via `git diff` before editing. Line 94 `options.num-supernodes = 5` — UNCHANGED per D-23: legacy `flwr run .` path; `scripts/run.py` sets 6040 at federation level).
-    - scripts/run.py (CURRENT state — confirm MODULE_DIR["baseline"] == "federated-baseline-cf" and MODE_NUM_SUPERNODES["benchmark_cross_device"] == 6040)
+    - federated-baseline-cf/pyproject.toml (CURRENT state — note line 17-18 foundation dep comment from Phase 1 Plan 06; do NOT touch that comment or the fedrec-foundation dep. Note line 64 `partition-mode = "natural"` — already set by a pre-existing uncommitted hunk; CONFIRM via `git diff` before editing. Line 94 `options.num-supernodes = 5` and line 99 `options.num-supernodes = 5` — BOTH become 6040 in this task per BLOCKER 2 fix from iteration 1 revision.)
+    - scripts/run.py (CURRENT state — confirm MODULE_DIR["baseline"] == "federated-baseline-cf" and MODE_NUM_SUPERNODES["benchmark_cross_device"] == 6040; `--dry-run` flag exists and prints grep-able `num-supernodes=6040` line.)
     - .planning/phases/02-baseline-migration/02-CONTEXT.md §decisions D-18, D-19, D-25
     - CLAUDE.md "Configuration" section (kebab-case in pyproject.toml; snake_case in Python; `.get(key, default)` pattern)
   </read_first>
   <action>
 Confirm via `git diff federated-baseline-cf/pyproject.toml` whether `partition-mode = "natural"` is already set (it appears to be pre-existing WIP per CONTEXT.md D-18). If so, leave it untouched.
 
-Update the `[tool.flwr.app.config]` block:
+**Sub-step 1.1 — update `[tool.flwr.app.config]` block:**
 
 1. If `partition-mode` is NOT already `"natural"`, change it to `"natural"` with a comment: `partition-mode = "natural"  # BSL-01: cross-device 1-user-per-client is the thesis-table default`.
 
@@ -152,13 +166,34 @@ Update the `[tool.flwr.app.config]` block:
    - `eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out positive (sampled_loo_99).`
    - `checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; restore at final evaluation.`
 
-3. After `options.num-supernodes = 5` in `[tool.flwr.federations.local-simulation]`, keep the existing value AND add a comment: `# NOTE: For cross-device thesis runs use `python scripts/run.py baseline benchmark_cross_device` which sets num-supernodes=6040 at federation construction time (Codex CR-2). `flwr run .` without the launcher stays cross-silo (num-supernodes=5) for backwards compatibility with existing W&B dashboards.`
+3. Add comment at the top of `[tool.flwr.app.config]` block: `# Phase 2 (BSL-01..08): cross-device defaults. fedrec_foundation.mode.resolve_mode_defaults(mode) (Phase 1 Plan 05) is the canonical source for hyperparameters at runtime; these pyproject values are only consulted when mode is unset. Overrides are visible per D-19.`
 
-4. Add comment at the top of `[tool.flwr.app.config]` block: `# Phase 2 (BSL-01..08): cross-device defaults. `fedrec_foundation.mode.resolve_mode_defaults(mode)` (Phase 1 Plan 05) is the canonical source for hyperparameters at runtime; these pyproject values are only consulted when `mode` is unset. Overrides are visible per D-19.`
+**Sub-step 1.2 — update federation blocks (BLOCKER 2 from iteration 1):**
 
-Do NOT modify `[project]`, `[build-system]`, `[tool.hatch.*]`, `[tool.flwr.app.components]`, or `[tool.flwr.federations.local-sim-gpu]` / `[tool.flwr.federations.remote-federation]`. Do NOT remove any existing `[tool.flwr.app.config]` keys.
+4. Change `[tool.flwr.federations.local-simulation] options.num-supernodes = 5` to `options.num-supernodes = 6040`. Add a comment on the line immediately below:
+   ```toml
+   # Cross-device default (BSL-01). Opt into cross-silo via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"
+   ```
 
-**Do-not-touch ranges** (D-18): everything outside `[tool.flwr.app.config]` and the single-line comment addition under `[tool.flwr.federations.local-simulation]`.
+5. Change `[tool.flwr.federations.local-sim-gpu] options.num-supernodes = 5` to `options.num-supernodes = 6040`. Add the same comment block (same content as above) so both GPU and CPU federations default to cross-device.
+
+**Sub-step 1.3 — add pytest dev dep (BLOCKER 1 fix from iteration 1):**
+
+6. Add `[project.optional-dependencies]` section IMMEDIATELY AFTER the `[project]` table (before `[tool.hatch.build.targets.wheel]`). Exact content:
+
+```toml
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+```
+
+This declaration is EXCLUSIVELY OWNED BY THIS TASK. Plan 01 Task 2's action explicitly refuses to modify pyproject.toml (iteration 1 BLOCKER 1 fix). All test plans (01, 02, 03, 04) `pip install -e '.[dev]'` to get pytest.
+
+**Do NOT modify**:
+- `[project]`, `[build-system]`, `[tool.hatch.*]`, `[tool.flwr.app.components]`, `[tool.flwr.federations.remote-federation]` — OUT of this plan's scope.
+- The `fedrec-foundation` local-path dep from Phase 1 Plan 06 — stays as-is.
+- Any existing `[tool.flwr.app.config]` keys — only APPEND new keys per sub-step 1.1.
+
+**Do-not-touch ranges** (D-18): everything outside `[tool.flwr.app.config]`, the new `[project.optional-dependencies]` block, and the `options.num-supernodes` lines + their trailing comments.
   </action>
   <verify>
     <automated>grep -E "^mode = |^run-seed = |^weight-policy = |^eval-num-negatives = |^checkpoint-rule = |^partition-mode = " federated-baseline-cf/pyproject.toml | wc -l</automated>
@@ -170,11 +205,14 @@ Do NOT modify `[project]`, `[build-system]`, `[tool.hatch.*]`, `[tool.flwr.app.c
     - `grep '^weight-policy = "num_positives"' federated-baseline-cf/pyproject.toml` returns exactly 1 match.
     - `grep '^eval-num-negatives = 99' federated-baseline-cf/pyproject.toml` returns exactly 1 match.
     - `grep '^checkpoint-rule = "best_round_restore"' federated-baseline-cf/pyproject.toml` returns exactly 1 match.
-    - `grep "options.num-supernodes = 5" federated-baseline-cf/pyproject.toml` still matches (legacy fallback preserved per D-23).
+    - `grep -c "options.num-supernodes = 6040" federated-baseline-cf/pyproject.toml` returns exactly 2 (BLOCKER 2 fix: BOTH local-simulation and local-sim-gpu default to 6040).
+    - `grep -c "options.num-supernodes = 5" federated-baseline-cf/pyproject.toml` returns 0 (no leftover cross-silo defaults in federation blocks — opt-in is via run-config only).
+    - `grep -c "\\[project.optional-dependencies\\]" federated-baseline-cf/pyproject.toml` returns 1 (BLOCKER 1 fix: pytest dev dep declared here, not in Plan 01).
+    - `grep -c "dev = \\[\"pytest>=7.0\"\\]" federated-baseline-cf/pyproject.toml` returns 1.
     - `grep "fedrec-foundation" federated-baseline-cf/pyproject.toml` still matches (Phase 1 Plan 06 dep preserved).
-    - `python scripts/run.py --dry-run baseline benchmark_cross_device 2>&1 | grep "num-supernodes=6040"` returns 1 match (launcher still works).
+    - `python scripts/run.py --dry-run baseline benchmark_cross_device 2>&1 | grep -c "num-supernodes=6040"` returns at least 1 (launcher still works and prints the grep-able line; confirmed via pre-task read of scripts/run.py lines 146-153).
   </acceptance_criteria>
-  <done>All six `[tool.flwr.app.config]` additions present; pre-existing foundation dep and federation blocks untouched; legacy `flwr run .` still valid.</done>
+  <done>All six `[tool.flwr.app.config]` additions present; both federation blocks default to `num-supernodes = 6040` (BSL-01 fully in-file); `[project.optional-dependencies] dev = ["pytest>=7.0"]` declared (Wave 1 write race eliminated); pre-existing foundation dep preserved; launcher still works.</done>
 </task>
 
 <task type="auto">
@@ -196,7 +234,9 @@ Do NOT modify `[project]`, `[build-system]`, `[tool.hatch.*]`, `[tool.flwr.app.c
     - CLAUDE.md §"Code Standards" (typing pre-3.10, NumPy docstrings, module-level `_dataset_cache` pattern kept)
   </read_first>
   <action>
-Step 1: Inventory pre-existing hunks. Executor runs `git diff federated-baseline-cf/federated_baseline_cf/dataset.py > /tmp/dataset_diff.txt` and reads it. The rip-and-replace scope is:
+**Pre-edit inventory (SURGICAL DISCIPLINE per D-18 + iteration 1 WARNING 3).** Before any Edit call, Executor runs `git diff federated-baseline-cf/federated_baseline_cf/dataset.py > /tmp/dataset_diff.txt` and reads it fully. For each pre-existing hunk outside the rip-and-replace scope (MovieLensDataset class, download_movielens_1m, load_movielens_1m, natural_partition_users), explicitly identify it in a comment in the execution notes BEFORE editing. The Edit calls below apply SURGICALLY — never replace a whole function if only a subset of lines changes. After all edits, executor runs `git diff --stat federated-baseline-cf/federated_baseline_cf/dataset.py` and verifies the delta is consistent with "rip 3 helpers + replace 2 function bodies + remove _partition_cache; pre-existing WIP outside that scope remains untouched".
+
+The rip-and-replace scope is:
 
 **REMOVE** (D-17):
 - `_partition_cache` module-level dict (line ~19).
@@ -583,6 +623,7 @@ def test_removed_helpers_gone() -> None:
     - `grep -c "_partition_cache" federated-baseline-cf/federated_baseline_cf/dataset.py` returns 0 (cache dict removed).
     - `pytest federated-baseline-cf/tests/test_dataset_adapter.py -v 2>&1 | grep -E "passed|failed"` shows 3 passed, 0 failed.
     - `python -c "from federated_baseline_cf.dataset import load_partition_data; t, te, nu, ni, u2i, i2i = load_partition_data(0, 6040, partition_mode='natural'); assert nu == 6040 and ni == 3706"` exits 0.
+    - Surgical-edit check (iteration 1 WARNING 3): `git diff --stat federated-baseline-cf/federated_baseline_cf/dataset.py` shows a delta consistent with "rip 3 helpers + replace 2 function bodies + remove _partition_cache"; pre-existing WIP hunks in MovieLensDataset / download_movielens_1m / load_movielens_1m / natural_partition_users remain visible as-is in the diff.
   </acceptance_criteria>
   <done>dataset.py is a thin adapter (foundation-backed); 3 removed helpers gone; 2 replaced functions keep their signatures; 3 GREEN tests prove the adapter semantics.</done>
 </task>
@@ -594,20 +635,25 @@ Full-phase verification for Plan 02:
 
 1. `grep 'partition-mode = "natural"' federated-baseline-cf/pyproject.toml` matches.
 2. `grep 'run-seed = 42' federated-baseline-cf/pyproject.toml` matches.
-3. `pytest federated-baseline-cf/tests/test_dataset_adapter.py -v` shows 3 passed.
-4. `python -c "from federated_baseline_cf.dataset import _load_foundation_bundle; b = _load_foundation_bundle(); assert b['mapping'].num_users == 6040; assert len(b['split_manifest'].test_item_per_user) >= 6000"` exits 0.
-5. `python scripts/run.py --dry-run baseline benchmark_cross_device` prints `num-supernodes=6040` (launcher still resolves correctly).
-6. D-18 guard: `git diff federated-baseline-cf/federated_baseline_cf/dataset.py` shows NO changes outside the D-17 rip targets (MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users hunks stay pre-existing-WIP).
+3. `grep -c "options.num-supernodes = 6040" federated-baseline-cf/pyproject.toml` returns 2 (iteration 1 BLOCKER 2 fix: both federations).
+4. `grep -c "\\[project.optional-dependencies\\]" federated-baseline-cf/pyproject.toml` returns 1 (iteration 1 BLOCKER 1 fix).
+5. `pytest federated-baseline-cf/tests/test_dataset_adapter.py -v` shows 3 passed.
+6. `python -c "from federated_baseline_cf.dataset import _load_foundation_bundle; b = _load_foundation_bundle(); assert b['mapping'].num_users == 6040; assert len(b['split_manifest'].test_item_per_user) >= 6000"` exits 0.
+7. `python scripts/run.py --dry-run baseline benchmark_cross_device` prints `num-supernodes=6040` on a single line (launcher still resolves correctly; verified via iteration 1 WARNING 4 pre-task read of scripts/run.py lines 146-153).
+8. D-18 guard: `git diff federated-baseline-cf/federated_baseline_cf/dataset.py` shows NO changes outside the D-17 rip targets (MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users hunks stay pre-existing-WIP).
 </verification>
 
 <success_criteria>
-- pyproject.toml declares cross-device defaults (partition-mode=natural, mode fallback, run-seed, weight-policy, eval-num-negatives, checkpoint-rule); legacy `options.num-supernodes=5` preserved.
+- pyproject.toml declares cross-device defaults fully in-file: `partition-mode=natural` + `num-supernodes=6040` in BOTH `local-simulation` and `local-sim-gpu` federation blocks (iteration 1 BLOCKER 2 fix; BSL-01 fully satisfied without relying on scripts/run.py). ROADMAP Phase 2 success criterion 1 ("`flwr run .` inside `federated-baseline-cf/` spawns 6040 supernodes by default") passes.
+- pyproject.toml declares `[project.optional-dependencies] dev = ["pytest>=7.0"]` — exclusively owned by this task (iteration 1 BLOCKER 1 fix: no Wave 1 write race with Plan 01).
 - dataset.py rip-and-replace complete: create_global_mappings, create_leave_one_out_split, dirichlet_partition_users, compute_user_genre_distribution, create_train_test_split are REMOVED. load_partition_data + load_full_data call foundation loaders; natural_partition_users kept.
 - test_dataset_adapter.py has 3 GREEN tests proving foundation-sourced mapping/split/exclusion.
-- D-18 surgical guard: pre-existing uncommitted hunks outside D-17 rip targets are untouched.
+- D-18 surgical guard: pre-existing uncommitted hunks outside D-17 rip targets are untouched (iteration 1 WARNING 3 reinforcement: `git diff --stat` before commit to verify scope).
 - Pre-existing uncommitted hunks in client_app.py, server_app.py, task.py are UNTOUCHED (Plans 03 + 04 will address them).
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/02-baseline-migration/02-baseline-migration-02-SUMMARY.md` following the template in `@/home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.claude/get-shit-done/templates/summary.md`.
 </output>
+</content>
+</invoke>

@@ -63,9 +63,9 @@ Also implements D-25 (mode resolver owns canonical hyperparams; pyproject values
 
 Purpose: Plans 01, 02, 03 set up the contract types, dataset layer, and client behaviors. Plan 04 is the orchestrator — once it lands, `python scripts/run.py baseline benchmark_cross_device` spawns 6040 supernodes, selects clients with a deterministic seeded RNG, aggregates sufficient stats the right way, restores the best round at training end, and writes a result JSON with a full protocol fingerprint.
 
-D-18 surgical migration guard: server_app.py currently has pre-existing uncommitted hunks. Executor MUST run `git diff federated-baseline-cf/federated_baseline_cf/server_app.py` first to inventory them. This plan's rip targets are (1) line ~7 `import random`, (2) line ~297 `random.sample(node_ids, num_selected)`, (3) lines ~261-271 strategy instantiation, (4) lines ~260-590 eval-metric aggregation + result JSON construction (manifest embed), (5) early stopping integration for best-round restore. Everything else in the file stays as-is unless a specific BSL line in this task demands otherwise.
+D-18 surgical migration guard (reinforced per iteration 1 WARNING 3): server_app.py currently has pre-existing uncommitted hunks. Executor MUST run `git diff federated-baseline-cf/federated_baseline_cf/server_app.py` first to inventory them. This plan's rip targets are (1) line ~7 `import random`, (2) line ~297 `random.sample(node_ids, num_selected)`, (3) lines ~261-271 strategy instantiation, (4) lines ~260-590 eval-metric aggregation + result JSON construction (manifest embed), (5) early stopping integration for best-round restore. Everything else in the file stays as-is unless a specific BSL line in this task demands otherwise. Before each Edit call, read the CURRENT file fully; identify pre-existing WIP hunks (get_device helper, _device_cache init, pre-existing wandb.log calls NOT listed in this action, DummyClientProxy class, weighted_average_metrics, print_evaluation_metrics); the Edit calls below apply SURGICALLY — never replace a whole function if only a subset of lines changes.
 
-Output: (1) migrated `server_app.py` (~650 LOC, up from 587) with mode resolver, seeded sampling, BaselineFedAvg strategy, best-round restore, and D-15 double-write manifest. (2) `test_server_integration.py` with 4 tests covering BSL-04/06/08.
+Output: (1) migrated `server_app.py` (~650 LOC, up from 587) with mode resolver, seeded sampling, BaselineFedAvg strategy, best-round restore, and D-15 double-write manifest. (2) `test_server_integration.py` with 5 tests covering BSL-04/06/08.
 </objective>
 
 <execution_context>
@@ -162,7 +162,7 @@ Existing server_app shape to preserve (D-18):
     federated-baseline-cf/federated_baseline_cf/server_app.py
   </files>
   <read_first>
-    - federated-baseline-cf/federated_baseline_cf/server_app.py (ENTIRE file, 587 LOC — inventory pre-existing WIP via `git diff`; rip targets explicitly named above in objective)
+    - federated-baseline-cf/federated_baseline_cf/server_app.py (ENTIRE file, 587 LOC — inventory pre-existing WIP via `git diff`; rip targets explicitly named above in objective; iteration 1 WARNING 3 SURGICAL DISCIPLINE applies — never replace a whole function if only a subset of lines changes)
     - federated-baseline-cf/federated_baseline_cf/strategy.py (Plan 01 output: BaselineFedAvg + BaselineFedProx)
     - scripts/foundation/fedrec_foundation/rng.py (server_rng signature)
     - scripts/foundation/fedrec_foundation/mode.py (resolve_mode_defaults + log_mode_and_overrides)
@@ -172,7 +172,9 @@ Existing server_app shape to preserve (D-18):
     - CLAUDE.md "Code Standards" + "Logging and Metric Reporting"
   </read_first>
   <action>
-**Pre-edit inventory.** `git diff federated-baseline-cf/federated_baseline_cf/server_app.py > /tmp/server_app_diff.txt`. Surgical rip targets:
+**Pre-edit inventory (SURGICAL DISCIPLINE, iteration 1 WARNING 3).** `git diff federated-baseline-cf/federated_baseline_cf/server_app.py > /tmp/server_app_diff.txt` and read it fully. Identify pre-existing WIP hunks that are NOT in this task's rip scope — they remain UNTOUCHED. Before each Edit call below, read the CURRENT server_app.py fully; the Edit calls apply SURGICALLY — never replace a whole function if only a subset of lines changes. After all edits, run `git diff --stat federated-baseline-cf/federated_baseline_cf/server_app.py` and verify the delta is consistent with "~150-250 lines modified"; the unrelated WIP hunks (get_device, _device_cache init, pre-existing wandb boilerplate not listed below, DummyClientProxy, weighted_average_metrics, print_evaluation_metrics) remain as-is in the diff.
+
+Surgical rip targets:
 
 1. Line ~7: `import random` — stripped.
 2. Line ~23: `from flwr.server.strategy import FedAvg, FedProx` — keep (needed for isinstance checks elsewhere if any) but ADD `from federated_baseline_cf.strategy import BaselineFedAvg, BaselineFedProx`.
@@ -425,8 +427,9 @@ wandb_config.update({
     - `grep -c "strategy.aggregate_evaluate(" federated-baseline-cf/federated_baseline_cf/server_app.py` returns 1.
     - `python -c "import ast; ast.parse(open('federated-baseline-cf/federated_baseline_cf/server_app.py').read()); print('syntax ok')"` exits 0.
     - `python -c "from federated_baseline_cf.server_app import app; print('import ok')"` exits 0.
+    - Surgical-edit guard (iteration 1 WARNING 3): `git diff --stat federated-baseline-cf/federated_baseline_cf/server_app.py` delta is consistent with "~150-250 lines modified"; pre-existing WIP hunks (get_device helper, _device_cache init, DummyClientProxy class, weighted_average_metrics, print_evaluation_metrics) remain visible as-is in the diff.
   </acceptance_criteria>
-  <done>server_app.py: BSL-04 seeded sampling + D-26 selected-clients log, BSL-06 BaselineFedAvg wire-up, BSL-08 double-write manifest, D-25 mode resolver, D-27 in-memory best-round restore. No `random.seed`/`random.sample`/`import random`. Module still imports.</done>
+  <done>server_app.py: BSL-04 seeded sampling + D-26 selected-clients log, BSL-06 BaselineFedAvg wire-up, BSL-08 double-write manifest, D-25 mode resolver, D-27 in-memory best-round restore. No `random.seed`/`random.sample`/`import random`. Module still imports. Surgical edits preserved pre-existing WIP.</done>
 </task>
 
 <task type="auto">
@@ -443,7 +446,7 @@ wandb_config.update({
     - scripts/foundation/tests/test_manifest.py (manifest shape tests to mirror)
   </read_first>
   <action>
-Create `federated-baseline-cf/tests/test_server_integration.py` with 4 tests. No Flower federation is spawned — these are unit/integration tests that exercise the foundation contract + strategy + manifest path server_app will use.
+Create `federated-baseline-cf/tests/test_server_integration.py` with 5 tests. No Flower federation is spawned — these are unit/integration tests that exercise the foundation contract + strategy + manifest path server_app will use.
 
 ```python
 """Server integration tests (Phase 2 Plan 04)."""
@@ -609,7 +612,7 @@ def test_embed_and_sibling_double_write_roundtrip(tmp_path) -> None:
     - `grep -c "def test_" federated-baseline-cf/tests/test_server_integration.py` returns 5.
     - `grep -c "server_rng\\|aggregate_evaluate\\|build_run_manifest\\|embed_manifest_in_result\\|write_manifest_sibling" federated-baseline-cf/tests/test_server_integration.py` returns at least 5.
   </acceptance_criteria>
-  <done>4 tests cover BSL-04 (reproducible + distinguishable seeds), BSL-06 (sum-not-average aggregation), BSL-08 (manifest field completeness + double-write roundtrip). 5 GREEN tests total.</done>
+  <done>5 GREEN tests cover BSL-04 (x2 reproducibility + distinguishability), BSL-06 (sum-not-average), BSL-08 (manifest completeness + double-write roundtrip) — iteration 1 INFO fix: count corrected from "4" to "5" to match actual test function count.</done>
 </task>
 
 </tasks>
@@ -617,7 +620,7 @@ def test_embed_and_sibling_double_write_roundtrip(tmp_path) -> None:
 <verification>
 Full-phase verification for Plan 04:
 
-1. `pytest federated-baseline-cf/tests/ -v` shows 5 + 8 + 3 + 5 = 21 passed across the four test files (aggregating Plans 01-04 suites). Run: `cd federated-baseline-cf && pytest tests/ -v`.
+1. `pytest federated-baseline-cf/tests/ -v` shows 5 + 9 + 3 + 5 = 22 passed across the four test files (aggregating Plans 01-04 suites; Plan 03 added an EvaluateMetricsContract shape test bringing its count to 9). Run: `cd federated-baseline-cf && pytest tests/ -v`.
 2. Anti-pattern regression: `grep -rn "random.seed\|random.sample\|^import random$" federated-baseline-cf/federated_baseline_cf/` returns 0 matches.
 3. BSL-06 invariant regression: `grep "weighted_average_metrics(round_eval_metrics)" federated-baseline-cf/federated_baseline_cf/server_app.py` returns 0 matches on the thesis-metric code path (may still exist for RMSE/MAE on the full-rank path — D-18 preserves that WIP).
 4. BSL-08 end-to-end smoke test (manual, executor runs once): `python scripts/run.py --dry-run baseline benchmark_cross_device` — stdout prints `num-supernodes=6040 mode=benchmark_cross_device`. (We cannot run a full 6040-supernode simulation in CI, but --dry-run proves the launcher + app contract agree.)
@@ -630,10 +633,12 @@ Full-phase verification for Plan 04:
 - BSL-08 observable: `build_run_manifest` + `embed_manifest_in_result` + `write_manifest_sibling` called once per run; results JSON has a `_manifest` key with all 23 fields; a sibling `<run_id>-manifest.json` file is written.
 - D-25 observable: `resolve_mode_defaults` + `log_mode_and_overrides` at startup; `[MODE OVERRIDE]` log lines appear whenever a `context.run_config` key diverges from the mode default; overrides captured in `manifest.overrides`.
 - D-27 observable: `best_metric` / `best_round_num` / `best_arrays` tracked in-memory; at training end, `arrays = best_arrays` is set before centralized eval; `checkpoint.best_round` + `checkpoint.best_sampled_ndcg@10` appear in result JSON.
-- 5 new GREEN tests in `test_server_integration.py` bring module total to 21 GREEN tests (aggregating Plans 01-04).
-- D-18 surgical guard preserved: `dataset.py` / `client_app.py` / `task.py` untouched by this plan.
+- 5 new GREEN tests in `test_server_integration.py` bring module total to 22 GREEN tests (aggregating Plans 01-04, Plan 03 bumped from 8 to 9 via EvaluateMetricsContract shape test).
+- D-18 surgical guard preserved (iteration 1 WARNING 3 reinforcement): `dataset.py` / `client_app.py` / `task.py` untouched by this plan; server_app.py delta consistent with ~150-250 modified lines, pre-existing WIP hunks remain visible.
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/02-baseline-migration/02-baseline-migration-04-SUMMARY.md` following the template in `@/home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.claude/get-shit-done/templates/summary.md`.
 </output>
+</content>
+</invoke>
