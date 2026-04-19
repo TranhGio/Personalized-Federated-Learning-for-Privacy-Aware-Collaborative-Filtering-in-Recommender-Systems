@@ -1,174 +1,86 @@
-# Federated Baseline Collaborative Filtering
+# federated-personalized-cf
 
-A Flower federated learning project for collaborative filtering on the MovieLens 1M dataset, implementing both **Matrix Factorization (MF)** and **Neural Collaborative Filtering (NCF)** with **Dirichlet partitioning** for non-IID data distribution.
+**Role:** Split-learning baseline in the thesis comparison.
+**Approach:** User embeddings stay **local** and are cached per client; only item embeddings + biases are aggregated on the server. FedAvg / FedProx strategy with split-aware proximal term (regularizes global params only).
+**Model:** BPR-MF (ranking, default) or BasicMF (MSE) on MovieLens 1M.
 
-## Features
+See [`../README.md`](../README.md) for the four-way thesis comparison context and [`claude.md`](./claude.md) for module-level architecture and parameter-classification detail.
 
-- ✅ **MovieLens 1M Dataset**: Automatic download and preprocessing
-- ✅ **Dirichlet Partitioning**: Creates realistic non-IID data distribution based on genre preferences
-- ✅ **Two Model Approaches**:
-  - Matrix Factorization (MF) - PyTorch implementation (TODO)
-  - Neural Collaborative Filtering (NCF) (TODO)
-- ✅ **Comprehensive Visualizations**: Analyze data partitioning across clients
-- 🔄 **Evaluation Metrics**: RMSE, MAE, Precision@K, Recall@K, NDCG (TODO)
-- 🔄 **Federated Training**: Client-server architecture with FedAvg aggregation (TODO)
+## What This Module Does
 
-## Dataset
+Under cross-device (`num-supernodes = 6040`, one user per client), each selected client:
 
-**MovieLens 1M**:
-- 1,000,209 ratings from 6,040 users on 3,883 movies
-- Rating scale: 1-5 stars
-- 18 movie genres
-- Automatically downloaded on first run
+1. Receives global params (item embeddings + biases) from the server.
+2. Loads its user's local embedding from `.embedding_cache/<run-scoped-path>/user_embeddings.pt`.
+3. Trains locally on its single user's data, including proximal term on global params only.
+4. Saves the updated local user embedding back to disk.
+5. Returns only the global params to the server.
+
+**Personalization boundary:**
+
+| Parameter | Where it lives | Aggregation |
+|-----------|----------------|-------------|
+| User embedding row (1 × d) | Local (private, cached) | None — never transmitted |
+| User bias (scalar) | Local (private, cached) | None — never transmitted |
+| Item embeddings (3706 × d) | Global | FedAvg / FedProx |
+| Item biases | Global | FedAvg / FedProx |
+| Global bias | Global | FedAvg / FedProx |
+
+Communication per round: ~485K params (≈ 44% of the all-global baseline). User preferences never leave the client.
 
 ## Quick Start
 
-### Install dependencies and project
-
-The dependencies are listed in the `pyproject.toml` and you can install them as follows:
-
 ```bash
 pip install -e .
+
+# Default cross-device benchmark
+flwr run .
+
+# FedProx with split-aware proximal term
+flwr run . --run-config "strategy=fedprox proximal-mu=0.01"
+
+# Reproduce pre-migration cross-silo run
+flwr run . --run-config "mode=cross_silo_legacy"
+
+# Purge cached user embeddings (forces cold start)
+rm -rf .embedding_cache/
 ```
 
-### Test Dataset Loading and Partitioning
+## Configuration Surface (`pyproject.toml`)
 
-Test the MovieLens 1M dataset loading and Dirichlet partitioning:
+Mode-locked by the top-level `mode` selector. Key overrides:
+
+| Key | Default (benchmark) | Purpose |
+|-----|---------------------|---------|
+| `num-supernodes` | 6040 | Client universe (= `num_users`) |
+| `partition-mode` | `natural` | `natural` = 1 user / 1 client |
+| `fraction-train` | swept | Per-round client sampling fraction `C` |
+| `weight-policy` | `num_positives` | Aggregation weighting (global params only) |
+| `strategy` | `fedavg` | `fedavg` (`SplitFedAvg`) / `fedprox` (`SplitFedProx`) |
+| `model-type` | `bpr` | `bpr` / `basic` |
+| `embedding-dim` | 128 | Latent factor dimensionality |
+
+## Gotchas
+
+- **`.embedding_cache/` is run-namespaced.** Path includes `run_id / method / num_users / num_items / dim / split_hash`. Cache loads hard-fail on shape or schema mismatch instead of silently partial-loading. Delete the folder to force a cold start.
+- **Split-aware FedProx.** Proximal term applied **only to global parameters**. Local user embeddings are NOT proximally regularized — they're meant to personalize freely.
+- **Test-positive exclusion.** Training negatives exclude the held-out LOO test positive (fix inherited from Phase 1 foundation).
+- **Local user-row collapse.** Under cross-device, the client holds a single 1 × d row, not the full 6040 × d table ghost. Memory and I/O scale with local state, not global user count.
+- **Split parameter API.** All split-aware models expose `get_global_parameters()`, `set_global_parameters()`, `get_local_parameters()`, `set_local_parameters()` — these are the critical seams for the server / client split. See `strategy.py` for `GLOBAL_PARAM_KEYS` / `LOCAL_PARAM_KEYS` frozensets.
+
+## Testing
 
 ```bash
 python test_dataset.py
+python test_models.py
 ```
 
-This will:
-1. Download MovieLens 1M dataset (if not already downloaded)
-2. Test data loading
-3. Test Dirichlet partitioning with different α values (0.1, 0.5, 1.0)
-4. Test DataLoader creation
+## Results Location
 
-### Visualize Data Partitions
+`results/federated/personalized/<run_id>/` with full protocol fingerprint manifest.
 
-Generate comprehensive visualizations of data distribution:
+## References
 
-```bash
-python visualize_partitions.py
-```
-
-This creates visualizations in the `./figures/` directory:
-- **Partition sizes**: Ratings, users, and movies per client
-- **Genre distribution heatmap**: Shows non-IID characteristics
-- **Rating distribution**: Rating values (1-5) per client
-- **User activity**: Ratings per user distribution
-- **Alpha comparison**: Compare different Dirichlet parameters
-- **Summary CSVs**: Detailed statistics for each partition
-
-See [`figures/README.md`](./figures/README.md) for detailed explanations of each visualization.
-
-### Understanding the Dirichlet Parameter (α)
-
-- **α = 0.1**: Highly non-IID (very skewed, some clients may be empty)
-- **α = 0.5**: Moderately non-IID (**recommended** for experiments)
-- **α = 1.0**: Less non-IID (more balanced)
-
-Lower α means more heterogeneous data distribution across clients.
-
-## Run with the Simulation Engine (TODO)
-
-In the `federated-baseline-cf` directory, use `flwr run` to run a local simulation:
-
-```bash
-flwr run .
-```
-
-Refer to the [How to Run Simulations](https://flower.ai/docs/framework/how-to-run-simulations.html) guide in the documentation for advice on how to optimize your simulations.
-
-## Run with the Deployment Engine
-
-Follow this [how-to guide](https://flower.ai/docs/framework/how-to-run-flower-with-deployment-engine.html) to run the same app in this example but with Flower's Deployment Engine. After that, you might be interested in setting up [secure TLS-enabled communications](https://flower.ai/docs/framework/how-to-enable-tls-connections.html) and [SuperNode authentication](https://flower.ai/docs/framework/how-to-authenticate-supernodes.html) in your federation.
-
-You can run Flower on Docker too! Check out the [Flower with Docker](https://flower.ai/docs/framework/docker/index.html) documentation.
-
-## Project Structure
-
-```
-federated-baseline-cf/
-├── federated_baseline_cf/
-│   ├── __init__.py
-│   ├── dataset.py           # ✅ MovieLens 1M loader & Dirichlet partitioner
-│   ├── task.py              # 🔄 Models & training logic (TODO)
-│   ├── client_app.py        # 🔄 Flower client (TODO: update for CF)
-│   └── server_app.py        # 🔄 Flower server (TODO: update for CF)
-├── data/
-│   └── ml-1m/              # MovieLens 1M dataset (auto-downloaded)
-├── figures/                 # ✅ Generated visualizations
-│   ├── README.md           # Detailed explanation of visualizations
-│   ├── partition_sizes_alpha_*.png
-│   ├── genre_distribution_alpha_*.png
-│   ├── rating_distribution_alpha_*.png
-│   ├── user_activity_alpha_*.png
-│   ├── alpha_comparison.png
-│   └── partition_summary_alpha_*.csv
-├── test_dataset.py         # ✅ Test dataset loading
-├── visualize_partitions.py # ✅ Generate visualizations
-├── pyproject.toml          # Project config & dependencies
-└── README.md               # This file
-```
-
-## Implementation Details
-
-### Dirichlet Partitioning Algorithm
-
-The partitioning creates non-IID data by:
-1. Computing each user's genre preference distribution
-2. Sampling client genre distributions from Dirichlet(α)
-3. Assigning users to clients based on genre similarity (KL divergence)
-4. Each client receives all ratings from its assigned users
-
-**Result**: Clients have users with similar genre preferences, creating realistic heterogeneity.
-
-### Example Partition Statistics (α=0.5)
-
-```
-Client 0:    990 ratings,    8 users (Horror specialist)
-Client 1:  8,722 ratings,  108 users (Drama lover)
-Client 2: 619,815 ratings, 3,427 users (Mainstream - largest)
-...
-Client 9:  5,899 ratings,   60 users (Mixed preferences)
-```
-
-**Coefficient of Variation**: 2.03 (indicates strong heterogeneity)
-
-## Next Steps
-
-- [ ] Implement Matrix Factorization model (PyTorch)
-- [ ] Implement Neural Collaborative Filtering model
-- [ ] Update `task.py` with training/evaluation logic
-- [ ] Update client/server apps for recommendation models
-- [ ] Implement evaluation metrics (RMSE, MAE, P@K, R@K, NDCG)
-- [ ] Run federated training experiments
-- [ ] Compare centralized vs federated performance
-
-## Resources
-
-- Flower website: [flower.ai](https://flower.ai/)
-- Check the documentation: [flower.ai/docs](https://flower.ai/docs/)
-- Give Flower a ⭐️ on GitHub: [GitHub](https://github.com/adap/flower)
-- Join the Flower community!
-  - [Flower Slack](https://flower.ai/join-slack/)
-  - [Flower Discuss](https://discuss.flower.ai/)
-
-## Citation
-
-If you use this code or the MovieLens dataset, please cite:
-
-```bibtex
-@article{harper2015movielens,
-  title={The MovieLens datasets: History and context},
-  author={Harper, F. Maxwell and Konstan, Joseph A},
-  journal={ACM Transactions on Interactive Intelligent Systems (TiiS)},
-  volume={5},
-  number={4},
-  pages={1--19},
-  year={2015},
-  publisher={ACM New York, NY, USA}
-}
-```
+- Arivazhagan et al., "Federated Learning with Personalization Layers (FedPer)," 2019.
+- Singhal et al., "Federated Reconstruction: Partially Local Federated Learning," NeurIPS 2021.
+- Li et al., "FedProx," MLSys 2020 — split-aware proximal term variant is a thin modification.

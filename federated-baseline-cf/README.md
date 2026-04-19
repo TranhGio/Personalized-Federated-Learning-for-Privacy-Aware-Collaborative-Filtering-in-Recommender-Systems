@@ -1,174 +1,93 @@
-# Federated Baseline Collaborative Filtering
+# federated-baseline-cf
 
-A Flower federated learning project for collaborative filtering on the MovieLens 1M dataset, implementing both **Matrix Factorization (MF)** and **Neural Collaborative Filtering (NCF)** with **Dirichlet partitioning** for non-IID data distribution.
+**Role:** Lower-bound baseline in the thesis comparison.
+**Approach:** All model parameters (including user embeddings) are aggregated on the server via FedAvg / FedProx. No personalization — user embeddings are averaged across clients.
+**Model:** BPR-MF (ranking, default) or BasicMF (MSE) on MovieLens 1M.
 
-## Features
+See [`../README.md`](../README.md) for the four-way thesis comparison context and [`claude.md`](./claude.md) for module-level architecture detail.
 
-- ✅ **MovieLens 1M Dataset**: Automatic download and preprocessing
-- ✅ **Dirichlet Partitioning**: Creates realistic non-IID data distribution based on genre preferences
-- ✅ **Two Model Approaches**:
-  - Matrix Factorization (MF) - PyTorch implementation (TODO)
-  - Neural Collaborative Filtering (NCF) (TODO)
-- ✅ **Comprehensive Visualizations**: Analyze data partitioning across clients
-- 🔄 **Evaluation Metrics**: RMSE, MAE, Precision@K, Recall@K, NDCG (TODO)
-- 🔄 **Federated Training**: Client-server architecture with FedAvg aggregation (TODO)
+## What This Module Does
 
-## Dataset
+Under cross-device (`num-supernodes = 6040`, one user per client), each selected client receives the full model state, trains locally on its single user's data, and returns the full state to the server for aggregation. Since user embeddings are global, the server effectively averages personal representations — this is the lower bound against which the three personalized approaches are measured.
 
-**MovieLens 1M**:
-- 1,000,209 ratings from 6,040 users on 3,883 movies
-- Rating scale: 1-5 stars
-- 18 movie genres
-- Automatically downloaded on first run
+**Personalization boundary:**
+
+| Parameter | Where it lives | Aggregation |
+|-----------|----------------|-------------|
+| User embeddings (6040 × d) | Global | FedAvg / FedProx |
+| Item embeddings (3706 × d) | Global | FedAvg / FedProx |
+| User / item / global biases | Global | FedAvg / FedProx |
+
+Communication cost per round: all ~874K params (baseline to beat).
 
 ## Quick Start
 
-### Install dependencies and project
-
-The dependencies are listed in the `pyproject.toml` and you can install them as follows:
-
 ```bash
 pip install -e .
-```
 
-### Test Dataset Loading and Partitioning
-
-Test the MovieLens 1M dataset loading and Dirichlet partitioning:
-
-```bash
-python test_dataset.py
-```
-
-This will:
-1. Download MovieLens 1M dataset (if not already downloaded)
-2. Test data loading
-3. Test Dirichlet partitioning with different α values (0.1, 0.5, 1.0)
-4. Test DataLoader creation
-
-### Visualize Data Partitions
-
-Generate comprehensive visualizations of data distribution:
-
-```bash
-python visualize_partitions.py
-```
-
-This creates visualizations in the `./figures/` directory:
-- **Partition sizes**: Ratings, users, and movies per client
-- **Genre distribution heatmap**: Shows non-IID characteristics
-- **Rating distribution**: Rating values (1-5) per client
-- **User activity**: Ratings per user distribution
-- **Alpha comparison**: Compare different Dirichlet parameters
-- **Summary CSVs**: Detailed statistics for each partition
-
-See [`figures/README.md`](./figures/README.md) for detailed explanations of each visualization.
-
-### Understanding the Dirichlet Parameter (α)
-
-- **α = 0.1**: Highly non-IID (very skewed, some clients may be empty)
-- **α = 0.5**: Moderately non-IID (**recommended** for experiments)
-- **α = 1.0**: Less non-IID (more balanced)
-
-Lower α means more heterogeneous data distribution across clients.
-
-## Run with the Simulation Engine (TODO)
-
-In the `federated-baseline-cf` directory, use `flwr run` to run a local simulation:
-
-```bash
+# Default cross-device benchmark (post-migration default)
 flwr run .
+
+# FedProx instead of FedAvg
+flwr run . --run-config "strategy=fedprox proximal-mu=0.01"
+
+# MSE rating-prediction variant
+flwr run . --run-config "model-type=basic"
+
+# Reproduce a pre-migration cross-silo run
+flwr run . --run-config "mode=cross_silo_legacy"
+
+# Disable W&B logging
+flwr run . --run-config "wandb-enabled=false"
 ```
 
-Refer to the [How to Run Simulations](https://flower.ai/docs/framework/how-to-run-simulations.html) guide in the documentation for advice on how to optimize your simulations.
+## Configuration Surface (`pyproject.toml`)
 
-## Run with the Deployment Engine
+Mode-locked by the top-level `mode` selector (`benchmark_cross_device` — default — or `cross_silo_legacy`). Key overrides:
 
-Follow this [how-to guide](https://flower.ai/docs/framework/how-to-run-flower-with-deployment-engine.html) to run the same app in this example but with Flower's Deployment Engine. After that, you might be interested in setting up [secure TLS-enabled communications](https://flower.ai/docs/framework/how-to-enable-tls-connections.html) and [SuperNode authentication](https://flower.ai/docs/framework/how-to-authenticate-supernodes.html) in your federation.
+| Key | Default (benchmark) | Purpose |
+|-----|---------------------|---------|
+| `num-supernodes` | 6040 | Client universe (= `num_users`) |
+| `partition-mode` | `natural` | `natural` = 1 user / 1 client; `dirichlet` = cross-silo legacy |
+| `fraction-train` | swept | Per-round client sampling fraction `C` |
+| `weight-policy` | `num_positives` | Aggregation weighting |
+| `strategy` | `fedavg` | `fedavg` / `fedprox` |
+| `proximal-mu` | 0.01 | FedProx proximal strength |
+| `model-type` | `bpr` | `bpr` (ranking, recommended) / `basic` (MSE) |
+| `embedding-dim` | 128 | Latent factor dimensionality |
+| `primary-evaluator` | `sampled_loo_99` | LOO + 99 negatives (NCF protocol) |
+| `early-stopping-enabled` | true | Best-round checkpoint restore |
 
-You can run Flower on Docker too! Check out the [Flower with Docker](https://flower.ai/docs/framework/docker/index.html) documentation.
+Full list: see `pyproject.toml` `[tool.flwr.app.config]`.
 
-## Project Structure
+## Evaluation
 
-```
-federated-baseline-cf/
-├── federated_baseline_cf/
-│   ├── __init__.py
-│   ├── dataset.py           # ✅ MovieLens 1M loader & Dirichlet partitioner
-│   ├── task.py              # 🔄 Models & training logic (TODO)
-│   ├── client_app.py        # 🔄 Flower client (TODO: update for CF)
-│   └── server_app.py        # 🔄 Flower server (TODO: update for CF)
-├── data/
-│   └── ml-1m/              # MovieLens 1M dataset (auto-downloaded)
-├── figures/                 # ✅ Generated visualizations
-│   ├── README.md           # Detailed explanation of visualizations
-│   ├── partition_sizes_alpha_*.png
-│   ├── genre_distribution_alpha_*.png
-│   ├── rating_distribution_alpha_*.png
-│   ├── user_activity_alpha_*.png
-│   ├── alpha_comparison.png
-│   └── partition_summary_alpha_*.csv
-├── test_dataset.py         # ✅ Test dataset loading
-├── visualize_partitions.py # ✅ Generate visualizations
-├── pyproject.toml          # Project config & dependencies
-└── README.md               # This file
-```
+- **Primary:** NDCG@10 under `sampled_loo_99` (leave-one-out + 99 negatives). Per-user-group slicing (sparse / medium / dense) reported first-class.
+- **Secondary:** HR@{5,10,20}, MRR, Coverage@K, Novelty@K. `allrank_*` full-rank variants logged as diagnostics under a namespaced key.
+- **Rating prediction** (RMSE, MAE) logged but **not optimized** under BPR — RMSE ≈ 2.2 is expected for BPR-MF and not a bug. Focus on ranking metrics.
 
-## Implementation Details
+## Gotchas
 
-### Dirichlet Partitioning Algorithm
+- **BPR RMSE is high by design.** BPR optimizes pairwise ranking, not rating prediction. Don't compare this number to SVD/NCF centralized baselines' RMSE.
+- **Xavier init is critical** — RecSys 2024 work shows up to 50% performance variance from poor initialization.
+- **Training-negative exclusion.** After Phase 1, training negatives exclude the held-out LOO test positive. Previously (pre-Phase-1) the held-out positive could leak into train as a "negative" — bug fixed across all four modules.
+- **Training loss oscillates under non-IID.** Normal behavior; watch NDCG@10 not loss.
+- **FedProx proximal term** is applied to all params in this baseline (not split-selective), since there are no local params: `L = L_task + (μ/2) ⋅ ‖w - w_server‖²`.
 
-The partitioning creates non-IID data by:
-1. Computing each user's genre preference distribution
-2. Sampling client genre distributions from Dirichlet(α)
-3. Assigning users to clients based on genre similarity (KL divergence)
-4. Each client receives all ratings from its assigned users
+## Testing
 
-**Result**: Clients have users with similar genre preferences, creating realistic heterogeneity.
-
-### Example Partition Statistics (α=0.5)
-
-```
-Client 0:    990 ratings,    8 users (Horror specialist)
-Client 1:  8,722 ratings,  108 users (Drama lover)
-Client 2: 619,815 ratings, 3,427 users (Mainstream - largest)
-...
-Client 9:  5,899 ratings,   60 users (Mixed preferences)
+```bash
+python test_dataset.py   # Dataset loader + partitioning sanity
+python test_models.py    # Model forward/backward sanity
 ```
 
-**Coefficient of Variation**: 2.03 (indicates strong heterogeneity)
+## Results Location
 
-## Next Steps
+`results/federated/baseline/<run_id>/` with full protocol fingerprint manifest (mode, num-supernodes, fraction-train, weight-policy, primary-evaluator, seeds, checkpoint rule, git-commit). Cross-silo legacy results stay under the pre-migration paths and are not overwritten.
 
-- [ ] Implement Matrix Factorization model (PyTorch)
-- [ ] Implement Neural Collaborative Filtering model
-- [ ] Update `task.py` with training/evaluation logic
-- [ ] Update client/server apps for recommendation models
-- [ ] Implement evaluation metrics (RMSE, MAE, P@K, R@K, NDCG)
-- [ ] Run federated training experiments
-- [ ] Compare centralized vs federated performance
+## References
 
-## Resources
-
-- Flower website: [flower.ai](https://flower.ai/)
-- Check the documentation: [flower.ai/docs](https://flower.ai/docs/)
-- Give Flower a ⭐️ on GitHub: [GitHub](https://github.com/adap/flower)
-- Join the Flower community!
-  - [Flower Slack](https://flower.ai/join-slack/)
-  - [Flower Discuss](https://discuss.flower.ai/)
-
-## Citation
-
-If you use this code or the MovieLens dataset, please cite:
-
-```bibtex
-@article{harper2015movielens,
-  title={The MovieLens datasets: History and context},
-  author={Harper, F. Maxwell and Konstan, Joseph A},
-  journal={ACM Transactions on Interactive Intelligent Systems (TiiS)},
-  volume={5},
-  number={4},
-  pages={1--19},
-  year={2015},
-  publisher={ACM New York, NY, USA}
-}
-```
+- Koren et al., "Matrix factorization techniques for recommender systems," 2009.
+- Rendle et al., "BPR: Bayesian Personalized Ranking from Implicit Feedback," UAI 2009.
+- McMahan et al., "Communication-Efficient Learning of Deep Networks from Decentralized Data," AISTATS 2017 (FedAvg).
+- Li et al., "Federated Optimization in Heterogeneous Networks (FedProx)," MLSys 2020.
