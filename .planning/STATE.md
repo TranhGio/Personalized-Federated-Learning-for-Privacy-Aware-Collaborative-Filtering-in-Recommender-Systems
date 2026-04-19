@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-baseline-migration-04-PLAN.md (BSL-04/06/08, D-15/18/25/26/27)
-last_updated: "2026-04-19T08:09:38.296Z"
+stopped_at: Completed 02-baseline-migration-03-PLAN.md
+last_updated: "2026-04-19T08:13:56.056Z"
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -47,6 +47,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 02-baseline-migration P02 | 5min | 2 tasks | 3 files |
 | Phase 02-baseline-migration P01 | 6min | 2 tasks | 7 files |
 | Phase 02-baseline-migration P04 | 7min | 2 tasks | 3 files |
+| Phase 02-baseline-migration P03 | 11min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 02-baseline-migration]: Plan 01 aggregate_fit INHERITED UNCHANGED: BaselineFedAvg.aggregate_fit is FedAvg.aggregate_fit (identity check in test_aggregate_fit_inherited_unchanged). D-23 preserved — baseline = all params global. BaselineFedProx.aggregate_evaluate is an EXACT COPY of BaselineFedAvg's (not super() call) to avoid diamond-inheritance MRO; 4-line duplication + shared module-level _sum_sufficient_stats / _sufficient_stats_to_thesis_metrics helpers keep logic DRY.
 - [Phase 02-baseline-migration]: Plan 01 pyproject.toml UNTOUCHED + D-18 surgical migration preserved: Wave-1 write race avoided by exclusive file ownership (Plan 01 owns strategy.py + tests + fit_metrics.py + foundation tests; Plan 02 owns pyproject.toml + dataset.py rip-and-replace). Pre-existing uncommitted hunks in federated_baseline_cf/{client_app,dataset,server_app,task}.py left untouched for Plan 03 Task 2 to consume during client-side sufficient-stat population.
 - [Phase 02-baseline-migration]: Plan 04 server_app.py migration: mode resolver owns canonical hyperparams (D-25) — every hyperparameter read is int(context.run_config.get(key, profile.field)) so pyproject values are only the override surface; seeded client sampling uses a SINGLE _server_sampler = server_rng(run_seed) instance instantiated before the FL loop (deterministic sequence across rounds); BaselineFedAvg/BaselineFedProx replaces raw FedAvg/FedProx and thesis metrics flow from strategy.aggregate_evaluate (sum-based sufficient stats) while RMSE/MAE preserved via legacy weighted_average_metrics fallback on D-18 scope-out; D-27 in-memory best-round restore snapshots ArrayRecord on current_ndcg > best_metric and assigns arrays = best_arrays before centralized eval; D-15 double-write via embed_manifest_in_result + write_manifest_sibling; default W&B project federated-cf-cross-device for cross-device modes per PROJECT.md; checkpoint_rule branch accepts both 'best_round_restore' (pyproject) and 'best_round' (ModeProfile) spellings to avoid bikeshed.
+- [Phase 02-baseline-migration]: Plan 03 D-24 gradient isolation: gradient-only mask INSUFFICIENT under Adam weight-decay + momentum (RED-step regression caught row 1 moving by 0.3965 L2 norm). Fix = bracket optimizer.step() with _snapshot_non_user_rows / _restore_non_user_rows (snapshot marks user-idx row NaN so restore never overwrites legitimate update). Optimizer-agnostic; works for Adam + SGD. 3 new task.py module-level private helpers — near-duplicate will land in Plans 3/4/5 sibling modules.
+- [Phase 02-baseline-migration]: Plan 03 BSL-05 _sample_negatives_seeded chosen over patching models/bpr_mf.py: BPRMF.sample_negatives uses process-global np.random.randint; extending its signature would have touched models/ (outside D-18 surgical scope) and created asymmetry vs personalized/adaptive modules' own sample_negatives. Inline helper is distribution-equivalent (rejection-uniform) from an np.random.Generator; confines determinism fix to task.py.
+- [Phase 02-baseline-migration]: Plan 03 evaluate_ranking_sampled legacy seed param IGNORED: signature backward-compatible (seed:int=42 still accepted) but docstring explicitly documents it ignored. Seeds derive from (run_seed, user_idx, round_num, 'eval_neg') per BSL-05. Any pre-Phase-2 caller gets new deterministic behavior without code change; silent semantic break is intentional.
 
 ### Todos
 
@@ -122,7 +126,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
-**Stopped at:** Completed 02-baseline-migration-04-PLAN.md (BSL-04/06/08, D-15/18/25/26/27)
+**Stopped at:** Completed 02-baseline-migration-03-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
