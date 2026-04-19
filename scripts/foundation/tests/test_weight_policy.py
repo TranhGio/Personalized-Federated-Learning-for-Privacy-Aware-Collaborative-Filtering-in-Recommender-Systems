@@ -116,3 +116,48 @@ def test_required_keys_constant() -> None:
         "num_positives",
         "num_training_examples",
     )
+
+
+# ======================================================================
+# Phase 2 Plan 01 (D-22) extension: per-group + overall sufficient stats.
+# FitMetricsContract gains 12 OPTIONAL fields populated client-side by
+# Phase 2 Plan 03; BSL-06 sums them server-side via BaselineFedAvg.
+# ======================================================================
+
+
+def test_fit_metrics_per_group_fields() -> None:
+    """D-22: FitMetricsContract carries per-group + overall sufficient stats."""
+    contract = FitMetricsContract(
+        train_loss=0.5, num_positives=30, num_training_examples=150, round_num=3,
+        hit_count_overall_at10=24, ndcg_sum_overall_at10=12.5, evaluated_users=24,
+        hit_count_sparse_at10=6, ndcg_sum_sparse_at10=2.0, evaluated_users_sparse=8,
+        hit_count_medium_at10=10, ndcg_sum_medium_at10=5.0, evaluated_users_medium=10,
+        hit_count_dense_at10=8, ndcg_sum_dense_at10=5.5, evaluated_users_dense=6,
+    )
+    d = contract.to_dict()
+    for key in ["hit_count_overall_at10", "ndcg_sum_overall_at10", "evaluated_users",
+                "hit_count_sparse_at10", "ndcg_sum_sparse_at10", "evaluated_users_sparse",
+                "hit_count_medium_at10", "ndcg_sum_medium_at10", "evaluated_users_medium",
+                "hit_count_dense_at10", "ndcg_sum_dense_at10", "evaluated_users_dense"]:
+        assert key in d, f"missing per-group field {key}"
+
+
+def test_fit_metrics_per_group_optional() -> None:
+    """D-22: per-group fields default None and are DROPPED by to_dict (backward-compat)."""
+    contract = FitMetricsContract(train_loss=0.5, num_positives=30, num_training_examples=150)
+    d = contract.to_dict()
+    assert "hit_count_sparse_at10" not in d
+    assert "evaluated_users" not in d
+    assert d == {"train_loss": 0.5, "num_positives": 30, "num_training_examples": 150}
+
+
+def test_fit_metrics_forward_compat_with_per_group_extension() -> None:
+    """D-22: forward-compat — unknown keys filtered, known per-group keys populated."""
+    contract = FitMetricsContract.from_dict({
+        "train_loss": 0.1, "num_positives": 2, "num_training_examples": 10,
+        "hit_count_overall_at10": 1, "ndcg_sum_overall_at10": 0.63, "evaluated_users": 1,
+        "alpha": 0.42,  # unknown — filtered
+    })
+    assert contract.hit_count_overall_at10 == 1
+    assert contract.evaluated_users == 1
+    assert contract.hit_count_sparse_at10 is None
