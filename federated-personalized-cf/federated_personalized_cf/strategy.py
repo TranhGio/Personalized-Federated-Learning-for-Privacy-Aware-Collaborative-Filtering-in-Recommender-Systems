@@ -1,122 +1,190 @@
-"""Split Learning Strategies for Federated Personalized Collaborative Filtering.
+"""Split Learning Strategies for Federated Personalized Collaborative Filtering (Phase 3 Plan 01).
 
-These custom strategies handle the split architecture where:
-- GLOBAL params (item embeddings, item bias, global bias) are aggregated
-- LOCAL params (user embeddings, user bias) stay on clients
+PersonalizedSplitFedAvg / PersonalizedSplitFedProx subclass Flower's FedAvg/FedProx
+and override aggregate_evaluate to compute thesis metrics ONCE from summed sufficient
+stats (sum(hit_count)/sum(evaluated_users)) instead of averaging per-client ratios.
 
-The actual aggregation logic is inherited from Flower's FedAvg/FedProx.
-The split happens at the client level (clients only send global params).
+aggregate_fit is INHERITED UNCHANGED from parent (D-23 split-learning invariant —
+the client only sends GLOBAL params so FedAvg's weighted average of GLOBAL params is correct).
+
+Parameter split vs Phase 2 baseline:
+  - baseline: ALL params GLOBAL (aggregate_fit averages everything)
+  - personalized: item_* GLOBAL, local_user_* LOCAL (D-03, aggregate_fit averages only GLOBAL)
+
+Per-group sufficient stats live in FitMetricsContract (Phase 1 + Phase 2 Plan 01 D-22
+extension). Each client's @app.evaluate() handler populates hit_count_{overall,sparse,
+medium,dense}_at10, ndcg_sum_..._at10, and evaluated_users_{,sparse,medium,dense}.
 """
+from __future__ import annotations
 
+from typing import Dict, List, Optional, Tuple, Union
+
+from flwr.common import EvaluateRes, Scalar
+from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy import FedAvg as BaseFedAvg, FedProx as BaseFedProx
 
 
-# Define which parameters are global (aggregated) vs local (private)
-GLOBAL_PARAM_KEYS = frozenset([
-    'item_embeddings.weight',
-    'item_bias.weight',
-    'global_bias',
-])
+# D-03: flipped frozensets vs baseline (item_* GLOBAL, local_user_* LOCAL).
+# PSN-06 single-row model contract: local_user_row + local_user_bias replace the
+# old nn.Embedding(num_users, d) ghost table.
+_GLOBAL_PARAM_KEYS = frozenset({
+    "item_embeddings.weight",
+    "item_bias.weight",
+    "global_bias",
+})
+_LOCAL_PARAM_KEYS = frozenset({
+    "local_user_row",
+    "local_user_bias",
+})
 
-LOCAL_PARAM_KEYS = frozenset([
-    'user_embeddings.weight',
-    'user_bias.weight',
-])
+_SUFFICIENT_STAT_KEYS = (
+    "hit_count_overall_at10", "ndcg_sum_overall_at10", "evaluated_users",
+    "hit_count_sparse_at10", "ndcg_sum_sparse_at10", "evaluated_users_sparse",
+    "hit_count_medium_at10", "ndcg_sum_medium_at10", "evaluated_users_medium",
+    "hit_count_dense_at10",  "ndcg_sum_dense_at10",  "evaluated_users_dense",
+)
 
 
-class SplitFedAvg(BaseFedAvg):
+def _sum_sufficient_stats(
+    results: List[Tuple[ClientProxy, EvaluateRes]],
+) -> Dict[str, Union[int, float]]:
+    """Sum per-client sufficient-stat fields across all EvaluateRes responses.
+
+    Each client returns the D-22 extended-contract fields via
+    FitMetricsContract.to_dict() merged into EvaluateRes.metrics. Missing
+    fields are treated as 0 (a client that reports nothing for a group
+    contributes zero to that group).
+
+    Parameters
+    ----------
+    results : list of (ClientProxy, EvaluateRes)
+        Responses from Flower's evaluate phase.
+
+    Returns
+    -------
+    Dict[str, int | float]
+        Summed-across-clients totals for each stat.
     """
-    FedAvg for Split Learning - only aggregates global parameters.
+    totals: Dict[str, Union[int, float]] = {k: 0 for k in _SUFFICIENT_STAT_KEYS}
+    for _proxy, eval_res in results:
+        metrics = eval_res.metrics or {}
+        for k in _SUFFICIENT_STAT_KEYS:
+            v = metrics.get(k, 0) or 0
+            totals[k] = totals[k] + v
+    return totals
 
-    The split architecture works as follows:
-    1. Server initializes and sends only GLOBAL params to clients
-    2. Clients merge global params with their LOCAL params
-    3. Clients train on local data
-    4. Clients send back only GLOBAL params to server
-    5. Server aggregates GLOBAL params using weighted average
 
-    The aggregation logic is unchanged from standard FedAvg.
-    The "split" happens in client_app.py which only sends global params.
+def _sufficient_stats_to_thesis_metrics(
+    totals: Dict[str, Union[int, float]],
+) -> Dict[str, Scalar]:
+    """Convert summed sufficient stats into server-side ratio metrics.
+
+    Computes overall and per-group ``sampled_hr@10`` / ``sampled_ndcg@10``
+    as ``hit_count / evaluated_users``. Zero-division safe: a group with
+    zero evaluated users gets 0.0 for both its HR and NDCG.
+
+    Parameters
+    ----------
+    totals : Dict[str, int | float]
+        Summed-across-clients sufficient stats from _sum_sufficient_stats.
+
+    Returns
+    -------
+    Dict[str, Scalar]
+        Thesis-table metrics dict with overall + per-group HR/NDCG plus
+        per-group evaluated_users counts.
+    """
+    def _safe_ratio(num: Union[int, float], den: Union[int, float]) -> float:
+        return float(num) / float(den) if den else 0.0
+
+    metrics: Dict[str, Scalar] = {
+        "sampled_hr@10": _safe_ratio(totals["hit_count_overall_at10"], totals["evaluated_users"]),
+        "sampled_ndcg@10": _safe_ratio(totals["ndcg_sum_overall_at10"], totals["evaluated_users"]),
+        "sampled_hr@10/sparse": _safe_ratio(totals["hit_count_sparse_at10"], totals["evaluated_users_sparse"]),
+        "sampled_ndcg@10/sparse": _safe_ratio(totals["ndcg_sum_sparse_at10"], totals["evaluated_users_sparse"]),
+        "sampled_hr@10/medium": _safe_ratio(totals["hit_count_medium_at10"], totals["evaluated_users_medium"]),
+        "sampled_ndcg@10/medium": _safe_ratio(totals["ndcg_sum_medium_at10"], totals["evaluated_users_medium"]),
+        "sampled_hr@10/dense": _safe_ratio(totals["hit_count_dense_at10"], totals["evaluated_users_dense"]),
+        "sampled_ndcg@10/dense": _safe_ratio(totals["ndcg_sum_dense_at10"], totals["evaluated_users_dense"]),
+        "evaluated_users": int(totals["evaluated_users"]),
+        "evaluated_users_sparse": int(totals["evaluated_users_sparse"]),
+        "evaluated_users_medium": int(totals["evaluated_users_medium"]),
+        "evaluated_users_dense": int(totals["evaluated_users_dense"]),
+    }
+    return metrics
+
+
+class PersonalizedSplitFedAvg(BaseFedAvg):
+    """FedAvg variant for split learning with sufficient-stat aggregate_evaluate (D-20, PSN-04 server half).
+
+    GLOBAL params: item_embeddings.weight, item_bias.weight, global_bias.
+    LOCAL params: local_user_row, local_user_bias (on client only; never aggregated).
+    aggregate_fit is inherited UNCHANGED — parent FedAvg averages the GLOBAL params the client sends.
     """
 
-    def __init__(self, fraction_fit: float = 1.0, **kwargs):
-        """
-        Initialize SplitFedAvg strategy.
-
-        Args:
-            fraction_fit: Fraction of clients to use per round
-            **kwargs: Additional arguments passed to base FedAvg
-        """
-        super().__init__(fraction_fit=fraction_fit, **kwargs)
-        self.global_param_keys = GLOBAL_PARAM_KEYS
-        self.local_param_keys = LOCAL_PARAM_KEYS
-        self._is_split_learning = True
-
-    def __repr__(self) -> str:
-        return f"SplitFedAvg(fraction_fit={self.fraction_fit})"
-
-
-class SplitFedProx(BaseFedProx):
-    """
-    FedProx for Split Learning - proximal term only on global parameters.
-
-    In split learning with FedProx:
-    1. The proximal term ||w - w_global||^2 should only apply to global params
-    2. Local params (user embeddings) are personalized and shouldn't be
-       regularized toward the server's version
-
-    The proximal term computation happens in client's train_fn (task.py).
-    This strategy signals to use split-aware proximal regularization.
-    """
-
-    def __init__(
+    def aggregate_evaluate(
         self,
-        fraction_fit: float = 1.0,
-        proximal_mu: float = 0.01,
-        **kwargs
-    ):
+        server_round: int,
+        results: List[Tuple[ClientProxy, EvaluateRes]],
+        failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]],
+    ) -> Tuple[Optional[float], Dict[str, Scalar]]:
+        """Sum sufficient stats across clients, compute server-side ratios once.
+
+        Parameters
+        ----------
+        server_round : int
+            Current FL round number.
+        results : list of (ClientProxy, EvaluateRes)
+            Successful client evaluations.
+        failures : list
+            Failed/errored clients.
+
+        Returns
+        -------
+        Tuple[Optional[float], Dict[str, Scalar]]
+            ``(overall_loss, thesis_metrics_dict)``. ``overall_loss`` is
+            the num-examples-weighted mean of per-client eval_loss (Flower
+            convention). ``thesis_metrics_dict`` has the keys listed in
+            :func:`_sufficient_stats_to_thesis_metrics`.
         """
-        Initialize SplitFedProx strategy.
-
-        Args:
-            fraction_fit: Fraction of clients to use per round
-            proximal_mu: Proximal term coefficient (only applied to global params)
-            **kwargs: Additional arguments passed to base FedProx
-        """
-        super().__init__(
-            fraction_fit=fraction_fit,
-            proximal_mu=proximal_mu,
-            **kwargs
-        )
-        self.global_param_keys = GLOBAL_PARAM_KEYS
-        self.local_param_keys = LOCAL_PARAM_KEYS
-        self._is_split_learning = True
-
-    def __repr__(self) -> str:
-        return f"SplitFedProx(fraction_fit={self.fraction_fit}, proximal_mu={self.proximal_mu})"
+        if not results:
+            return None, {}
+        totals = _sum_sufficient_stats(results)
+        thesis_metrics = _sufficient_stats_to_thesis_metrics(totals)
+        total_examples = sum(int(r.num_examples) for _, r in results) or 1
+        loss = sum(float(r.loss) * int(r.num_examples) for _, r in results) / total_examples
+        return float(loss), thesis_metrics
 
 
-def extract_global_params(state_dict: dict) -> dict:
+class PersonalizedSplitFedProx(BaseFedProx):
+    """FedProx variant that reuses the sum-based aggregate_evaluate (D-20).
+
+    aggregate_evaluate is an EXACT COPY of PersonalizedSplitFedAvg.aggregate_evaluate
+    (not a super() call) to avoid diamond-inheritance with BaseFedProx; both use the
+    module-level _sum_sufficient_stats + _sufficient_stats_to_thesis_metrics helpers.
+    aggregate_fit is inherited from parent FedProx (proximal term is client-side;
+    server aggregation is still FedAvg over GLOBAL params only).
     """
-    Extract only global parameters from a full model state_dict.
 
-    Args:
-        state_dict: Full model state dictionary
+    def aggregate_evaluate(
+        self,
+        server_round: int,
+        results: List[Tuple[ClientProxy, EvaluateRes]],
+        failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]],
+    ) -> Tuple[Optional[float], Dict[str, Scalar]]:
+        """Delegate to the same sufficient-stat aggregation as PersonalizedSplitFedAvg."""
+        if not results:
+            return None, {}
+        totals = _sum_sufficient_stats(results)
+        thesis_metrics = _sufficient_stats_to_thesis_metrics(totals)
+        total_examples = sum(int(r.num_examples) for _, r in results) or 1
+        loss = sum(float(r.loss) * int(r.num_examples) for _, r in results) / total_examples
+        return float(loss), thesis_metrics
 
-    Returns:
-        Dictionary containing only global parameters
-    """
-    return {k: v for k, v in state_dict.items() if k in GLOBAL_PARAM_KEYS}
 
-
-def extract_local_params(state_dict: dict) -> dict:
-    """
-    Extract only local parameters from a full model state_dict.
-
-    Args:
-        state_dict: Full model state dictionary
-
-    Returns:
-        Dictionary containing only local parameters
-    """
-    return {k: v for k, v in state_dict.items() if k in LOCAL_PARAM_KEYS}
+__all__ = [
+    "PersonalizedSplitFedAvg",
+    "PersonalizedSplitFedProx",
+    "_GLOBAL_PARAM_KEYS",
+    "_LOCAL_PARAM_KEYS",
+]
