@@ -16,7 +16,155 @@ Three cross-cutting risks the planner must design against:
 2. **`scripts/foundation/` is not inside any of the four installable packages** — it must either be made importable via `sys.path` manipulation inside each module's `dataset.py`, or installed as its own `pip install -e .` package. The latter is cleaner and is this research's recommendation.
 3. **Hashing ml-1m raw files vs hashing the canonical split** are two different fingerprints that must both live in `split_manifest.json`. Mixing them silently lets upstream data changes sneak past the split lock.
 
-**Primary recommendation:** Make `scripts/foundation/` a real installable Python package (`pip install -e scripts/foundation/`) named `fedrec_foundation`, with a dataclass-first API (`SplitManifest`, `RunManifest`, `ModeProfile`, `WeightPolicy`) and `hashlib.sha256`-based four-tier RNG. Use NPZ keyed-dict for exclusion sets (one key per user), not flat-array + offset. Write every JSON atomically via `tempfile.NamedTemporaryFile` + `os.replace`. Validate with a small pytest suite (framework install is a Wave 0 gap — not currently present).
+**Primary recommendation:** Make `scripts/foundation/` a real installable Python package (`pip install -e scripts/foundation/`) named `fedrec_foundation`, with a dataclass-first API (`SplitManifest`, `RunManifest`, `ModeProfile`, `WeightPolicy`) and `hashlib.sha256`-based four-tier RNG. Atomic JSON writes via `tempfile.NamedTemporaryFile` + `os.replace`. Validate with a small pytest suite (framework install is a Wave 0 gap — not currently present).
+
+---
+
+## CODEX PEER REVIEW — Revisions Required
+
+An independent Codex-MCP peer review (run 2026-04-19 against the same prompt + locked decisions) surfaced **five CRITICAL issues** and **four IMPORTANT issues** that must be integrated before the planner acts. These findings **supersede** conflicting guidance in later sections of this document — those sections are preserved for traceability but the planner should treat this block as the corrected truth.
+
+### CRITICAL — Will Break the Foundation
+
+**CR-1: Item mapping must be built from `ratings.dat`, not `movies.dat`.**
+ML-1M has 3,883 movies in `movies.dat` but only 3,706 unique rated items in `ratings.dat` (177 movies are unrated). The existing codebase builds `item2idx` from ratings only (see `federated-baseline-cf/federated_baseline_cf/dataset.py:408` and equivalents). Canonicalizing over `movies.dat` would silently change the embedding-table shape (3,706 → 3,883) and invalidate every cached embedding. **Fix:** build `item2idx` from `sorted(ratings_df["movie_id"].unique())`; keep full catalog IDs in `mapping.json` as metadata only, never as the index source.
+
+**CR-2: `mode` cannot lock `num-supernodes` from inside the Flower app.**
+`Context.run_config` is app-level config; `num-supernodes` is simulation/federation config, set by the Flower CLI outside the app. No amount of `resolve_mode_defaults(mode)` work inside `server_app.py` can override what the runtime already built. **Fix:** Add a launcher/wrapper (thin shell or Python `scripts/run.py` or make-target) that takes `(module, mode)` and invokes `flwr run` with the right `--federation` / `--run-config` values. The `mode` selector in `pyproject.toml` becomes an app-level *assertion* ("this run must match a launcher-set mode"), not a source of truth for federation config. Any launch-time drift is caught by the benchmark-mode startup assertion (D-11).
+
+**CR-3: FND-06 seeding is incomplete — must cover Python `random`, NumPy, Torch, AND DataLoader generators.**
+Current codebase evidence of incomplete seeding: global `random.sample` in `federated-baseline-cf/.../server_app.py:294`, global re-seeding inside evaluators in `federated-personalized-cf/.../task.py:789`, `np.random.seed(...)` in `federated-baseline-cf/.../dataset.py:211` and `:345`, and `DataLoader(..., shuffle=True)` without a `generator=` argument at `dataset.py:521`. With only Python-`random` seeded, two runs with the same `run_seed` still diverge. **Fix:** the foundation exposes three RNG factories (Python `random.Random`, `numpy.random.Generator`, `torch.Generator`), all derived from the same `hashlib.sha256`-hashed seed with a namespace prefix per RNG type. Downstream modules pass a `torch.Generator` into every `DataLoader` created in a federated client.
+
+```python
+# scripts/foundation/fedrec_foundation/rng.py
+import hashlib, random, numpy as np, torch
+
+def _derive_seed(ns: str, run_seed: int, user_idx: int, round_num: int, purpose: str) -> int:
+    payload = f"{ns}:{run_seed}:{user_idx}:{round_num}:{purpose}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest(), "big")
+
+def py_rng(run_seed, user_idx, round_num, purpose):
+    return random.Random(_derive_seed("py", run_seed, user_idx, round_num, purpose))
+
+def np_rng(run_seed, user_idx, round_num, purpose):
+    return np.random.default_rng(_derive_seed("np", run_seed, user_idx, round_num, purpose))
+
+def torch_gen(run_seed, user_idx, round_num, purpose):
+    g = torch.Generator()
+    g.manual_seed(_derive_seed("torch", run_seed, user_idx, round_num, purpose) % (2**63 - 1))
+    return g
+```
+
+Server-side client selection uses `py_rng(run_seed, user_idx=-1, round_num=r, purpose="server_sample")`. Note use of the full SHA-256 digest (not truncated to 8 bytes).
+
+**CR-4: Weight-policy is non-functional until client fit-metrics are standardized.**
+Clients currently emit only `num-examples` in their `FitRes.metrics` (see `federated-baseline-cf/.../client_app.py:102` and `federated-pfedrec/.../client_app.py:305`); servers aggregate on that single field (`server_app.py:332`). `uniform`, `num_positives`, and `num_training_examples` all require clients to report at minimum `num_positives` AND `num_training_examples`. **Fix:** FND-05's contract explicitly includes a **client-side metric contract** that every downstream module must implement in Phase 2–5:
+
+```python
+# Every client @app.train() MUST include these keys in return metrics
+metrics = {
+    "train_loss": float(train_loss),
+    "num_positives": int(user_positive_interactions),
+    "num_training_examples": int(len(trainloader.dataset)),
+    # ... existing per-module metrics ...
+}
+
+def aggregation_weight(metrics: dict, policy: str) -> int:
+    if policy == "uniform": return 1
+    if policy == "num_positives": return int(metrics["num_positives"])
+    if policy == "num_training_examples": return int(metrics["num_training_examples"])
+    raise ValueError(f"unknown weight-policy: {policy}")
+```
+
+Phase 1 provides this contract as a dataclass (`FitMetricsContract`) + the `aggregation_weight` function. Phases 2–5 wire it in.
+
+**CR-5: `per_user_stats` in the split manifest must be computed from TRAIN-ONLY data, not full interactions.**
+The adaptive module computes user stats and uses them to drive per-client `alpha` (see `federated-adaptive-personalized-cf/.../dataset.py:609` and `.../client_app.py:323`). If `split_manifest.json.per_user_stats` is computed over `train_pos ∪ test_pos`, the test item's genre / rating is baked into the alpha heuristic — Phase 4 will then personalize based on the test positive, which is a silent test-leak. **Fix:** the split manifest stores `train_user_stats` (computed AFTER the LOO held-out item is removed). If a reporting-oriented "full-data" version is useful for auditing, store it under a separate key `full_user_stats` and explicitly forbid Phase 4 from reading that key.
+
+### IMPORTANT — Will Cause Pain Later
+
+**IMP-1: The `sys.path` plan is internally inconsistent. Foundation imports are needed in `server_app.py`, `client_app.py`, `task.py`, and `strategy.py` — not just `dataset.py`.** Mutating `sys.path` in one file does not cover the others. **Fix:** package `scripts/foundation/` as an editable-install Python package (`fedrec-foundation` distribution, `fedrec_foundation` import name) and declare it as a local path dependency in each of the four module `pyproject.toml` files. Install order becomes: `pip install -e scripts/foundation/` first, then `pip install -e <module>/`. No `sys.path` mutation anywhere in app code.
+
+```toml
+# scripts/foundation/pyproject.toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fedrec-foundation"
+version = "0.1.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fedrec_foundation"]
+```
+
+Each module's `pyproject.toml` adds: `dependencies = [..., "fedrec-foundation @ file://${PROJECT_ROOT}/scripts/foundation"]` (or a PEP 660 relative file URL). Planner resolves the exact syntax compatible with the pinned Flower-template build.
+
+**IMP-2: `split_hash` inputs are too narrow.** Hashing only `test_item_per_user` is insufficient — if `mapping.json` changes (e.g., item-index reshuffling due to CR-1 fix), the same `test_item_per_user` bytes can exist but they now point to different items. **Fix:** include `mapping_sha256` and `raw_data_hash` in the `split_hash` payload, or define a composite `foundation_contract_sha256 = SHA256(mapping_sha256 + split_hash + exclusion_sha256)` and use *that* as the cache signature downstream. The run manifest stores all four: `mapping_sha256`, `split_hash`, `exclusion_sha256`, `foundation_contract_sha256`.
+
+**IMP-3: NPZ layout — flat `items` + `indptr` is strictly better than 6040 named arrays.** Per-user named arrays work, but with 6040 one-user clients:
+- Smaller on disk (single int32 array instead of per-user NPZ keys)
+- Faster load (one `np.load` → O(1) slice per user via indptr)
+- Simpler to validate (loop once over indptr)
+
+**Fix:**
+
+```python
+# scripts/foundation/fedrec_foundation/exclusion.py
+import numpy as np
+
+def save_exclusion(path, per_user_items: dict[int, np.ndarray]):
+    n_users = max(per_user_items.keys()) + 1
+    indptr = np.zeros(n_users + 1, dtype=np.int64)
+    for u in range(n_users):
+        indptr[u + 1] = indptr[u] + len(per_user_items.get(u, []))
+    items = np.concatenate(
+        [per_user_items.get(u, np.array([], dtype=np.int32)) for u in range(n_users)]
+    ).astype(np.int32)
+    np.savez(path, items=items, indptr=indptr)
+
+def exclusion_for(npz, user_idx: int) -> np.ndarray:
+    start = int(npz["indptr"][user_idx])
+    end = int(npz["indptr"][user_idx + 1])
+    return npz["items"][start:end]
+```
+
+Supersedes the keyed-dict recommendation in later sections of this document.
+
+**IMP-4: User-group bucket semantics must be frozen explicitly.**
+The existing classifier in `federated-adaptive-personalized-cf/.../evaluation/user_groups.py:57` uses half-open `< 30` / `< 100` / else; the CONTEXT.md prose uses `≤ 30` / `≤ 100`. These produce slightly different buckets (a user with exactly 30 interactions lands in `medium` under half-open, `sparse` under `≤ 30`). **Fix:** the foundation freezes ONE interpretation in the split manifest (`bucket_boundaries: [30, 100]` with half-open semantics `sparse: [0, 30), medium: [30, 100), dense: [100, ∞)`) AND writes the chosen interpretation as a string field `bucket_semantics: "half_open"` so readers never have to infer.
+
+### NIT — Polish
+
+**N-1: Use the full SHA-256 digest, not truncated to 8 bytes.** `int.from_bytes(hashlib.sha256(payload).digest(), "big")` gives a Python int with no precision loss. Truncation saves nothing meaningful and drops 192 bits of entropy.
+
+**N-2: Do NOT use `numpy.random.SeedSequence.spawn`.** `spawn()` is call-order-dependent (same seed + different spawn order → different streams). The explicit namespace-string approach is order-independent.
+
+**N-3: Bundle publication must be atomic across multiple files.** `data/derived/` contains `mapping.json`, `split_manifest.json`, and `exclusion_items.npz`. A builder crash after writing two of three leaves a mixed state. **Fix:** the builder writes all three to a temp directory, THEN publishes a `data/derived/foundation_index.json` (listing `mapping_sha256`, `split_hash`, `exclusion_sha256`, `foundation_contract_sha256`, `builder_version`, `created_at`) **last**. Loaders verify the index before reading any of the three payload files; a missing or mismatched index means the bundle is incomplete.
+
+### Codex's Added Validation Requirements (supplement to the §Validation Architecture block below)
+
+- The mapping builder, applied to this repo's raw ML-1M files, must produce `6040` users and `3706` items (empirical anchor for CR-1).
+- Cross-process determinism test — run the seeded pipeline in two subprocesses with DIFFERENT `PYTHONHASHSEED` env values; the four-tier RNG outputs must be identical.
+- Same `run_seed` must reproduce: client selection, eval negatives, model init, DataLoader iteration order (4 separate assertions).
+- `train_user_stats` test — for any user whose last interaction is item X, `train_user_stats[user]["n_interactions"]` equals total interactions − 1 and `item X` is absent from the computed distributions.
+- `foundation_contract_sha256` must change if ANY of {mapping, split manifest, exclusion set} changes (three separate one-byte mutations tested individually).
+- Launcher enforcement: `benchmark_cross_device` resolves to `num-supernodes=6040`, `cross_silo_legacy` resolves to `num-supernodes=5`; attempting to launch the app with a mismatch triggers the startup assertion.
+
+### Superseded Guidance
+
+The following recommendations in the body of this research are **superseded** by the Codex review above and should NOT be used by the planner:
+
+- "NPZ keyed-dict layout (one key per user)" → replaced by flat `items` + `indptr` (IMP-3).
+- "Item mapping built by sorting `movies.dat` by movie_id" → replaced by sorting `ratings.dat["movie_id"].unique()` (CR-1).
+- "Four-tier RNG derives only Python `random.Random`" → extended to Python + NumPy + Torch + DataLoader generator (CR-3).
+- "Mode resolver locks `num-supernodes` from inside the Flower app" → replaced by launcher + app-level assertion (CR-2).
+- "Manifest fingerprints are `split_hash` + `raw-data-hash`" → extended to `mapping_sha256`, `split_hash`, `exclusion_sha256`, composite `foundation_contract_sha256` (IMP-2).
+- "Per-user stats in split manifest derived from full interactions" → must be from train-only; full-data stats go in a separate namespaced key (CR-5).
+- "Weight-policy works with existing client metrics" → requires new client-side fit-metric contract (`num_positives`, `num_training_examples`) (CR-4).
+
+---
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
