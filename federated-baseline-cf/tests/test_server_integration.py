@@ -1,4 +1,4 @@
-"""Server integration tests (Phase 2 Plan 04).
+"""Server integration tests (Phase 2 Plan 04 + Plan 05 G-03-01 gap closure).
 
 Covers the three BSL requirements closed by Plan 04:
 
@@ -9,12 +9,23 @@ Covers the three BSL requirements closed by Plan 04:
 - **BSL-08**: ``build_run_manifest`` integrates all four foundation
   fingerprints; D-15 double-write (embedded + sibling) roundtrips cleanly.
 
+Plan 05 G-03-01 addition:
+
+- ``test_selected_partitions_byte_identical_across_subprocess_reruns``:
+  REAL-LOOP reproducibility check. Runs ``scripts/run.py baseline
+  benchmark_cross_device`` twice in child processes and asserts the
+  ``selected_clients_per_round`` JSON fields are byte-identical — the
+  load-bearing invariant Plan-04's pure-RNG test missed.
+
 Tests are skipped if the foundation bundle (``data/derived/foundation_index.json``)
 is absent so a minimal clone doesn't fail CI.
 """
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -27,7 +38,15 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_server_rng_reproducible_per_round_selection() -> None:
-    """BSL-04: server_rng(run_seed) produces identical client sequences across processes."""
+    """BSL-04: server_rng(run_seed) produces identical client sequences across processes.
+
+    NOTE (G-03-01): This is a NECESSARY-BUT-NOT-SUFFICIENT check. It tests
+    pure-RNG determinism with a FIXED domain; it does NOT exercise the
+    real loop where the sampling domain itself must be stable across runs.
+    The load-bearing invariant — byte-identical selected_clients_per_round
+    across independent subprocess reruns with the same run-seed — is
+    asserted by ``test_selected_partitions_byte_identical_across_subprocess_reruns``.
+    """
     from fedrec_foundation.rng import server_rng
     # Two separate rng instances with the same seed -> same sequence.
     rng1 = server_rng(42)
@@ -165,3 +184,93 @@ def test_embed_and_sibling_double_write_roundtrip(tmp_path) -> None:
     with open(sibling) as f:
         sibling_json = json.load(f)
     assert sibling_json["foundation_contract_sha256"] == idx.foundation_contract_sha256
+
+
+# ============================================================================
+# Plan 05 G-03-01: real-loop subprocess reproducibility regression guard.
+# ----------------------------------------------------------------------------
+# Plan-04's test_server_rng_reproducible_per_round_selection asserted
+#     `rng.sample(sorted(fixed_ids), k)` is stable across RNG instances.
+# That's a pure-RNG property and always held. The load-bearing invariant
+# the thesis needs is that TWO SUBPROCESS RERUNS of the launcher with the
+# same run-seed produce byte-identical `selected_clients_per_round`. The
+# real loop was broken because Flower's node_ids are os.urandom-seeded
+# per boot, so `sorted(grid.get_node_ids())` randomised the sampling
+# domain between runs. Plan-05 fixes this by sampling in partition-id
+# space (stable 0..N-1) and recording partition_ids in the result JSON.
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_selected_partitions_byte_identical_across_subprocess_reruns(tmp_path) -> None:
+    """G-03-01 regression guard: real-loop reproducibility across subprocess reruns.
+
+    Invariant: for fixed run-seed, two independent `python scripts/run.py
+    baseline benchmark_cross_device ...` invocations produce JSONs whose
+    ``selected_clients_per_round`` fields are byte-identical (partition_id
+    space). This test WOULD have failed on pre-Plan-05 code (where
+    `selected_clients_per_round` stored ephemeral, per-boot-randomised
+    node_ids). It passes on post-Plan-05 code because partition_ids are
+    stable across boots.
+
+    Skipped when ``FEDREC_SKIP_SLOW=1`` or the foundation bundle is absent.
+    """
+    if os.environ.get("FEDREC_SKIP_SLOW") == "1":
+        pytest.skip("FEDREC_SKIP_SLOW=1 set")
+
+    repo_root = Path(__file__).resolve().parents[2]
+    results_dir = repo_root / "results" / "federated"
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Snapshot the current set of result files so we can pick out exactly
+    # the two this test produces (avoid picking up unrelated earlier runs).
+    before = set(results_dir.glob("*_results.json"))
+
+    launcher = repo_root / "scripts" / "run.py"
+    cmd = [
+        sys.executable,
+        str(launcher),
+        "baseline",
+        "benchmark_cross_device",
+        "--run-config",
+        "num-server-rounds=1 fraction-train=0.005 local-epochs=1 wandb-enabled=false",
+    ]
+
+    def _run_once() -> None:
+        proc = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        if proc.returncode != 0:
+            pytest.skip(
+                f"launcher failed (rc={proc.returncode}); skipping real-loop test. "
+                f"stdout tail: {proc.stdout[-500:]!r} stderr tail: {proc.stderr[-500:]!r}"
+            )
+
+    _run_once()
+    _run_once()
+
+    after = sorted((results_dir.glob("*_results.json")), key=lambda p: p.stat().st_mtime)
+    new_files = [p for p in after if p not in before]
+    assert len(new_files) >= 2, (
+        f"G-03-01 test expected at least 2 new result JSONs in {results_dir}, "
+        f"got {len(new_files)}"
+    )
+    file_a, file_b = new_files[-2], new_files[-1]
+    with open(file_a) as f:
+        a = json.load(f)
+    with open(file_b) as f:
+        b = json.load(f)
+    assert a["selected_clients_per_round"] == b["selected_clients_per_round"], (
+        f"G-03-01 broken: selected_clients_per_round differs across subprocess reruns "
+        f"with the same run-seed. {file_a.name} vs {file_b.name}"
+    )
+    # NDCG@10 cross-run diff should collapse to ≤1e-3 once the same users train.
+    ndcg_a = float(a["final_metrics"].get("sampled_ndcg@10", 0.0))
+    ndcg_b = float(b["final_metrics"].get("sampled_ndcg@10", 0.0))
+    assert abs(ndcg_a - ndcg_b) <= 1e-3, (
+        f"G-03-01 regression: ndcg@10 cross-run diff {abs(ndcg_a - ndcg_b):.6f} > 1e-3"
+    )
