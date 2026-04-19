@@ -26,28 +26,31 @@ def test_launcher_exists() -> None:
     assert _launcher_path().exists(), f"{_launcher_path()} missing"
 
 
-def test_launcher_sets_num_supernodes_benchmark() -> None:
+def test_launcher_sets_mode_benchmark() -> None:
     r = _run("--dry-run", "baseline", "benchmark_cross_device")
     assert r.returncode == 0, r.stderr
-    assert "num-supernodes=6040" in r.stdout
     # Mode string values must be TOML-quoted so flwr's tomli parser accepts them.
     assert 'mode="benchmark_cross_device"' in r.stdout
     assert "federated-baseline-cf" in r.stdout
+    # Regression: num-supernodes must NOT appear in --run-config (it's a
+    # federation-level option, and flwr's fuse_dicts rejects run-config keys
+    # that aren't present in [tool.flwr.app.config]).
+    assert "num-supernodes" not in r.stdout
 
 
-def test_launcher_sets_num_supernodes_cross_silo_legacy() -> None:
+def test_launcher_sets_mode_cross_silo_legacy() -> None:
     r = _run("--dry-run", "pfedrec", "cross_silo_legacy")
     assert r.returncode == 0, r.stderr
-    assert "num-supernodes=5" in r.stdout
     assert 'mode="cross_silo_legacy"' in r.stdout
     assert "federated-pfedrec" in r.stdout
+    assert "num-supernodes" not in r.stdout
 
 
 def test_launcher_paper_compat_pfedrec() -> None:
     r = _run("--dry-run", "pfedrec", "paper_compat_pfedrec")
     assert r.returncode == 0, r.stderr
-    assert "num-supernodes=6040" in r.stdout
     assert 'mode="paper_compat_pfedrec"' in r.stdout
+    assert "num-supernodes" not in r.stdout
 
 
 def test_launcher_passes_extra_run_config() -> None:
@@ -58,7 +61,7 @@ def test_launcher_passes_extra_run_config() -> None:
     assert r.returncode == 0, r.stderr
     assert "run-seed=999" in r.stdout
     assert "lr=0.005" in r.stdout
-    assert "num-supernodes=6040" in r.stdout
+    assert 'mode="benchmark_cross_device"' in r.stdout
 
 
 def test_launcher_unknown_mode_rejected() -> None:

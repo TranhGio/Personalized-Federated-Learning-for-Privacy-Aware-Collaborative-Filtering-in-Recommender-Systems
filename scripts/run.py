@@ -123,8 +123,14 @@ def _build_run_config(mode: str, extra_kv: Sequence[str]) -> str:
     SystemExit
         If any element of ``extra_kv`` is missing the ``=`` separator.
     """
+    # num-supernodes is a FEDERATION-level option (set in pyproject
+    # [tool.flwr.federations.<name>] options.num-supernodes), NOT an app
+    # run_config key. Emitting it here breaks flwr's fuse_dicts validation
+    # ("Key 'num-supernodes' is not present in the main dictionary"). The
+    # in-app mode assertion reads num-supernodes from the Flower Context
+    # (populated by the federation) and cross-checks it against the mode
+    # profile's expected value — no need to duplicate it in run_config.
     base = {
-        "num-supernodes": str(MODE_NUM_SUPERNODES[mode]),
         "mode": mode,
     }
     for item in extra_kv:
