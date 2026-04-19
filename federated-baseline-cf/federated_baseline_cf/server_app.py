@@ -319,6 +319,47 @@ def main(grid: Grid, context: Context) -> None:
 
     arrays = ArrayRecord(global_model.state_dict())
 
+    # =========================================================================
+    # G-03-01: discovery round. Build partition_id -> node_id mapping BEFORE the
+    # main loop so per-round sampling can work in stable partition-id space.
+    # Flower's node_ids are os.urandom-seeded per boot; partition_ids are the
+    # stable 0..N-1 identity we actually want to record for thesis reproducibility.
+    # =========================================================================
+    all_node_ids = list(grid.get_node_ids())
+    expected_n = int(profile.num_supernodes)
+    assert len(all_node_ids) == expected_n, (
+        f"G-03-01 invariant: grid.get_node_ids() returned {len(all_node_ids)} "
+        f"node_ids, expected num_supernodes={expected_n} from profile {profile.mode!r}."
+    )
+    print(f"\n[G-03-01] Running discovery round over {expected_n} supernodes...")
+    discovery_config = ConfigRecord({"discover_only": True})
+    discovery_messages = [
+        grid.create_message(
+            content=RecordDict({"arrays": ArrayRecord(), "config": discovery_config}),
+            message_type="evaluate",
+            dst_node_id=nid,
+            group_id="discovery",
+        )
+        for nid in all_node_ids
+    ]
+    discovery_responses = list(grid.send_and_receive(discovery_messages))
+    partition_to_node_id: Dict[int, int] = {}
+    for r in discovery_responses:
+        if r.has_error():
+            continue
+        m = dict(r.content.get("metrics", MetricRecord()))
+        pid = m.get("partition_id")
+        if pid is None:
+            continue
+        partition_to_node_id[int(pid)] = int(r.metadata.src_node_id)
+    missing = sorted(set(range(expected_n)) - set(partition_to_node_id.keys()))
+    assert not missing, (
+        f"G-03-01 invariant: discovery round did not collect partition_ids "
+        f"for {len(missing)} nodes (first 5 missing: {missing[:5]}). "
+        f"Cannot proceed — partition-space sampling would KeyError."
+    )
+    print(f"[G-03-01] Discovery complete: {len(partition_to_node_id)} partition -> node_id entries.")
+
     # BSL-06: BaselineFedAvg / BaselineFedProx overrides aggregate_evaluate to
     # emit headline metrics from SUMMED sufficient stats (not averaged per-client ratios).
     if strategy_name == "fedprox":
@@ -365,19 +406,22 @@ def main(grid: Grid, context: Context) -> None:
 
         train_config = ConfigRecord({"lr": lr, "proximal_mu": proximal_mu})
 
-        # BSL-04: seeded per-round client sampling (replaces random.sample).
-        # Sort node IDs so the sampler sees a stable domain; single _server_sampler
-        # instance across rounds => sequence is deterministic for a given run_seed.
-        node_ids = sorted(grid.get_node_ids())
-        num_selected = max(1, int(len(node_ids) * fraction_train))
-        selected_node_ids = _server_sampler.sample(node_ids, num_selected)
+        # G-03-01: sample in partition-id space (stable 0..N-1), translate to
+        # node_ids for message addressing. Deterministic across runs for a
+        # given run_seed because the sampling DOMAIN is now seed-independent.
+        # Plan-04's `sorted(grid.get_node_ids())` domain was non-deterministic
+        # (Flower's node_ids are os.urandom-seeded per boot), so the sampler
+        # ran deterministically over a randomised domain — see 02-UAT.md G-03-01.
+        num_selected = max(1, int(expected_n * fraction_train))
+        selected_pids: List[int] = _server_sampler.sample(range(expected_n), num_selected)
+        selected_node_ids = [partition_to_node_id[pid] for pid in selected_pids]
 
-        # D-26: persist + log selected client IDs for reproducibility + W&B audit.
-        selected_clients_per_round.append([int(x) for x in selected_node_ids])
+        # D-26: persist + log PARTITION IDs (user-identifying, stable) — not node_ids.
+        selected_clients_per_round.append([int(pid) for pid in selected_pids])
         if wandb_enabled:
-            wandb.log({"round/selected_clients": [int(x) for x in selected_node_ids]}, step=round_num)
+            wandb.log({"round/selected_clients": [int(pid) for pid in selected_pids]}, step=round_num)
 
-        print(f"  Selected {num_selected}/{len(node_ids)} clients for training")
+        print(f"  Selected {num_selected}/{expected_n} clients for training")
 
         # =====================================================================
         # TRAINING PHASE
