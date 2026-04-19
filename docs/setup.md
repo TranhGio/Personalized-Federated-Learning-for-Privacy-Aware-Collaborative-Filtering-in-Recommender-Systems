@@ -32,5 +32,5 @@ cd scripts/foundation && pytest tests/ -v         # full suite
 ## Notes
 
 - Plan 01 (Wave 0) creates the `fedrec-foundation` scaffold with real implementations for `paths`, `atomic`, and `hashing`; the rest of the modules (`mapping`, `split`, `exclusion`, `evaluator`, `weight_policy`, `rng`, `mode`, `manifest`) land in Plans 02–05 as their corresponding tests flip from SKIPPED to real assertions.
-- Plan 06 adds `fedrec-foundation` as a local-path dependency to each `federated-*-cf/pyproject.toml` so a single `pip install -e <module>/` pulls the foundation automatically. Until then, install foundation explicitly with the command above.
+- Plan 06 wires `fedrec-foundation` into each `federated-*-cf/pyproject.toml` as a plain-name dependency (PEP 440 direct reference deferred). Because the dep name `fedrec-foundation` is NOT published to any package index, **you MUST `pip install -e scripts/foundation/` BEFORE running `pip install -e federated-*-cf/`** — otherwise the module install will fail to resolve the name. The step-1/step-2/step-3 order in the install block above is therefore load-bearing, not cosmetic.
 - The env var `FEDREC_FOUNDATION_DATA_DIR` overrides `data_derived()` for CI or remote environments (leaves `ml1m_dir()` untouched).

@@ -14,6 +14,8 @@ description = ""
 license = "Apache-2.0"
 # Dependencies for your Flower App
 dependencies = [
+    # Foundation contract (Phase 1) — install ../scripts/foundation/ in editable mode FIRST; see docs/setup.md
+    "fedrec-foundation",
     "flwr[simulation]>=1.22.0",
     "flwr-datasets[vision]>=0.5.0",
     "torch>=2.7.1",
@@ -81,6 +83,7 @@ num-negatives = 1   # Number of negative samples per positive (for BPR only)
 
 # Data partitioning
 alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
+partition-mode = "natural"  # "dirichlet" (cross-silo) or "natural" (cross-device, 1 user = 1 client)
 
 # =============================================================================
 # Adaptive Personalization Configuration (α)
@@ -89,7 +92,7 @@ alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
 # Formula: p̃_u = α * p_local + (1 - α) * p_global
 
 # Alpha method selection
-alpha-method = "hierarchical_conditional"     # Options: "data_quantity", "multi_factor", or "hierarchical_conditional"
+alpha-method = "multi_factor"     # Options: "data_quantity", "multi_factor", or "hierarchical_conditional"
                                   # - data_quantity: Single factor (interaction count only)
                                   # - multi_factor: 4-factor weighted sum (may have factor conflicts)
                                   # - hierarchical_conditional: Addresses factor conflicts via grouping + rules

@@ -14,6 +14,8 @@ description = ""
 license = "Apache-2.0"
 # Dependencies for your Flower App
 dependencies = [
+    # Foundation contract (Phase 1) — install ../scripts/foundation/ in editable mode FIRST; see docs/setup.md
+    "fedrec-foundation",
     "flwr[simulation]>=1.22.0",
     "flwr-datasets[vision]>=0.5.0",
     "torch>=2.7.1",
@@ -59,7 +61,8 @@ weight-decay = 1e-5 # L2 regularization strength
 num-negatives = 1   # Number of negative samples per positive (for BPR only)
 
 # Data partitioning
-alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID)
+partition-mode = "natural"  # "dirichlet" (cross-silo) or "natural" (cross-device, 1 user = 1 client)
+alpha = 0.5         # Dirichlet concentration parameter (lower = more non-IID, only for dirichlet mode)
 
 # Ranking evaluation
 enable-ranking-eval = true        # Enable comprehensive ranking metrics evaluation
