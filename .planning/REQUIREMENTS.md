@@ -16,8 +16,8 @@ Shared protocol contract consumed by all four modules. Everything downstream dep
 - [ ] **FND-03**: A per-user exclusion set `exclude_items[user] = train_pos ∪ test_pos` is exposed by the shared data layer and consumed wherever training negatives are sampled.
 - [x] **FND-04**: ONE primary evaluation protocol (`sampled_loo_99` = leave-one-out + 99 negatives, NCF) is declared the thesis-table protocol; `allrank_*` is kept as a namespaced secondary.
 - [x] **FND-05**: An explicit aggregation `weight-policy` config is introduced (`uniform` / `num_positives` / `num_training_examples`); each module picks one by default and logs it.
-- [ ] **FND-06**: Run-scoped seeding: Python/NumPy/Torch seeded once per run; a server RNG is derived for client sampling; per-user RNG streams are derived from `(run_seed, user_id, round, purpose)`. No global `random.seed(...)` or `np.random.seed(...)` inside evaluators or round loops.
-- [ ] **FND-07**: A run manifest (`protocol fingerprint`) is saved with every result artifact: partition mode, `num-supernodes`, client fractions, weight policy, eval protocol, negative counts, seeds, checkpoint rule.
+- [x] **FND-06**: Run-scoped seeding: Python/NumPy/Torch seeded once per run; a server RNG is derived for client sampling; per-user RNG streams are derived from `(run_seed, user_id, round, purpose)`. No global `random.seed(...)` or `np.random.seed(...)` inside evaluators or round loops.
+- [x] **FND-07**: A run manifest (`protocol fingerprint`) is saved with every result artifact: partition mode, `num-supernodes`, client fractions, weight policy, eval protocol, negative counts, seeds, checkpoint rule.
 
 ### Baseline Migration (BSL)
 
@@ -135,8 +135,8 @@ Deferred beyond this thesis cycle.
 | FND-03 | Phase 1: Foundation Contract | Pending |
 | FND-04 | Phase 1: Foundation Contract | Complete |
 | FND-05 | Phase 1: Foundation Contract | Complete |
-| FND-06 | Phase 1: Foundation Contract | Pending |
-| FND-07 | Phase 1: Foundation Contract | Pending |
+| FND-06 | Phase 1: Foundation Contract | Complete |
+| FND-07 | Phase 1: Foundation Contract | Complete |
 | BSL-01 | Phase 2: Baseline Migration | Pending |
 | BSL-02 | Phase 2: Baseline Migration | Pending |
 | BSL-03 | Phase 2: Baseline Migration | Pending |
