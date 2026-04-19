@@ -8,20 +8,12 @@ source:
   - 02-baseline-migration-04-SUMMARY.md
   - 02-baseline-migration-VERIFICATION.md (human_verification items)
 started: 2026-04-19T15:45:00Z
-updated: 2026-04-19T16:25:00Z
+updated: 2026-04-19T17:10:00Z
 ---
 
 ## Current Test
 
-number: 3
-name: Determinism — same seed, byte-identical client selections (GPU)
-expected: |
-  Re-run the Test 2 command TWO times back-to-back with the same `run-seed=42`.
-  The `selected_clients_per_round` lists must be byte-identical across both
-  runs (server_rng is the Phase 1 FND-06 deterministic RNG). The eval
-  NDCG@10 / HR@10 may differ slightly (GPU non-determinism ~1e-4) but
-  client selection is a pure-Python hash-based draw and must match exactly.
-awaiting: user response
+(all tests recorded; UAT complete modulo G-03-01 gap-closure via Plan-05)
 
 ## GPU Tuning Notes (applied before Test 1)
 
@@ -168,7 +160,69 @@ expected: |
   - `ndcg@10 diff: ~0.0` or very small (< 1e-4). If slightly nonzero, that's
     GPU kernel non-determinism in gradient accumulation — NOT a bug, NOT a
     thesis-blocker. Client selection is the load-bearing determinism invariant.
-result: [pending]
+result: fail
+notes: |
+  Actual:
+  - `selected_clients match: False` — intersection of round-1 selections = 0/60.
+  - `ndcg@10 diff: 0.00105` — larger than the 1e-4 GPU-noise budget.
+  Runs compared: 20260419-101756-badbb7 vs 20260419-102350-06e74c.
+
+  ROOT CAUSE (Flower layer, not our code bug):
+
+  Flower 1.24 assigns supernode IDs via `generate_rand_int_from_bytes(uses os.urandom)`
+  at `flwr/server/superlink/linkstate/utils.py:65-77`. `_register_nodes` in
+  `flwr/server/superlink/fleet/vce/vce_api.py:55-76` loops `num_supernodes` times,
+  creating one random 64-bit node_id per partition (partition_id = iteration counter
+  `i`, node_id = fresh `os.urandom`). `os.urandom` is NOT seedable, so every
+  federation boot gets a fresh set of 6040 random node_ids.
+
+  Our server samples via
+      `server_rng(run_seed).sample(sorted(grid.get_node_ids()), k)`.
+  `server_rng(42)` IS deterministic, but the DOMAIN (`sorted(node_ids)`) is
+  re-randomized each run. Consequences:
+  1. Raw node_id values in `selected_clients_per_round` differ across runs
+     (trivial — the values themselves are ephemeral).
+  2. Even by POSITION, the sorted list scrambles partition→node_id
+     (`sorted[i]` maps to a different partition_id in each run because the
+     mapping from partition_id to node_id is `{i: random_value_i}` and sorting
+     by random value randomises the partition order).
+  3. Therefore DIFFERENT user partitions actually train each round — hence the
+     ~0.001 NDCG diff is NOT GPU noise, it is training on different data slices.
+
+  WHY THE PLAN MISSED THIS:
+  Plan-04 verification (`seq1 = [rng1.sample(sorted(ids), 50) for _ in range(3)]`)
+  tested pure-RNG determinism with a FIXED `ids` domain. It did not exercise
+  the real loop where `ids = sorted(grid.get_node_ids())` and the domain itself
+  is non-deterministic. FND-06 is correctly implemented; the gap is between
+  FND-06 (deterministic RNG) and Flower's ephemeral node-id assignment
+  (the sampling domain).
+
+  IMPACT ASSESSMENT (thesis-scope):
+  - Training IS seeded deterministically for a fixed user set (FND-06 np_rng /
+    torch_gen / py_rng are all correctly wired in client_app + task).
+  - What is NOT deterministic is "which 60 of the 6040 users participate in
+    round r" across independent runs with the same seed.
+  - For the thesis comparison table this matters: two independent reruns of the
+    same config produce NDCG numbers that differ by ~1e-3 per round. Mean-of-seeds
+    remains statistically valid but per-seed reproducibility is broken.
+
+  PROPOSED FIX (gap-closure plan, scope ≈ 1 small plan):
+  1. Client-side: echo `partition_id` in `FitMetricsContract` and
+     `EvaluateMetricsContract` (new required int field).
+  2. Server-side: sample from `range(num_supernodes)` (partition-id space, which
+     IS 0..N-1 and stable) instead of `sorted(node_ids)`. Lazily build a
+     `partition_id -> node_id` map from the first round's responses (clients
+     echo partition_id back); any partition whose node_id is not yet known
+     on round 1 is resolved via a tiny warm-up eval ping to a singleton before
+     the real round 1 send. Record sampled partition_ids (not node_ids) in
+     `selected_clients_per_round`.
+  3. Update Plan-04 verification and this UAT test to assert
+     `selected_partitions_per_round` byte-identity across runs.
+  4. Decide whether to keep logging raw node_ids as a diagnostic secondary
+     field (`selected_node_ids_per_round`) or drop them.
+
+  The ndcg@10 diff will collapse to ~1e-4 (true GPU noise) once the same user
+  set trains in both runs.
 
 ### 4. W&B project is `federated-cf-cross-device`
 expected: |
@@ -178,17 +232,135 @@ expected: |
   `sampled_hr@10` / `sampled_ndcg@10` sums.
 
   Skip this test if W&B is offline or disabled locally.
-result: [pending]
+result: fail (fix applied, retest pending)
+notes: |
+  First attempt FAILED: run appeared under the legacy `federated-cf` project,
+  NOT `federated-cf-cross-device`, despite `mode=benchmark_cross_device`.
+
+  ROOT CAUSE (simple config-precedence bug):
+    federated-baseline-cf/pyproject.toml:88 hardcoded
+        wandb-project = "federated-cf"
+    Server_app.py:293 looked up
+        context.run_config.get("wandb-project", default_project)
+    Because the key IS present in pyproject (non-empty string), `.get(...)`
+    returned "federated-cf" and the mode-based `default_project` branch
+    (correctly computing "federated-cf-cross-device" for cross-device mode)
+    never fired.
+
+  FIX (applied, awaiting user retest):
+    1. federated-baseline-cf/pyproject.toml:88 — wandb-project = "" (empty
+       sentinel meaning "let the server route by mode").
+    2. federated-baseline-cf/federated_baseline_cf/server_app.py:293 — treat
+       empty/whitespace-only wandb-project as "use mode default"; explicit
+       non-empty values still win (user can pin a project via pyproject or
+       --run-config if desired).
+
+  NOT YET FIXED (out of Phase-02 scope, filed as follow-up G-04-02 below):
+    pfedrec/personalized/adaptive server_apps hardcode their own project
+    defaults without mode-aware routing. When those phases run cross-device,
+    the same bug will surface. Fix in each module's migration phase.
+
+  RETEST (2026-04-19): PASS. User confirmed the post-fix run appears under
+  the `federated-cf-cross-device` W&B project on wandb.ai.
+result: pass
 
 ## Summary
 
 total: 4
-passed: 2
-issues: 0
-pending: 2
+passed: 3
+issues: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-[none yet]
+### G-03-01: `selected_clients_per_round` is not byte-identical across reruns with the same seed
+
+**Source test:** Test 3 (determinism).
+
+**Observed:** With `run-seed=42` fixed and identical run-config, two back-to-back
+runs produce DISJOINT `selected_clients_per_round` lists (intersection 0 in round
+1) and a final-eval `sampled_ndcg@10` that diverges by ~1.05e-3 instead of the
+≤1e-4 GPU-noise budget.
+
+**Root cause (Flower-layer, upstream of our code):** Flower's `_register_nodes`
+(`flwr/server/superlink/fleet/vce/vce_api.py:55-76`, flwr==1.24.0) generates
+supernode IDs via `generate_rand_int_from_bytes(uses os.urandom)`. `os.urandom`
+is not seedable, so every boot gets a fresh random node-id per partition. Our
+`server_rng(run_seed).sample(sorted(grid.get_node_ids()), k)` samples
+deterministically from a NON-deterministic domain — positions are stable but the
+partition_ids those positions map to are randomised each run. Therefore different
+users actually train in round r of run A vs. run B, and aggregated model weights
+diverge beyond GPU noise.
+
+**Why Plan-04 verification missed it:** `test_server_rng_reproducible` fed a
+FIXED `ids` list to `rng.sample(...)`; it never ran through the real
+`grid.get_node_ids()` path.
+
+**Fix direction (proposed plan scope):**
+1. Client echoes `partition_id` in `FitMetricsContract` and
+   `EvaluateMetricsContract` (new required int field).
+2. Server samples from `range(num_supernodes)` (partition-id space — stable
+   0..N-1) instead of `sorted(node_ids)`. Builds `partition_id -> node_id`
+   mapping lazily from response metadata; a one-shot warm-up eval round 0
+   resolves all 6040 mappings up front (~seconds on GPU with 20 concurrent).
+3. `selected_clients_per_round` stores sampled partition_ids; raw node_ids
+   optionally kept as a diagnostic secondary field for debugging.
+4. Extend Plan-04 verification to assert byte-identity of
+   `selected_partitions_per_round` across two subprocess runs with the same
+   seed (not just pure-RNG identity).
+5. Re-run Test 3 under the fix; `ndcg@10 diff` should collapse to ≤1e-4.
+
+**Impact if deferred:** The thesis comparison table must report mean ± std over
+≥3 seeds (already the convention) — single-seed reruns of the "same" config will
+drift by ~1e-3 NDCG. Deterministic reproducibility for a single seed is broken
+but statistical reporting is not. Classify as THESIS-RISK-MEDIUM, not blocker.
+
+**Suggested plan:** `.planning/phases/02-baseline-migration/02-baseline-migration-05-PLAN.md`
+tagged `gap_closure: true`.
+
+### G-04-02: pfedrec/personalized/adaptive server_apps have NO mode-aware W&B routing (FOLLOW-UP for later phases)
+
+**Source:** discovered while fixing G-04-01 in this phase.
+
+**Observed:** Only baseline server_app.py implements the mode-based `default_project`
+router. The other three modules hardcode:
+- `federated-pfedrec/.../server_app.py:182` → `"federated-pfedrec"`
+- `federated-personalized-cf/.../server_app.py:237` → `"federated-personalized-cf"`
+- `federated-adaptive-personalized-cf/.../server_app.py:281` → `"federated-cf"`
+
+When those modules are migrated to cross-device in their respective phases, their
+cross-device runs will leak into the legacy project namespaces unless the same
+empty-sentinel + mode-router pattern is ported over.
+
+**Scope:** Out-of-phase for Phase 02 (baseline-only migration). File against each
+module's migration phase as a subtask when that phase is planned.
+
+**Suggested wording for the future plan tasks:** "Port G-04-01 fix pattern —
+pyproject `wandb-project = ""` + server_app empty-sentinel + mode-based
+`default_project` matching baseline's server_app.py:288-295."
+
+## Closed Gaps
+
+### G-04-01: baseline W&B project routed to legacy `federated-cf` instead of `federated-cf-cross-device` [CLOSED 2026-04-19]
+
+**Source test:** Test 4.
+
+**Was:** With `mode=benchmark_cross_device`, runs landed in the legacy
+`federated-cf` project. Violated the PROJECT.md constraint that cross-device
+runs must live in a dedicated W&B project.
+
+**Root cause:** `federated-baseline-cf/pyproject.toml:88` hardcoded
+`wandb-project = "federated-cf"`; `server_app.py` had mode-based default routing
+but `context.run_config.get("wandb-project", default_project)` preferred the
+non-empty pyproject string over the computed default.
+
+**Fix (landed inline during UAT, 2026-04-19):**
+1. `federated-baseline-cf/pyproject.toml:88` → `wandb-project = ""` (empty sentinel).
+2. `federated-baseline-cf/federated_baseline_cf/server_app.py:293-295` → treat
+   empty/whitespace-only `wandb-project` as "use mode default"; explicit
+   non-empty strings still win (pyproject pin or --run-config override).
+
+**Verification:** User confirmed the post-fix run appeared under
+`federated-cf-cross-device` on wandb.ai (2026-04-19). Test 4 flipped to pass.
