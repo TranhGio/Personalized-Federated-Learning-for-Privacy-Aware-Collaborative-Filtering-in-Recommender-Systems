@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-baseline-migration-02-PLAN.md
-last_updated: "2026-04-19T07:54:19.318Z"
+stopped_at: Completed 02-baseline-migration-01-PLAN.md
+last_updated: "2026-04-19T07:55:11.767Z"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 02 (baseline-migration) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 01-foundation-contract P04 | 4min | 2 tasks | 4 files |
 | Phase 01-foundation-contract P06 | 6min | 2 tasks | 6 files |
 | Phase 02-baseline-migration P02 | 5min | 2 tasks | 3 files |
+| Phase 02-baseline-migration P01 | 6min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,10 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: pytest dev dep exclusively owned by Plan 02 Task 1 — [project.optional-dependencies] dev = ['pytest>=7.0'] declared in baseline/pyproject.toml to eliminate iter-1 BLOCKER 1 Wave-1 write-race with Plan 01. Test plans 01/02/03/04 install pytest via pip install -e '.[dev]'.
 - [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: D-17 rip-and-replace completed in federated-baseline-cf/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data and load_full_data keep signatures but delegate mapping/split/exclusion to fedrec_foundation. partition_mode='dirichlet' now raises NotImplementedError; split_mode='random' raises ValueError. Cross-phase contract: dataset.py is a thin (~440 LOC) foundation adapter; Plans 03/04/05 follow this shape.
 - [Phase 02-baseline-migration]: [Phase 02-baseline-migration Plan 02]: D-18 surgical-edit discipline enforced — pre-existing uncommitted WIP in MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users preserved verbatim in dataset.py. Pre-existing WIP in client_app.py, server_app.py, task.py UNTOUCHED (Plans 03 and 04 own those). git diff --stat verified delta shape consistent with D-17 scope only. Duplicate eval-num-negatives declaration auto-fixed to avoid TOML duplicate-key error.
+- [Phase 02-baseline-migration]: Plan 01 unified _at10 suffix lock-in: FitMetricsContract fields + EvaluateMetricsContract fields + strategy _sum_sufficient_stats reader + client wire payload all share the SAME _at10 (no _at_10 drift) — iteration 2 fix. Prior iteration's drift would have silently zeroed all evaluate-side aggregation because wire-side dict keys wouldn't match the server reader's dict keys (tests bypassed via strategy-shape-dict construction).
+- [Phase 02-baseline-migration]: Plan 01 EvaluateMetricsContract sibling (not subclass of FitMetricsContract): evaluate wire carries OPTIONAL diagnostics (eval_loss / sampled_hr_at10 / sampled_ndcg_at10) that are NOT required on fit side. Subclassing would over-constrain evaluate or let free-form extras slip through validate_fit_metrics. validate_evaluate_metrics enforces both required-keys AND no-free-form-extras (D-21). Diagnostics are cached client-side for logs only — server aggregator IGNORES them and re-computes headlines from summed sufficient stats.
+- [Phase 02-baseline-migration]: Plan 01 aggregate_fit INHERITED UNCHANGED: BaselineFedAvg.aggregate_fit is FedAvg.aggregate_fit (identity check in test_aggregate_fit_inherited_unchanged). D-23 preserved — baseline = all params global. BaselineFedProx.aggregate_evaluate is an EXACT COPY of BaselineFedAvg's (not super() call) to avoid diamond-inheritance MRO; 4-line duplication + shared module-level _sum_sufficient_stats / _sufficient_stats_to_thesis_metrics helpers keep logic DRY.
+- [Phase 02-baseline-migration]: Plan 01 pyproject.toml UNTOUCHED + D-18 surgical migration preserved: Wave-1 write race avoided by exclusive file ownership (Plan 01 owns strategy.py + tests + fit_metrics.py + foundation tests; Plan 02 owns pyproject.toml + dataset.py rip-and-replace). Pre-existing uncommitted hunks in federated_baseline_cf/{client_app,dataset,server_app,task}.py left untouched for Plan 03 Task 2 to consume during client-side sufficient-stat population.
 
 ### Todos
 
@@ -115,7 +120,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
-**Stopped at:** Completed 02-baseline-migration-02-PLAN.md
+**Stopped at:** Completed 02-baseline-migration-01-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

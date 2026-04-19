@@ -49,7 +49,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   3. Running one round with a user whose held-out test item is known shows that test item never appears among the sampled training negatives for that user.
   4. The result artifact for one run contains a protocol fingerprint (partition mode, num-supernodes, fractions, weight policy, primary evaluator, seeds, checkpoint rule) and reports headline NDCG@10 / HR@10 computed once at the server from summed `hit_count@10`, `ndcg_sum@10`, and `evaluated_users` — not from averaged per-client metrics.
 **Plans**: 4 plans
-  - [ ] 02-baseline-migration-01-PLAN.md — Extend FitMetricsContract (D-22) + BaselineFedAvg/FedProx subclass (D-20) — wave 1 gate for BSL-06
+  - [x] 02-baseline-migration-01-PLAN.md — Extend FitMetricsContract (D-22) + BaselineFedAvg/FedProx subclass (D-20) — wave 1 gate for BSL-06
   - [x] 02-baseline-migration-02-PLAN.md — Rip-and-replace dataset.py with foundation adapter (D-17) + pyproject.toml cross-device defaults (BSL-01)
   - [ ] 02-baseline-migration-03-PLAN.md — client_app.py one-user assert + FitMetricsContract payload + task.py RNG/exclusion/gradient-mask (BSL-02, BSL-03, BSL-05, BSL-07, D-21, D-22, D-24)
   - [ ] 02-baseline-migration-04-PLAN.md — server_app.py mode resolver + seeded sampling + BaselineFedAvg wiring + manifest double-write + best-round restore (BSL-04, BSL-06, BSL-08, D-25, D-26, D-27)

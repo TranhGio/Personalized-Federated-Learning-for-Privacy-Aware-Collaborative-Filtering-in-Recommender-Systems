@@ -28,7 +28,7 @@ Migrate `federated-baseline-cf` to cross-device.
 - [ ] **BSL-03**: Training negative sampling uses the FND-03 exclusion set so the held-out test item is NEVER drawn as a training negative.
 - [ ] **BSL-04**: Server-side `random.sample(node_ids, ...)` is replaced with a seeded RNG derived from the run seed (FND-06); selected client IDs are logged per round.
 - [ ] **BSL-05**: Sampled evaluator no longer calls `random.seed(seed)`; it accepts a `random.Random` instance seeded from FND-06.
-- [ ] **BSL-06**: Clients return sufficient statistics (`hit_count@10`, `ndcg_sum@10`, `evaluated_users`) instead of pre-averaged per-client metrics; server computes the final ratio once.
+- [x] **BSL-06**: Clients return sufficient statistics (`hit_count@10`, `ndcg_sum@10`, `evaluated_users`) instead of pre-averaged per-client metrics; server computes the final ratio once.
 - [ ] **BSL-07**: Module-level evaluator path uses only the FND-04 primary protocol for the thesis table; any secondary `allrank_*` call is explicitly namespaced.
 - [ ] **BSL-08**: Module logs the FND-07 protocol fingerprint alongside results.
 
@@ -142,7 +142,7 @@ Deferred beyond this thesis cycle.
 | BSL-03 | Phase 2: Baseline Migration | Pending |
 | BSL-04 | Phase 2: Baseline Migration | Pending |
 | BSL-05 | Phase 2: Baseline Migration | Pending |
-| BSL-06 | Phase 2: Baseline Migration | Pending |
+| BSL-06 | Phase 2: Baseline Migration | Complete |
 | BSL-07 | Phase 2: Baseline Migration | Pending |
 | BSL-08 | Phase 2: Baseline Migration | Pending |
 | PSN-01 | Phase 3: Personalized Migration | Pending |
