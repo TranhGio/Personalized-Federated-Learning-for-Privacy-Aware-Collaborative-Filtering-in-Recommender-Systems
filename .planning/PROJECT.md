@@ -28,6 +28,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 - ✓ Per-user-group bucketing (sparse/medium/dense) + alpha analysis utilities — existing
 - ✓ Centralized baselines (SVD notebook, centralized NCF) — existing; out of scope to modify
 - ✓ Codebase map (`.planning/codebase/*.md`) documenting current architecture and known concerns — existing
+- ✓ Shared cross-device foundation contract (`fedrec-foundation` package) — validated in Phase 1: canonical ID mapping (6040 users × 3706 items), deterministic LOO split manifest, per-user exclusion set, primary evaluator selector, weight policy, three sha256-namespaced RNG factories, run manifest with composite `foundation_contract_sha256`, federation-level launcher. On disk under `scripts/foundation/` and `data/derived/`; wired as local-path dep into all 4 federated modules.
 
 ### Active
 
@@ -117,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after initialization*
+*Last updated: 2026-04-19 after Phase 1 (Foundation Contract) completion — FND-01..07 shipped, 70/70 foundation tests GREEN, `foundation_contract_sha256=fe181daf` locked.*
