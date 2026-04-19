@@ -12,7 +12,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 
 ## Phases
 
-- [ ] **Phase 1: Foundation Contract** — Shared cross-device protocol (ID mapping, LOO manifest, exclusion set, primary evaluator, weight policy, seeding, run manifest) consumed by all four modules.
+- [x] **Phase 1: Foundation Contract** — Shared cross-device protocol (ID mapping, LOO manifest, exclusion set, primary evaluator, weight policy, seeding, run manifest) consumed by all four modules.
 - [ ] **Phase 2: Baseline Migration** — `federated-baseline-cf` moved to cross-device with seeded sampling, sufficient-stat metrics, and protocol fingerprint.
 - [ ] **Phase 3: Personalized Migration** — `federated-personalized-cf` (split-learning) moved to cross-device with run-namespaced cache and one-user client semantics.
 - [ ] **Phase 4: Adaptive Migration & Bug Fixes** — `federated-adaptive-personalized-cf` (thesis module) moved to cross-device; per-user alpha / item perturbation / prototype accumulation bugs fixed.
@@ -37,7 +37,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 01-foundation-contract-03-PLAN.md — FND-04 primary evaluator + FND-05 weight-policy + FitMetricsContract (CR-4)
   - [x] 01-foundation-contract-04-PLAN.md — FND-06 three RNG factories (CR-3) + FND-07 run manifest (IMP-2 composite hash)
   - [x] 01-foundation-contract-05-PLAN.md — Mode resolver (D-06..D-11) + scripts/run.py launcher (CR-2)
-  - [ ] 01-foundation-contract-06-PLAN.md — Add fedrec-foundation as local-path dep to all 4 modules + cross-module smoke test
+  - [x] 01-foundation-contract-06-PLAN.md — Add fedrec-foundation as local-path dep to all 4 modules + cross-module smoke test
 
 ### Phase 2: Baseline Migration
 **Goal**: `federated-baseline-cf` runs as a correct cross-device benchmark — 6040 clients, one user per client in benchmark mode, seeded sampling, sufficient-statistic metrics, test-positive excluded from training negatives, and protocol fingerprint logged.
@@ -109,7 +109,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Contract | 4/6 | In Progress | - |
+| 1. Foundation Contract | 6/6 | Complete | 2026-04-19 |
 | 2. Baseline Migration | 0/0 | Not started | - |
 | 3. Personalized Migration | 0/0 | Not started | - |
 | 4. Adaptive Migration & Bug Fixes | 0/0 | Not started | - |

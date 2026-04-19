@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-04-19T03:17:48Z"
+last_updated: "2026-04-19T03:36:25.303Z"
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 6
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -19,14 +19,15 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 01 — foundation-contract
+**Current focus:** Phase 01 — foundation-contract is COMPLETE (all 6 plans shipped). Ready for Phase 02 (baseline-migration) or the Phase 1 verification gate.
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 01 (foundation-contract) — EXECUTING
-Plan: 4 of 6
+Phase: 01 (foundation-contract) — COMPLETE (6/6 plans)
+Plan: 6 of 6 (final plan of Phase 1 landed)
+Next: Phase 02 (baseline-migration) or run the Phase 1 verifier / transition gate.
 
 ## Performance Metrics
 
@@ -42,6 +43,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 01-foundation-contract P02 | 8min | 3 tasks | 15 files |
 | Phase 01-foundation-contract P03 | 3min | 2 tasks | 5 files |
 | Phase 01-foundation-contract P04 | 4min | 2 tasks | 4 files |
+| Phase 01-foundation-contract P06 | 6min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -73,6 +75,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 01-foundation-contract]: Plan 02 N-3 atomic bundle: foundation_index.json written LAST by publish_bundle; verify_bundle() re-computes mapping_sha256/exclusion_sha256/foundation_contract_sha256 on every load and raises RuntimeError with "incomplete" sentinel on missing payload or sha mismatch — readers never see a partially-published bundle.
 - [Phase 01-foundation-contract]: Plan 02 empirical CR-1 anchor CONFIRMED on real data/ml-1m/: build_mapping produces 6040 users and 3706 items (NOT 3883 from movies.dat). test_ml1m_counts_6040_3706 in test_integration.py pins this as a regression test.
 - [Phase 01-foundation-contract]: Plan 02 D-04 lock-forever COMMITTED: data/derived/mapping.json + split_manifest.json + exclusion_items.npz + foundation_index.json are committed artifacts (split_hash 5685bed7e4b6, foundation_contract_sha256 fe181dafe6f7, builder_version 1.0.0). save_split_or_verify refuses to overwrite on divergent hash with the sentinel "invalidate all cached results"; the commit IS the lock.
+- [Phase 01-foundation-contract]: Plan 06 PEP 440 plain-name dep (not direct reference): fedrec-foundation appears as a bare dep name in each federated-*-cf/pyproject.toml without a URL. Hatchling does not resolve local file URIs at build time; direct-reference breaks editable-install semantics. Plain-name costs a load-bearing install-order step (foundation first) but works with every module's existing pip install -e . flow and matches docs/setup.md.
+- [Phase 01-foundation-contract]: Plan 06 closes Phase 1: after wiring foundation as a local-path dep into all 4 modules' pyproject.toml, every federated module can now 'from fedrec_foundation.X import ...' freely — no sys.path hacks, no fallback imports, no conditional guards. Phases 2-5 inherit this contract via editable install. The one-time user-setup rule is 'pip install -e scripts/foundation/' BEFORE 'pip install -e federated-*-cf/'; that order is enforced by docs/setup.md and by the comment inside each pyproject.toml.
+- [Phase 01-foundation-contract]: Plan 06 test design — subprocess-based cross-module import smoke test: 'test_cross_module_imports' parametrized across 4 modules uses subprocess.run(cwd=<module_dir>) to mirror 'flwr run .' execution semantics rather than in-process importlib. 'test_pyproject_declares_foundation_dep' is a cheap textual regression guard. Both land in scripts/foundation/tests/test_integration.py; full foundation suite goes from 65 to 70 GREEN tests.
 
 ### Todos
 
@@ -91,16 +96,22 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 
 ## Session Continuity
 
-**Last session summary (2026-04-19):** Initialized planning — drafted PROJECT.md, REQUIREMENTS.md (52 v1 items across FND / BSL / PFR / PSN / ADP / EVL / THS), research outputs (SUMMARY, ARCHITECTURE, FEATURES, PITFALLS), and the codebase map (ARCHITECTURE, CONCERNS). Roadmap drafted as 7 phases honoring the dependency structure: FND blocks everything → {BSL, PSN, ADP, PFR} parallelizable → EVL cross-cutting → THS last.
+**Last session summary (2026-04-19):** Phase 01 (foundation-contract) CLOSED. All 6 plans shipped: fedrec-foundation package + 10 submodules (paths, atomic, hashing, mapping, split, exclusion, bundle, build, user_groups, evaluator, weight_policy, fit_metrics, rng, manifest, mode) + scripts/run.py launcher. All 70 foundation tests GREEN. data/derived/ bundle committed (split_hash=5685bed7e4b6, foundation_contract_sha256=fe181dafe6f7). Plan 06 wired fedrec-foundation as plain-name local-path dep into all 4 federated-*-cf/pyproject.toml files + cross-module subprocess smoke test (test_cross_module_imports parametrized x4 + test_pyproject_declares_foundation_dep).
 
-**Next session entry point:** Run `/gsd:plan-phase 1` to decompose the Foundation Contract phase into executable plans (canonical ID mapping, deterministic split manifest, exclusion set, primary-evaluator declaration, weight policy, run-scoped seeding, run manifest schema).
+**Next session entry point:** Run the Phase 1 verifier / transition gate, then `/gsd:plan-phase 2` to decompose the baseline-migration phase (BSL-01..08) into plans. Phases 2-5 are parallelizable after Phase 1.
 
 **Key files to reread on session resume:**
 
-- `.planning/ROADMAP.md` — phase structure and success criteria
-- `.planning/REQUIREMENTS.md` — traceability table
+- `.planning/ROADMAP.md` — phase structure and success criteria (Phase 1 progress: 6/6 Complete)
+- `.planning/REQUIREMENTS.md` — traceability table (FND-01..07 complete)
+- `.planning/phases/01-foundation-contract/01-foundation-contract-06-SUMMARY.md` — Phase 1 closure summary + Phases 2-5 integration contract
+- `docs/setup.md` — install order (pip install -e scripts/foundation/ BEFORE any module)
+- `scripts/run.py` — CR-2 launcher for cross-device runs
 - `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
 - `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
 
+**Stopped at:** Completed 01-foundation-contract-06-PLAN.md — Phase 1 closed; ready for Phase 2.
+
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
+*Phase 01 complete: 2026-04-19 after Plan 06 landed.*
