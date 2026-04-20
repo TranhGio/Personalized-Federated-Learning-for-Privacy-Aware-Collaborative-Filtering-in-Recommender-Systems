@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-personalized-migration-02-PLAN.md (PSN-01 closed)
-last_updated: "2026-04-19T16:16:05.926Z"
+stopped_at: Completed 03-personalized-migration-01-PLAN.md (PSN-06 closed; Plans 01+02 both shipped)
+last_updated: "2026-04-20T00:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
 
-**Last updated:** 2026-04-19 after roadmap creation
+**Last updated:** 2026-04-20 after Phase 3 Plan 01 closure (PSN-06)
 
 ## Project Reference
 
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 03 (personalized-migration) — EXECUTING
-Plan: 1 of 5
+Plan: 2 of 5 complete (01 + 02 shipped; 03/04/05 pending — Wave 2/3)
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 02-baseline-migration P03 | 11min | 2 tasks | 4 files |
 | Phase 02-baseline-migration P05 | 11min | 5 tasks | 6 files |
 | Phase 03-personalized-migration P02 | 3min | 2 tasks | 3 files |
+| Phase 03-personalized-migration P01 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: PSN-01 closed fully in-file — federated-personalized-cf/pyproject.toml declares partition-mode=natural + num-supernodes=6040 in BOTH local-simulation and local-sim-gpu federation blocks; 6 Phase-3 foundation-contract keys including new reuse-cache=false (D-09); pytest dev dep exclusively owned by this plan (Wave-1 write-race eliminated).
 - [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: D-17 rip-and-replace completed in federated-personalized-cf/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data + load_full_data delegate mapping/split/exclusion to fedrec_foundation. D-18 preserved: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users verbatim. client_app.py/server_app.py/task.py untouched (Plans 03/04 own them).
 - [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (tightens baseline Plan 02 which only raised in one). Error message includes D-02, cross-device, pre-Phase-3 tokens — matches test assertion. Cross-phase contract: Phases 3+ modules whose cross-silo path is permanently frozen raise at every dataset entry point.
+- [Phase 03-personalized-migration]: Plan 01 D-23 preserved via identity check (PersonalizedSplitFedAvg.aggregate_fit is BaseFedAvg.aggregate_fit) — parent's weighted-average-of-GLOBAL-params is correct because split-learning clients only return GLOBAL params (item_embeddings.weight, item_bias.weight, global_bias). Only aggregate_evaluate is overridden, cloned from Phase 2 baseline with frozenset contents flipped. PersonalizedSplitFedProx.aggregate_evaluate is an EXACT COPY (not super()) of the FedAvg branch to avoid diamond-inheritance with BaseFedProx; module-level helpers keep duplication at 4 lines.
+- [Phase 03-personalized-migration]: Plan 01 D-01 single-row models SHIPPED: BPRMF + BasicMF collapsed from nn.Embedding(num_users, embedding_dim) ghost table to two nn.Parameter tensors — local_user_row shape (d,), local_user_bias shape (1,). forward()/forward_item_only()/_compute_score() no longer take user_ids; num_users retained as constructor arg only (not stored as attribute — the client IS one user). get/set_local_parameters operate on 2-key OrderedDict({'local_user_row', 'local_user_bias'}); per-client on-disk payload drops from ~3 MB (6040×128×4B) to ~516 B (128+1 floats) — the primary PSN-06 win. BasicMF has no use_bias toggle; bias is always present (constructor asymmetry vs BPRMF). BPRMF use_bias=False branch uses register_buffer(..., persistent=False) so local_user_bias attribute exists uniformly without leaking to state_dict().
 
 ### Todos
 
@@ -119,22 +122,24 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 
 ## Session Continuity
 
-**Last session summary (2026-04-19):** Phase 01 (foundation-contract) CLOSED. All 6 plans shipped: fedrec-foundation package + 10 submodules (paths, atomic, hashing, mapping, split, exclusion, bundle, build, user_groups, evaluator, weight_policy, fit_metrics, rng, manifest, mode) + scripts/run.py launcher. All 70 foundation tests GREEN. data/derived/ bundle committed (split_hash=5685bed7e4b6, foundation_contract_sha256=fe181dafe6f7). Plan 06 wired fedrec-foundation as plain-name local-path dep into all 4 federated-*-cf/pyproject.toml files + cross-module subprocess smoke test (test_cross_module_imports parametrized x4 + test_pyproject_declares_foundation_dep).
+**Last session summary (2026-04-20):** Closed out Phase 03 Plan 01 (previously had code commits `858915d` strategy + `fabc7eb` models but no SUMMARY). Verified: `PersonalizedSplitFedAvg.aggregate_fit is BaseFedAvg.aggregate_fit` (D-23 identity check), strategy frozensets correct (GLOBAL = item_*; LOCAL = local_user_*), BPRMF/BasicMF single-row contract (local_user_row shape=(d,), 2-key get_local_parameters dict, no ghost table). All 12 tests GREEN (5 strategy + 7 single-row model). Wrote `03-personalized-migration-01-SUMMARY.md` + updated STATE.md.
 
-**Next session entry point:** Run the Phase 1 verifier / transition gate, then `/gsd:plan-phase 2` to decompose the baseline-migration phase (BSL-01..08) into plans. Phases 2-5 are parallelizable after Phase 1.
+**Next session entry point:** Phase 03 Wave 2 — `/gsd:execute-phase 3` picks up Plan 03 (client_app.py + task.py contract wire + D-04..D-10 manifest-sidecar cache; depends on Plans 01+02). Plan 04 is Wave 3 (server_app.py main loop + discovery round + partition-id sampling). Plan 05 is Wave 3 (scripts/clean_cache.py + subprocess determinism regression guard).
 
 **Key files to reread on session resume:**
 
-- `.planning/ROADMAP.md` — phase structure and success criteria (Phase 1 progress: 6/6 Complete)
-- `.planning/REQUIREMENTS.md` — traceability table (FND-01..07 complete)
-- `.planning/phases/01-foundation-contract/01-foundation-contract-06-SUMMARY.md` — Phase 1 closure summary + Phases 2-5 integration contract
-- `docs/setup.md` — install order (pip install -e scripts/foundation/ BEFORE any module)
-- `scripts/run.py` — CR-2 launcher for cross-device runs
-- `.planning/research/ARCHITECTURE.md` — migration deltas and build-order implications
-- `.planning/codebase/CONCERNS.md` — known bugs to re-verify during migration
+- `.planning/phases/03-personalized-migration/03-CONTEXT.md` — Phase 3 decisions D-01..D-23 (single-row models, run-namespaced cache, manifest-sidecar, discovery round, cold-start D-13)
+- `.planning/phases/03-personalized-migration/03-personalized-migration-01-SUMMARY.md` — strategy + model contract delivered
+- `.planning/phases/03-personalized-migration/03-personalized-migration-02-SUMMARY.md` — pyproject cross-device defaults + dataset.py foundation adapter delivered
+- `.planning/phases/03-personalized-migration/03-personalized-migration-03-PLAN.md` — next plan (client + task wire)
+- `federated-personalized-cf/federated_personalized_cf/strategy.py` — consumer of EvaluateMetricsContract keys for aggregate_evaluate
+- `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
+- `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 03-personalized-migration-02-PLAN.md (PSN-01 closed)
+**Stopped at:** Completed 03-personalized-migration-01-PLAN.md (PSN-06 closed; Plans 01+02 both shipped — Phase 3 Wave 1 DONE, Wave 2 ready to start)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
 *Phase 01 complete: 2026-04-19 after Plan 06 landed.*
+*Phase 02 complete: 2026-04-19 after Plan 05 landed.*
+*Phase 03 Wave 1 complete: 2026-04-20 after Plans 01+02 both closed.*
