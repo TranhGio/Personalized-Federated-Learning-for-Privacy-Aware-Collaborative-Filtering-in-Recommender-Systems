@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-personalized-migration-05-PLAN.md (PSN-04/PSN-05 regression-prevention axis closed; D-10 cache-hygiene helper shipped; Phase 3 migration COMPLETE across all 7 PSN requirements)
-last_updated: "2026-04-20T03:53:26.166Z"
+stopped_at: Completed 03-personalized-migration-04-PLAN.md (PSN-04, PSN-07 closed; Phase 3 Wave 3 half-done; Plan 05 in flight in parallel)
+last_updated: "2026-04-20T03:57:11.752Z"
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 03 (personalized-migration) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 03-personalized-migration P01 | 4min | 2 tasks | 7 files |
 | Phase 03-personalized-migration P03 | 11min | 2 tasks tasks | 5 files files |
 | Phase 03-personalized-migration P05 | 4min | 2 tasks | 2 files |
+| Phase 03-personalized-migration P04 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 03-personalized-migration]: Plan 05 cross-phase regression-guard contract established: every future federated module migration ships a sibling @pytest.mark.slow subprocess test asserting (a) selected_clients_per_round byte-identity and (b) byte-identity of module-specific per-client LOCAL disk state. Phase 4 adaptive adds logit_alpha + item_perturbation checks; Phase 5 pfedrec checks affine_output.pt.
 - [Phase 03-personalized-migration]: Plan 05 @pytest.mark.slow intentionally unregistered (no pyproject/conftest marker registration); matches Phase 2 Plan 05 precedent. Registering would require editing scripts/foundation/pyproject.toml outside this plan's scope; warning-level PytestUnknownMarkWarning is harmless and consistent.
 - [Phase 03-personalized-migration]: Plan 05 test _probe_cache_dir() checks both repo-root .embedding_cache/ AND module-root federated-personalized-cf/.embedding_cache/ because Phase 3 Plan 03's _CACHE_BASE_DIR resolves to the module dir while the test subprocess CWD is the repo root; dual-probe avoids introducing a new FEDREC_CACHE_ROOT env-var contract.
+- [Phase 03-personalized-migration]: Plan 04 server_app cross-device migration: mode resolver owns canonical hyperparams (D-25 — every context.run_config.get(key, profile.field)); D-02 frozen-cross-silo NotImplementedError fires BEFORE any model or data work; G-03-01 discovery round + partition_to_node_id built pre-loop; PSN-04 _server_sampler = server_rng(run_seed) with range(N) partition-id-space sampling; PersonalizedSplitFedAvg/FedProx wire-up replaces raw FedAvg/FedProx; D-27 in-memory best-round restore; D-15 double-write manifest with module='personalized'; D-13 cold-start counter is Phase-3-unique (probes .embedding_cache/{run_id}/partition_{pid}.pt before each round; results_data['cold_starts'] has per_round/total/rate fields; short-circuits to 0 under D-09 reuse-cache); centralized eval block NOT ported (split learning cannot run server-side model forward — no LOCAL user rows on the server); W&B default 'federated-cf-cross-device' for cross-device modes; run_id materialized EARLY so server cold-start probe and client cache path coincide; checkpoint_rule accepts both 'best_round_restore' and 'best_round' spellings; stdlib random eradicated module-wide.
 
 ### Todos
 
@@ -147,7 +149,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 03-personalized-migration-05-PLAN.md (PSN-04/PSN-05 regression-prevention axis closed; D-10 cache-hygiene helper shipped; Phase 3 migration COMPLETE across all 7 PSN requirements)
+**Stopped at:** Completed 03-personalized-migration-04-PLAN.md (PSN-04, PSN-07 closed; Phase 3 Wave 3 half-done; Plan 05 in flight in parallel)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

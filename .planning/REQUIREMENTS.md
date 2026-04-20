@@ -56,7 +56,7 @@ Migrate `federated-personalized-cf` (split learning with local user embeddings).
 - [x] **PSN-04**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics (FND-04, FND-05, FND-06).
 - [x] **PSN-05**: `.embedding_cache/` path includes run-id + method + num_users + num_items + dim + split_hash; loads hard-fail on mismatch.
 - [x] **PSN-06**: Local user-embedding row collapses from shape `(num_users, d)` to a single local row or key lookup, avoiding the global-table ghost.
-- [ ] **PSN-07**: Module logs FND-07 protocol fingerprint.
+- [x] **PSN-07**: Module logs FND-07 protocol fingerprint.
 
 ### Adaptive Migration & Bug Fixes (ADP)
 
@@ -151,7 +151,7 @@ Deferred beyond this thesis cycle.
 | PSN-04 | Phase 3: Personalized Migration | Complete |
 | PSN-05 | Phase 3: Personalized Migration | Complete |
 | PSN-06 | Phase 3: Personalized Migration | Complete |
-| PSN-07 | Phase 3: Personalized Migration | Pending |
+| PSN-07 | Phase 3: Personalized Migration | Complete |
 | ADP-01 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-02 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-03 | Phase 4: Adaptive Migration & Bug Fixes | Pending |

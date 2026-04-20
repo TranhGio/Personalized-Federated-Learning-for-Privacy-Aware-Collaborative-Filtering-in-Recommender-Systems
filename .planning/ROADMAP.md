@@ -67,7 +67,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 03-personalized-migration-01-PLAN.md — PersonalizedSplitFedAvg/FedProx strategy (D-20, D-23) + BPRMF/BasicMF single-row refactor (D-01, D-03) — Wave 1 parallel
   - [x] 03-personalized-migration-02-PLAN.md — pyproject cross-device defaults (PSN-01) + dataset.py foundation adapter (D-17) + D-02 NotImplementedError — Wave 1 parallel
   - [x] 03-personalized-migration-03-PLAN.md — client_app.py + task.py contract wire + D-04..D-10 manifest-sidecar cache (PSN-02, PSN-03, PSN-05, PSN-06) — Wave 2
-  - [ ] 03-personalized-migration-04-PLAN.md — server_app.py main loop + discovery round + partition-id sampling + D-13 cold-start + D-15 manifest (PSN-04, PSN-07) — Wave 3
+  - [x] 03-personalized-migration-04-PLAN.md — server_app.py main loop + discovery round + partition-id sampling + D-13 cold-start + D-15 manifest (PSN-04, PSN-07) — Wave 3
   - [x] 03-personalized-migration-05-PLAN.md — scripts/clean_cache.py + subprocess determinism regression guard (PSN-04/05) — Wave 3
 
 ### Phase 4: Adaptive Migration & Bug Fixes
