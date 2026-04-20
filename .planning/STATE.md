@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 4 context gathered
-last_updated: "2026-04-20T07:22:34.465Z"
+stopped_at: Completed 04-adaptive-migration-bug-fixes-01-PLAN.md
+last_updated: "2026-04-20T08:33:22.051Z"
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 22
+  completed_plans: 17
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -20,14 +20,14 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 03 — personalized-migration
+**Current focus:** Phase 04 — adaptive-migration-bug-fixes
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (adaptive-migration-bug-fixes) — EXECUTING
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 03-personalized-migration P03 | 11min | 2 tasks tasks | 5 files files |
 | Phase 03-personalized-migration P05 | 4min | 2 tasks | 2 files |
 | Phase 03-personalized-migration P04 | 6min | 2 tasks | 2 files |
+| Phase 04-adaptive-migration-bug-fixes P01 | 7min | 2 tasks tasks | 5 files files |
 
 ## Accumulated Context
 
@@ -117,6 +118,10 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 03-personalized-migration]: Plan 05 @pytest.mark.slow intentionally unregistered (no pyproject/conftest marker registration); matches Phase 2 Plan 05 precedent. Registering would require editing scripts/foundation/pyproject.toml outside this plan's scope; warning-level PytestUnknownMarkWarning is harmless and consistent.
 - [Phase 03-personalized-migration]: Plan 05 test _probe_cache_dir() checks both repo-root .embedding_cache/ AND module-root federated-personalized-cf/.embedding_cache/ because Phase 3 Plan 03's _CACHE_BASE_DIR resolves to the module dir while the test subprocess CWD is the repo root; dual-probe avoids introducing a new FEDREC_CACHE_ROOT env-var contract.
 - [Phase 03-personalized-migration]: Plan 04 server_app cross-device migration: mode resolver owns canonical hyperparams (D-25 — every context.run_config.get(key, profile.field)); D-02 frozen-cross-silo NotImplementedError fires BEFORE any model or data work; G-03-01 discovery round + partition_to_node_id built pre-loop; PSN-04 _server_sampler = server_rng(run_seed) with range(N) partition-id-space sampling; PersonalizedSplitFedAvg/FedProx wire-up replaces raw FedAvg/FedProx; D-27 in-memory best-round restore; D-15 double-write manifest with module='personalized'; D-13 cold-start counter is Phase-3-unique (probes .embedding_cache/{run_id}/partition_{pid}.pt before each round; results_data['cold_starts'] has per_round/total/rate fields; short-circuits to 0 under D-09 reuse-cache); centralized eval block NOT ported (split learning cannot run server-side model forward — no LOCAL user rows on the server); W&B default 'federated-cf-cross-device' for cross-device modes; run_id materialized EARLY so server cold-start probe and client cache path coincide; checkpoint_rule accepts both 'best_round_restore' and 'best_round' spellings; stdlib random eradicated module-wide.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 01 aggregate_fit OVERRIDE diverges from Phase 3 pure-inheritance: adaptive module has server-side EMA prototype state beyond GLOBAL params, so D-23 preserved via explicit super().aggregate_fit() call inside the override — verified by unittest.mock.patch spy test. Duplicated across FedAvg/FedProx subclasses to avoid diamond inheritance with BaseFedProx.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 01 best_prototype lives on strategy object (symmetry with Phase 2 D-27 best_arrays): self.best_prototype: Optional[np.ndarray] initialized to None on both subclasses; snapshot_best_prototype(round_num, embedding_dim) deep-copies the live EMA or falls back to np.zeros(embedding_dim) + WARNING per D-08. D-08 degenerate-case handling ships inside the strategy (not server_app.py) so the call site is a one-liner and the fallback is strategy-unit-testable.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 01 LOCAL_PARAM_KEYS_BASE (_BASE suffix) is load-bearing naming: strategy-layer frozenset declares the BASE invariant (user_embeddings.weight + user_bias.weight stay LOCAL); runtime expansion (_logit_alpha, _item_perturbation, personal_mlp.*, fusion_*) is the model's responsibility via DualPersonalizedBPRMF._LOCAL_PARAMS property (untouched by Phase 4). Prevents accidental single-source-of-truth drift when enable_per_user_alpha / enable_item_perturbation toggle.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 01 ADP-02 fingerprint test pattern against UNMODIFIED DualPersonalizedBPRMF: 3 GREEN tests pin (a) flags-off baseline keys absent, (b) flags-on key presence, (c) round-trip save→load-with-correct-ordering restores sentinel tensor values. Model unchanged by Phase 4 — its _LOCAL_PARAMS property already responds correctly to enable flags; Phase 4's fix lives in Plan 03 client_app.py which reorders the enable_* calls BEFORE load_local_user_embeddings. This test is the defense-in-depth regression guard at the model-unit level.
 
 ### Todos
 
@@ -149,7 +154,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Phase 4 context gathered
+**Stopped at:** Completed 04-adaptive-migration-bug-fixes-01-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

@@ -79,7 +79,13 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. With `enable-per-user-alpha=true` and `enable-item-perturbation=true`, the cached `_logit_alpha.weight` and `item_perturbation` tensors from round N are demonstrably loaded at the start of round N+1 (not re-initialized from the heuristic), e.g. alpha values drift continuously across rounds rather than snapping back to the heuristic each round.
   3. When early stopping restores the best round, the server prototype EMA (`p_global`) restored for the final evaluation equals the EMA at that best round — not the last-round EMA.
   4. The hierarchical-conditional / multi-factor / data-quantity alpha factory produces values in `[0.1, 0.95]` for the documented edge-case user-stats inputs (unit test), and the module logs the Phase-1 protocol fingerprint with server-side sampling seeded and evaluator RNG fixed.
-**Plans**: TBD
+**Plans**: 6 plans
+  - [x] 04-adaptive-migration-bug-fixes-01-PLAN.md — AdaptiveSplitFedAvg/FedProx strategy with best_prototype snapshot (ADP-03, ADP-06, D-05) + DualPersonalizedBPRMF enable-before-load fingerprint tests (ADP-02) — Wave 1 parallel
+  - [ ] 04-adaptive-migration-bug-fixes-02-PLAN.md — pyproject cross-device defaults + schema-v2 signature keys (ADP-01) + dataset.py foundation adapter (D-17) + D-02 NotImplementedError at both entry points — Wave 1 parallel
+  - [ ] 04-adaptive-migration-bug-fixes-03-PLAN.md — task.py FND-06/FND-03/D-13/D-14 cold-round + D-24 ghost-table isolation (ADP-05, ADP-06 RNG) + client_app.py ADP-02 enable-before-load ordering fix + schema_v2 manifest-sidecar cache + alpha diagnostics (ADP-02, ADP-04, ADP-06 client) — Wave 2
+  - [ ] 04-adaptive-migration-bug-fixes-04-PLAN.md — ADP-07 alpha factory clip-bounds + HC rule-branch coverage tests against unmodified adaptive_alpha.py — Wave 2 parallel
+  - [ ] 04-adaptive-migration-bug-fixes-05-PLAN.md — server_app.py AdaptiveSplitFedAvg wire-up + D-05/D-06/D-07 best_prototype snapshot/embed/restore + D-13/D-15/D-16/D-27 + D-02 guard (ADP-03, ADP-06, ADP-08) — Wave 3
+  - [ ] 04-adaptive-migration-bug-fixes-06-PLAN.md — Subprocess determinism regression guard for schema-v2 cache including _logit_alpha + _item_perturbation + best_prototype byte-identity (ADP-06) — Wave 3
 
 ### Phase 5: PFedRec Migration & Reproduction
 **Goal**: `federated-pfedrec` is re-audited from scratch against `IJCAI-23-PFedRec/`, divergences are resolved with explicit keep-flower / align-to-reference decisions, the module runs cross-device, and it reproduces the published IJCAI-23 numbers within ±2 points on HR@10 and NDCG@10 under `paper_compat_pfedrec` mode.
@@ -121,7 +127,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 1. Foundation Contract | 6/6 | Complete | 2026-04-19 |
 | 2. Baseline Migration | 0/4 | Planned | - |
 | 3. Personalized Migration | 0/5 | Planned | - |
-| 4. Adaptive Migration & Bug Fixes | 0/0 | Not started | - |
+| 4. Adaptive Migration & Bug Fixes | 0/6 | Planned | - |
 | 5. PFedRec Migration & Reproduction | 0/0 | Not started | - |
 | 6. Evaluation & Reporting Harness | 0/0 | Not started | - |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
@@ -154,3 +160,4 @@ All 52 v1 requirements mapped. No orphans. No duplicates.
 
 ---
 *Roadmap created: 2026-04-19*
+*Last updated: 2026-04-20 — Phase 4 plans 01-06 created (ADP-01..08 coverage).*

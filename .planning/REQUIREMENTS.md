@@ -64,10 +64,10 @@ Migrate `federated-adaptive-personalized-cf` (thesis contribution) and fix the d
 
 - [ ] **ADP-01**: `federated-adaptive-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
 - [ ] **ADP-02**: `enable_per_user_alpha()` and `enable_item_perturbation()` are called BEFORE `load_local_user_embeddings()` so `_logit_alpha.weight` and `item_perturbation` are in `_LOCAL_PARAMS` at load time; cached per-round values are restored instead of re-initialized.
-- [ ] **ADP-03**: Server-side prototype EMA (`p_global`) is saved as part of the best-round checkpoint and restored at final evaluation time.
+- [x] **ADP-03**: Server-side prototype EMA (`p_global`) is saved as part of the best-round checkpoint and restored at final evaluation time.
 - [ ] **ADP-04**: Benchmark-mode one-user assertion in `client_app.py`.
 - [ ] **ADP-05**: Training negatives exclude the held-out test positive (FND-03).
-- [ ] **ADP-06**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics; run-scoped cache (FND-04, FND-05, FND-06 + PSN-05 pattern).
+- [x] **ADP-06**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics; run-scoped cache (FND-04, FND-05, FND-06 + PSN-05 pattern).
 - [ ] **ADP-07**: Hierarchical-conditional / multi-factor / data-quantity alpha factory works unchanged in the cross-device setting; a unit test asserts alpha values fall in `[0.1, 0.95]` for edge-case user-stats inputs.
 - [ ] **ADP-08**: Module logs FND-07 protocol fingerprint.
 
@@ -154,10 +154,10 @@ Deferred beyond this thesis cycle.
 | PSN-07 | Phase 3: Personalized Migration | Complete |
 | ADP-01 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-02 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
-| ADP-03 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-03 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
 | ADP-04 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-05 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
-| ADP-06 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-06 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
 | ADP-07 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-08 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | PFR-01 | Phase 5: PFedRec Migration & Reproduction | Pending |
