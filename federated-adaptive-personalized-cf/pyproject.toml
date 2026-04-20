@@ -26,6 +26,9 @@ dependencies = [
     "wandb>=0.19.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
@@ -92,10 +95,11 @@ partition-mode = "natural"  # "dirichlet" (cross-silo) or "natural" (cross-devic
 # Formula: p̃_u = α * p_local + (1 - α) * p_global
 
 # Alpha method selection
-alpha-method = "multi_factor"     # Options: "data_quantity", "multi_factor", or "hierarchical_conditional"
-                                  # - data_quantity: Single factor (interaction count only)
-                                  # - multi_factor: 4-factor weighted sum (may have factor conflicts)
-                                  # - hierarchical_conditional: Addresses factor conflicts via grouping + rules
+alpha-method = "hierarchical_conditional"     # Options: "data_quantity", "multi_factor", or "hierarchical_conditional"
+                                  # Phase 4 benchmark default (CONTEXT D-10): hierarchical_conditional — the thesis contribution.
+                                  # - data_quantity: Single factor (interaction count only) (ablation override)
+                                  # - multi_factor: 4-factor weighted sum (ablation override — may have factor conflicts)
+                                  # - hierarchical_conditional: Addresses factor conflicts via grouping + rules (benchmark default)
 
 # Common alpha parameters
 alpha-min = 0.1                    # Minimum personalization (even sparse users get some local)
@@ -154,16 +158,20 @@ alpha-hc-completionist-bonus = 0.1          # Alpha bonus for completionists
 
 # Per-User Learned Alpha: replaces client-level scalar with per-user gradient-refined alpha
 # Initialized from hierarchical_conditional heuristic, then refined by BPR gradient descent
-enable-per-user-alpha = false      # When true, each user gets own learnable alpha (LOCAL)
+# Phase 4 benchmark default (CONTEXT D-03 + D-12): unconditionally ON in benchmark_cross_device
+# mode — D-03 ordering fix guarantees this LOCAL param is in _LOCAL_PARAMS at load time.
+enable-per-user-alpha = true       # When true, each user gets own learnable alpha (LOCAL)
 
 # Dual-Side Item Perturbation: local adjustments to global item embeddings
 # q_effective[i] = q_global[i] + perturbation[i], perturbation is LOCAL
-enable-item-perturbation = false   # When true, adds learnable local offset to item embeddings
+# Phase 4 benchmark default (CONTEXT D-03 + D-12): unconditionally ON in benchmark_cross_device mode.
+enable-item-perturbation = true    # When true, adds learnable local offset to item embeddings
 item-perturbation-reg = 0.01      # L2 regularization on perturbation magnitudes
 
 # Contrastive Local-Global Alignment: InfoNCE auxiliary loss
 # L_total = L_BPR + lambda * L_contrastive
-contrastive-lambda = 0.0          # Weight for contrastive loss (0.0 = disabled)
+# Phase 4 benchmark default (CONTEXT D-12): contrastive-lambda=0.1 — InfoNCE on (p_local, p_effective).
+contrastive-lambda = 0.1          # Weight for contrastive loss (0.0 = disabled; 0.1 = benchmark default)
 contrastive-tau = 0.1             # Temperature for InfoNCE similarity scaling
 
 # Global prototype aggregation
@@ -182,7 +190,19 @@ ranking-k-values = "10"      # K values for Hit Rate, Precision, Recall, NDCG me
 
 # Evaluation protocol
 eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
-eval-num-negatives = 99            # Number of negative samples for sampled evaluation
+# (eval-num-negatives is declared below in the "Phase 3/4 cross-device / foundation-contract keys" block)
+
+# =============================================================================
+# Phase 3 cross-device / foundation-contract keys (carry-forward from Phase 3 Plan 02)
+# =============================================================================
+# The canonical runtime source is fedrec_foundation.mode.resolve_mode_defaults(mode).
+# These values are FALLBACK only (consulted when the launcher did not pre-set them).
+mode = "cross_silo_legacy"  # flipped to "benchmark_cross_device" by scripts/run.py adaptive benchmark_cross_device
+run-seed = 42
+weight-policy = "num_positives"
+eval-num-negatives = 99
+checkpoint-rule = "best_round_restore"
+reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs
 
 # =============================================================================
 # Early Stopping Configuration
@@ -206,12 +226,20 @@ default = "local-sim-gpu"
 
 # Local simulation federation (CPU-only)
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 5
+# ==== Cross-device default: 1 user = 1 client (N=6040). ====
+# To reproduce legacy cross-silo numbers, check out a pre-Phase-4 commit and
+# override via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet"
+# (Note: partition-mode=dirichlet raises NotImplementedError per D-02 at the dataset layer.)
+options.num-supernodes = 6040
 
 # GPU-enabled simulation federation (requires PyTorch with CUDA support)
 # Run with: flwr run . local-sim-gpu
 [tool.flwr.federations.local-sim-gpu]
-options.num-supernodes = 5
+# ==== Cross-device default: 1 user = 1 client (N=6040). ====
+# To reproduce legacy cross-silo numbers, check out a pre-Phase-4 commit and
+# override via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet"
+# (Note: partition-mode=dirichlet raises NotImplementedError per D-02 at the dataset layer.)
+options.num-supernodes = 6040
 options.backend.client-resources.num-cpus = 6
 options.backend.client-resources.num-gpus = 0.2
 
