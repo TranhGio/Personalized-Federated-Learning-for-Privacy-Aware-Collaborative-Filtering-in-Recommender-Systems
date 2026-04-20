@@ -30,6 +30,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 - ✓ Codebase map (`.planning/codebase/*.md`) documenting current architecture and known concerns — existing
 - ✓ Shared cross-device foundation contract (`fedrec-foundation` package) — validated in Phase 1: canonical ID mapping (6040 users × 3706 items), deterministic LOO split manifest, per-user exclusion set, primary evaluator selector, weight policy, three sha256-namespaced RNG factories, run manifest with composite `foundation_contract_sha256`, federation-level launcher. On disk under `scripts/foundation/` and `data/derived/`; wired as local-path dep into all 4 federated modules.
 - ✓ `federated-baseline-cf` migrated to cross-device — validated in Phase 2: `num-supernodes = 6040` + `partition-mode = "natural"` defaults, one-user-per-client benchmark assertion on train/evaluate, FND-06 RNG factories wired into DataLoader + negative sampling, test positive excluded from training negatives, `BaselineFedAvg`/`BaselineFedProx` compute server-side NDCG@10/HR@10 (overall + per-group) via summed sufficient-stats, best-round restore + D-15 double-write manifest. 22/22 baseline + 77/77 foundation tests GREEN. BSL-01..08 satisfied.
+- ✓ `federated-personalized-cf` migrated to cross-device split-learning — validated in Phase 3: `num-supernodes = 6040` + `partition-mode = "natural"` defaults, one-user-per-client benchmark assertion, `PersonalizedSplitFedAvg`/`FedProx` with sufficient-stat `aggregate_evaluate` + `aggregate_fit` inherited unchanged (D-23), BPRMF/BasicMF collapsed to single-row `nn.Parameter` (no more `num_users × d` ghost table; disk payload per client ~516 B vs ~3 MB), run-namespaced manifest-sidecar embedding cache with hard-fail signature mismatch, FND-06 RNG factories wired into DataLoader + negative sampling, held-out test item excluded from training negatives via FND-03 ExclusionTable, discovery-round + partition-id-space seeded sampling, D-27 best-round restore + D-15 double-write manifest (`module="personalized"`), D-13 cold-start counter. 34/34 personalized + 81/81 foundation tests GREEN. PSN-01..07 satisfied.
 
 ### Active
 
@@ -37,15 +38,15 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 
 **Cross-device migration (Milestone 1):**
 
-- [ ] All four Flower modules run with `num-supernodes = 6040` and `partition-mode = "natural"` (1 user = 1 client) as the primary configuration — `federated-baseline-cf` DONE in Phase 2 (remaining: Phases 3/4/5)
+- [ ] All four Flower modules run with `num-supernodes = 6040` and `partition-mode = "natural"` (1 user = 1 client) as the primary configuration — `federated-baseline-cf` DONE in Phase 2, `federated-personalized-cf` DONE in Phase 3 (remaining: Phases 4/5)
 - [ ] Per-round client sampling fraction C is treated as a hyperparameter and swept; defaults chosen per module match the published FedRec protocol the module calibrates against
 - [ ] A single standardized evaluation harness (leave-one-out + 99 negatives, NCF protocol) is used across all four modules so cross-module comparisons are apples-to-apples
 - [ ] Per-user-group metrics (sparse 0–30 / medium 30–100 / dense 100+) reported for every run
 - [ ] Known `federated-pfedrec` bugs (tracked in `.planning/codebase/CONCERNS.md`) are re-discovered from the IJCAI-23 reference and fixed as part of the migration — we do NOT trust the prior note list
-- [ ] Test-positive-leaks-into-training-negatives bug fixed in all four modules (`user_rated_items` must include the held-out test item) — DONE for `federated-baseline-cf` in Phase 2 (remaining: Phases 3/4/5)
+- [ ] Test-positive-leaks-into-training-negatives bug fixed in all four modules (`user_rated_items` must include the held-out test item) — DONE for `federated-baseline-cf` in Phase 2, DONE for `federated-personalized-cf` in Phase 3 (remaining: Phases 4/5)
 - [ ] Per-user learned alpha and item perturbation actually accumulate across rounds (fix `enable_per_user_alpha` / `enable_item_perturbation` ordering vs `load_local_user_embeddings`)
 - [ ] Early stopping checkpoints best-round parameters instead of reporting last-round metrics
-- [ ] Server-level seed set so per-round client selection and evaluation negative sampling are reproducible — DONE for `federated-baseline-cf` in Phase 2 (remaining: Phases 3/4/5)
+- [ ] Server-level seed set so per-round client selection and evaluation negative sampling are reproducible — DONE for `federated-baseline-cf` in Phase 2, DONE for `federated-personalized-cf` in Phase 3 (remaining: Phases 4/5)
 - [ ] Embedding cache is experiment-scoped (doesn't silently contaminate across runs with different hyperparameters)
 
 **Reproduction (Milestone 1):**
@@ -119,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after Phase 2 (Baseline Migration) completion — BSL-01..08 shipped, `federated-baseline-cf` now cross-device by default (6040 supernodes, natural partition, seeded sampling, sufficient-stat aggregation, protocol fingerprint), 22/22 baseline + 77/77 foundation tests GREEN. Phases 3, 4, 5 are now parallelizable.*
+*Last updated: 2026-04-20 after Phase 3 (Personalized Migration) completion — PSN-01..07 shipped, `federated-personalized-cf` now cross-device split-learning by default (6040 supernodes, natural partition, single-row models, manifest-sidecar cache, discovery round, seeded partition-id sampling, D-15 double-write, D-13 cold-start counter), 34/34 personalized + 81/81 foundation tests GREEN. Phases 4 (adaptive) and 5 (pfedrec) remain parallelizable.*
