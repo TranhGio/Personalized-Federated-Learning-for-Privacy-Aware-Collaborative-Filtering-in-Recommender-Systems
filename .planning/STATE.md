@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-personalized-migration-01-PLAN.md (PSN-06 closed; Plans 01+02 both shipped)
-last_updated: "2026-04-20T00:00:00.000Z"
+stopped_at: Completed 03-personalized-migration-03-PLAN.md (PSN-02, PSN-03, PSN-04 client half, PSN-05, PSN-06 disk shape closed; Phase 3 Wave 2 done; Wave 3 = Plans 04 + 05 ready)
+last_updated: "2026-04-20T03:42:38.377Z"
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 03 (personalized-migration) — EXECUTING
-Plan: 2 of 5 complete (01 + 02 shipped; 03/04/05 pending — Wave 2/3)
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 02-baseline-migration P05 | 11min | 5 tasks | 6 files |
 | Phase 03-personalized-migration P02 | 3min | 2 tasks | 3 files |
 | Phase 03-personalized-migration P01 | 4min | 2 tasks | 7 files |
+| Phase 03-personalized-migration P03 | 11min | 2 tasks tasks | 5 files files |
 
 ## Accumulated Context
 
@@ -104,6 +105,11 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 03-personalized-migration]: [Phase 03-personalized-migration Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (tightens baseline Plan 02 which only raised in one). Error message includes D-02, cross-device, pre-Phase-3 tokens — matches test assertion. Cross-phase contract: Phases 3+ modules whose cross-silo path is permanently frozen raise at every dataset entry point.
 - [Phase 03-personalized-migration]: Plan 01 D-23 preserved via identity check (PersonalizedSplitFedAvg.aggregate_fit is BaseFedAvg.aggregate_fit) — parent's weighted-average-of-GLOBAL-params is correct because split-learning clients only return GLOBAL params (item_embeddings.weight, item_bias.weight, global_bias). Only aggregate_evaluate is overridden, cloned from Phase 2 baseline with frozenset contents flipped. PersonalizedSplitFedProx.aggregate_evaluate is an EXACT COPY (not super()) of the FedAvg branch to avoid diamond-inheritance with BaseFedProx; module-level helpers keep duplication at 4 lines.
 - [Phase 03-personalized-migration]: Plan 01 D-01 single-row models SHIPPED: BPRMF + BasicMF collapsed from nn.Embedding(num_users, embedding_dim) ghost table to two nn.Parameter tensors — local_user_row shape (d,), local_user_bias shape (1,). forward()/forward_item_only()/_compute_score() no longer take user_ids; num_users retained as constructor arg only (not stored as attribute — the client IS one user). get/set_local_parameters operate on 2-key OrderedDict({'local_user_row', 'local_user_bias'}); per-client on-disk payload drops from ~3 MB (6040×128×4B) to ~516 B (128+1 floats) — the primary PSN-06 win. BasicMF has no use_bias toggle; bias is always present (constructor asymmetry vs BPRMF). BPRMF use_bias=False branch uses register_buffer(..., persistent=False) so local_user_bias attribute exists uniformly without leaking to state_dict().
+- [Phase 03-personalized-migration]: Plan 03 D-04..D-10 manifest-sidecar cache SHIPPED: .embedding_cache/{run_id}/manifest.json (schema_version=1 + 6-field signature via atomic_write_json) + .embedding_cache/{run_id}/partition_{pid}.pt (2-key single-row state dict via tempfile+os.replace). D-05 loud-mismatch RuntimeError with per-field delta + literal 'rm -rf' hint. D-09 reuse_cache=true switches to .embedding_cache/sig_<sha256[:16]>/ (run_id-agnostic). D-10 shape guard fires on BOTH save (before disk write) and load (after torch.load).
+- [Phase 03-personalized-migration]: Plan 03 D-24 NOT ported from Phase 2: single-row model (D-01) collapses the ghost-table problem. local_user_row is a nn.Parameter(shape=(d,)), not a row of a user table — Adam weight-decay+momentum can only update it; no cross-row leakage to protect against. 3 D-24 helpers (_apply_user_row_grad_mask / _snapshot_non_user_rows / _restore_non_user_rows) from Phase 2 task.py are intentionally absent.
+- [Phase 03-personalized-migration]: Plan 03 discover_only short-circuit is the FIRST check in @app.evaluate — before mode resolve, before data load, before model load. Only needs partition_id from context.node_config. Keeps the G-03-01 discovery round O(N=6040) message handling cheap and removes any dependence on the foundation bundle being loadable at discovery time.
+- [Phase 03-personalized-migration]: Plan 03 Rule-1 auto-fix: torch.save's PyTorchFileWriter rejects tempfile names starting with '.'. Changed _save_local_user_state tempfile prefix from '.partition_' to 'partition_tmp_' (plus explicit '.pt' suffix) — atomicity preserved via unchanged os.replace(tmp, pt_path). 1-line fix folded into Task 2 commit a0b8bf8.
+- [Phase 03-personalized-migration]: Plan 03 module-level _CACHE_BASE_DIR exposed for test-time monkeypatching — tests redirect to pytest tmp_path. Production code only reads it; this avoids both (a) touching the real .embedding_cache/ in tests (flaky) and (b) requiring a full Flower simulation to exercise the cache path (slow).
 
 ### Todos
 
@@ -136,7 +142,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 03-personalized-migration-01-PLAN.md (PSN-06 closed; Plans 01+02 both shipped — Phase 3 Wave 1 DONE, Wave 2 ready to start)
+**Stopped at:** Completed 03-personalized-migration-03-PLAN.md (PSN-02, PSN-03, PSN-04 client half, PSN-05, PSN-06 disk shape closed; Phase 3 Wave 2 done; Wave 3 = Plans 04 + 05 ready)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

@@ -64,9 +64,9 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   3. A client's local user-state footprint at training time is a single-user row (or keyed lookup), not a `num_users × d` ghost table, and after a round only GLOBAL params (item embeddings, item bias, global bias) are returned to the server while the local user row and bias stay on disk.
   4. Training negatives for a client never include that user's held-out test item, and the result artifact carries the Phase-1 protocol fingerprint with headline metrics computed at the server from sufficient statistics.
 **Plans**: 5 plans
-  - [ ] 03-personalized-migration-01-PLAN.md — PersonalizedSplitFedAvg/FedProx strategy (D-20, D-23) + BPRMF/BasicMF single-row refactor (D-01, D-03) — Wave 1 parallel
+  - [x] 03-personalized-migration-01-PLAN.md — PersonalizedSplitFedAvg/FedProx strategy (D-20, D-23) + BPRMF/BasicMF single-row refactor (D-01, D-03) — Wave 1 parallel
   - [x] 03-personalized-migration-02-PLAN.md — pyproject cross-device defaults (PSN-01) + dataset.py foundation adapter (D-17) + D-02 NotImplementedError — Wave 1 parallel
-  - [ ] 03-personalized-migration-03-PLAN.md — client_app.py + task.py contract wire + D-04..D-10 manifest-sidecar cache (PSN-02, PSN-03, PSN-05, PSN-06) — Wave 2
+  - [x] 03-personalized-migration-03-PLAN.md — client_app.py + task.py contract wire + D-04..D-10 manifest-sidecar cache (PSN-02, PSN-03, PSN-05, PSN-06) — Wave 2
   - [ ] 03-personalized-migration-04-PLAN.md — server_app.py main loop + discovery round + partition-id sampling + D-13 cold-start + D-15 manifest (PSN-04, PSN-07) — Wave 3
   - [ ] 03-personalized-migration-05-PLAN.md — scripts/clean_cache.py + subprocess determinism regression guard (PSN-04/05) — Wave 3
 
