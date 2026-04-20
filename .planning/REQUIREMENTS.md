@@ -62,7 +62,7 @@ Migrate `federated-personalized-cf` (split learning with local user embeddings).
 
 Migrate `federated-adaptive-personalized-cf` (thesis contribution) and fix the documented per-user-alpha / item-perturbation / prototype bugs.
 
-- [ ] **ADP-01**: `federated-adaptive-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
+- [x] **ADP-01**: `federated-adaptive-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
 - [ ] **ADP-02**: `enable_per_user_alpha()` and `enable_item_perturbation()` are called BEFORE `load_local_user_embeddings()` so `_logit_alpha.weight` and `item_perturbation` are in `_LOCAL_PARAMS` at load time; cached per-round values are restored instead of re-initialized.
 - [x] **ADP-03**: Server-side prototype EMA (`p_global`) is saved as part of the best-round checkpoint and restored at final evaluation time.
 - [ ] **ADP-04**: Benchmark-mode one-user assertion in `client_app.py`.
@@ -152,7 +152,7 @@ Deferred beyond this thesis cycle.
 | PSN-05 | Phase 3: Personalized Migration | Complete |
 | PSN-06 | Phase 3: Personalized Migration | Complete |
 | PSN-07 | Phase 3: Personalized Migration | Complete |
-| ADP-01 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-01 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
 | ADP-02 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-03 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
 | ADP-04 | Phase 4: Adaptive Migration & Bug Fixes | Pending |

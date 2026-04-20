@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-adaptive-migration-bug-fixes-01-PLAN.md
-last_updated: "2026-04-20T08:33:22.051Z"
+stopped_at: Completed 04-adaptive-migration-bug-fixes Plan 02 (ADP-01 + D-17 + D-02 + D-18)
+last_updated: "2026-04-20T08:34:45.502Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 04 (adaptive-migration-bug-fixes) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 03-personalized-migration P05 | 4min | 2 tasks | 2 files |
 | Phase 03-personalized-migration P04 | 6min | 2 tasks | 2 files |
 | Phase 04-adaptive-migration-bug-fixes P01 | 7min | 2 tasks tasks | 5 files files |
+| Phase 04-adaptive-migration-bug-fixes P02 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 01 best_prototype lives on strategy object (symmetry with Phase 2 D-27 best_arrays): self.best_prototype: Optional[np.ndarray] initialized to None on both subclasses; snapshot_best_prototype(round_num, embedding_dim) deep-copies the live EMA or falls back to np.zeros(embedding_dim) + WARNING per D-08. D-08 degenerate-case handling ships inside the strategy (not server_app.py) so the call site is a one-liner and the fallback is strategy-unit-testable.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 01 LOCAL_PARAM_KEYS_BASE (_BASE suffix) is load-bearing naming: strategy-layer frozenset declares the BASE invariant (user_embeddings.weight + user_bias.weight stay LOCAL); runtime expansion (_logit_alpha, _item_perturbation, personal_mlp.*, fusion_*) is the model's responsibility via DualPersonalizedBPRMF._LOCAL_PARAMS property (untouched by Phase 4). Prevents accidental single-source-of-truth drift when enable_per_user_alpha / enable_item_perturbation toggle.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 01 ADP-02 fingerprint test pattern against UNMODIFIED DualPersonalizedBPRMF: 3 GREEN tests pin (a) flags-off baseline keys absent, (b) flags-on key presence, (c) round-trip save→load-with-correct-ordering restores sentinel tensor values. Model unchanged by Phase 4 — its _LOCAL_PARAMS property already responds correctly to enable flags; Phase 4's fix lives in Plan 03 client_app.py which reorders the enable_* calls BEFORE load_local_user_embeddings. This test is the defense-in-depth regression guard at the model-unit level.
+- [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: ADP-01 closed in-file — pyproject.toml flipped to cross-device defaults (6040 supernodes in BOTH local-simulation and local-sim-gpu federations) + 6 Phase-3 carry-forward contract keys (mode/run-seed/weight-policy/eval-num-negatives/checkpoint-rule/reuse-cache) + 5 Phase-4 signature-driving thesis defaults (alpha-method=hierarchical_conditional, enable-per-user-alpha=true, enable-item-perturbation=true, contrastive-lambda=0.1) per CONTEXT D-09..D-12; pytest dev dep exclusively owned. Duplicate eval-num-negatives declaration auto-consolidated.
+- [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: D-17 rip-and-replace completed in federated-adaptive-personalized-cf/dataset.py — 8 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, compute_user_stats, compute_partition_user_stats, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data and load_full_data preserve the 7-tuple return (including user_stats) sourced from SplitManifest.train_user_stats via a 4-line _per_user_stats_to_dict translator — task.py::compute_client_alpha/compute_per_user_alpha receive the same field names (n_interactions/genre_entropy/n_unique_items/rating_std) without any changes.
+- [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (Phase-3 tightening pattern). Error message tokens D-02, cross-device, pre-Phase-4 match test assertion. D-18 preserved verbatim: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users. Wave-1 disjoint-file ownership held: Plan 02 touched pyproject.toml + dataset.py + 2 new test files ONLY; Plan 01 owns strategy.py + its 4 test files; both committed with --no-verify.
 
 ### Todos
 
@@ -154,7 +158,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 04-adaptive-migration-bug-fixes-01-PLAN.md
+**Stopped at:** Completed 04-adaptive-migration-bug-fixes Plan 02 (ADP-01 + D-17 + D-02 + D-18)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
