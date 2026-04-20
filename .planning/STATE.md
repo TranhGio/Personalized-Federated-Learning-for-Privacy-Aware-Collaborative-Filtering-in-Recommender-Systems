@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-adaptive-migration-bug-fixes Plan 02 (ADP-01 + D-17 + D-02 + D-18)
-last_updated: "2026-04-20T08:34:45.502Z"
+stopped_at: Completed 04-adaptive-migration-bug-fixes Plan 04 (ADP-07)
+last_updated: "2026-04-20T08:41:47.381Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 22
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 04 (adaptive-migration-bug-fixes) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 03-personalized-migration P04 | 6min | 2 tasks | 2 files |
 | Phase 04-adaptive-migration-bug-fixes P01 | 7min | 2 tasks tasks | 5 files files |
 | Phase 04-adaptive-migration-bug-fixes P02 | 7min | 2 tasks | 4 files |
+| Phase 04-adaptive-migration-bug-fixes P04 | 2min | 1 task tasks | 1 file files |
 
 ## Accumulated Context
 
@@ -126,6 +127,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: ADP-01 closed in-file — pyproject.toml flipped to cross-device defaults (6040 supernodes in BOTH local-simulation and local-sim-gpu federations) + 6 Phase-3 carry-forward contract keys (mode/run-seed/weight-policy/eval-num-negatives/checkpoint-rule/reuse-cache) + 5 Phase-4 signature-driving thesis defaults (alpha-method=hierarchical_conditional, enable-per-user-alpha=true, enable-item-perturbation=true, contrastive-lambda=0.1) per CONTEXT D-09..D-12; pytest dev dep exclusively owned. Duplicate eval-num-negatives declaration auto-consolidated.
 - [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: D-17 rip-and-replace completed in federated-adaptive-personalized-cf/dataset.py — 8 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, compute_user_stats, compute_partition_user_stats, dirichlet_partition_users, create_train_test_split) + _partition_cache. load_partition_data and load_full_data preserve the 7-tuple return (including user_stats) sourced from SplitManifest.train_user_stats via a 4-line _per_user_stats_to_dict translator — task.py::compute_client_alpha/compute_per_user_alpha receive the same field names (n_interactions/genre_entropy/n_unique_items/rating_std) without any changes.
 - [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (Phase-3 tightening pattern). Error message tokens D-02, cross-device, pre-Phase-4 match test assertion. D-18 preserved verbatim: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users. Wave-1 disjoint-file ownership held: Plan 02 touched pyproject.toml + dataset.py + 2 new test files ONLY; Plan 01 owns strategy.py + its 4 test files; both committed with --no-verify.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 04 ADP-07 regression surface shipped: 18 pytest items (12 functions + 8 parametrize expansions) against UNMODIFIED adaptive_alpha.py factory pin (a) clip bounds [0.1, 0.95] across all 3 alpha classes on adversarial edge-case inputs, (b) each of 4 HC rule branches fires on designed trigger and appears in applied_rules, (c) factory closed-enum whitelist on unknown method string. D-18 scope held: git diff --stat federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/ from Plan 04 commit is empty. Wave-2 file disjointness: Plan 04 touched ONLY tests/test_alpha_factory.py; Plan 03 owns client_app.py + task.py + 3 other test files.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 04 test input tracing pattern: every expected output traced against production formula before file creation (sigmoid endpoints + rule-branch thresholds) -> TDD lands GREEN on first run; HierarchicalConditionalAlpha._compute_quantity_factor returns RAW sigmoid (unlike MultiFactorAlpha._compute_quantity_factor which clips at line 339), so niche-bonus test relies on f_q raw ~0.993 > 0.6 threshold; regression surface for any future silent removal of np.clip at adaptive_alpha.py lines 208/306/339/486.
 
 ### Todos
 
@@ -158,7 +161,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 04-adaptive-migration-bug-fixes Plan 02 (ADP-01 + D-17 + D-02 + D-18)
+**Stopped at:** Completed 04-adaptive-migration-bug-fixes Plan 04 (ADP-07)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

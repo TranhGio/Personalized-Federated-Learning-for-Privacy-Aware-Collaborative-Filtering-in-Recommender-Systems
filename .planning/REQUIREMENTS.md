@@ -68,7 +68,7 @@ Migrate `federated-adaptive-personalized-cf` (thesis contribution) and fix the d
 - [ ] **ADP-04**: Benchmark-mode one-user assertion in `client_app.py`.
 - [ ] **ADP-05**: Training negatives exclude the held-out test positive (FND-03).
 - [x] **ADP-06**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics; run-scoped cache (FND-04, FND-05, FND-06 + PSN-05 pattern).
-- [ ] **ADP-07**: Hierarchical-conditional / multi-factor / data-quantity alpha factory works unchanged in the cross-device setting; a unit test asserts alpha values fall in `[0.1, 0.95]` for edge-case user-stats inputs.
+- [x] **ADP-07**: Hierarchical-conditional / multi-factor / data-quantity alpha factory works unchanged in the cross-device setting; a unit test asserts alpha values fall in `[0.1, 0.95]` for edge-case user-stats inputs.
 - [ ] **ADP-08**: Module logs FND-07 protocol fingerprint.
 
 ### Evaluation & Reporting Harness (EVL)
@@ -158,7 +158,7 @@ Deferred beyond this thesis cycle.
 | ADP-04 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-05 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | ADP-06 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
-| ADP-07 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
+| ADP-07 | Phase 4: Adaptive Migration & Bug Fixes | Complete |
 | ADP-08 | Phase 4: Adaptive Migration & Bug Fixes | Pending |
 | PFR-01 | Phase 5: PFedRec Migration & Reproduction | Pending |
 | PFR-02 | Phase 5: PFedRec Migration & Reproduction | Pending |

@@ -83,7 +83,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 04-adaptive-migration-bug-fixes-01-PLAN.md — AdaptiveSplitFedAvg/FedProx strategy with best_prototype snapshot (ADP-03, ADP-06, D-05) + DualPersonalizedBPRMF enable-before-load fingerprint tests (ADP-02) — Wave 1 parallel
   - [x] 04-adaptive-migration-bug-fixes-02-PLAN.md — pyproject cross-device defaults + schema-v2 signature keys (ADP-01) + dataset.py foundation adapter (D-17) + D-02 NotImplementedError at both entry points — Wave 1 parallel
   - [ ] 04-adaptive-migration-bug-fixes-03-PLAN.md — task.py FND-06/FND-03/D-13/D-14 cold-round + D-24 ghost-table isolation (ADP-05, ADP-06 RNG) + client_app.py ADP-02 enable-before-load ordering fix + schema_v2 manifest-sidecar cache + alpha diagnostics (ADP-02, ADP-04, ADP-06 client) — Wave 2
-  - [ ] 04-adaptive-migration-bug-fixes-04-PLAN.md — ADP-07 alpha factory clip-bounds + HC rule-branch coverage tests against unmodified adaptive_alpha.py — Wave 2 parallel
+  - [x] 04-adaptive-migration-bug-fixes-04-PLAN.md — ADP-07 alpha factory clip-bounds + HC rule-branch coverage tests against unmodified adaptive_alpha.py — Wave 2 parallel
   - [ ] 04-adaptive-migration-bug-fixes-05-PLAN.md — server_app.py AdaptiveSplitFedAvg wire-up + D-05/D-06/D-07 best_prototype snapshot/embed/restore + D-13/D-15/D-16/D-27 + D-02 guard (ADP-03, ADP-06, ADP-08) — Wave 3
   - [ ] 04-adaptive-migration-bug-fixes-06-PLAN.md — Subprocess determinism regression guard for schema-v2 cache including _logit_alpha + _item_perturbation + best_prototype byte-identity (ADP-06) — Wave 3
 
