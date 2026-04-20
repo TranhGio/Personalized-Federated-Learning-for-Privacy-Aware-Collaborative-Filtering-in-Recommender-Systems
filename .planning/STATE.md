@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-personalized-migration-03-PLAN.md (PSN-02, PSN-03, PSN-04 client half, PSN-05, PSN-06 disk shape closed; Phase 3 Wave 2 done; Wave 3 = Plans 04 + 05 ready)
-last_updated: "2026-04-20T03:42:38.377Z"
+stopped_at: Completed 03-personalized-migration-05-PLAN.md (PSN-04/PSN-05 regression-prevention axis closed; D-10 cache-hygiene helper shipped; Phase 3 migration COMPLETE across all 7 PSN requirements)
+last_updated: "2026-04-20T03:53:26.166Z"
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 03 (personalized-migration) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 03-personalized-migration P02 | 3min | 2 tasks | 3 files |
 | Phase 03-personalized-migration P01 | 4min | 2 tasks | 7 files |
 | Phase 03-personalized-migration P03 | 11min | 2 tasks tasks | 5 files files |
+| Phase 03-personalized-migration P05 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,10 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 03-personalized-migration]: Plan 03 discover_only short-circuit is the FIRST check in @app.evaluate — before mode resolve, before data load, before model load. Only needs partition_id from context.node_config. Keeps the G-03-01 discovery round O(N=6040) message handling cheap and removes any dependence on the foundation bundle being loadable at discovery time.
 - [Phase 03-personalized-migration]: Plan 03 Rule-1 auto-fix: torch.save's PyTorchFileWriter rejects tempfile names starting with '.'. Changed _save_local_user_state tempfile prefix from '.partition_' to 'partition_tmp_' (plus explicit '.pt' suffix) — atomicity preserved via unchanged os.replace(tmp, pt_path). 1-line fix folded into Task 2 commit a0b8bf8.
 - [Phase 03-personalized-migration]: Plan 03 module-level _CACHE_BASE_DIR exposed for test-time monkeypatching — tests redirect to pytest tmp_path. Production code only reads it; this avoids both (a) touching the real .embedding_cache/ in tests (flaky) and (b) requiring a full Flower simulation to exercise the cache path (slow).
+- [Phase 03-personalized-migration]: Plan 05 clean_cache.py placed at repo-root scripts/ (alongside scripts/run.py launcher) rather than per-module — aligns with the single-launcher discipline from Phase 1 Plan 05.
+- [Phase 03-personalized-migration]: Plan 05 cross-phase regression-guard contract established: every future federated module migration ships a sibling @pytest.mark.slow subprocess test asserting (a) selected_clients_per_round byte-identity and (b) byte-identity of module-specific per-client LOCAL disk state. Phase 4 adaptive adds logit_alpha + item_perturbation checks; Phase 5 pfedrec checks affine_output.pt.
+- [Phase 03-personalized-migration]: Plan 05 @pytest.mark.slow intentionally unregistered (no pyproject/conftest marker registration); matches Phase 2 Plan 05 precedent. Registering would require editing scripts/foundation/pyproject.toml outside this plan's scope; warning-level PytestUnknownMarkWarning is harmless and consistent.
+- [Phase 03-personalized-migration]: Plan 05 test _probe_cache_dir() checks both repo-root .embedding_cache/ AND module-root federated-personalized-cf/.embedding_cache/ because Phase 3 Plan 03's _CACHE_BASE_DIR resolves to the module dir while the test subprocess CWD is the repo root; dual-probe avoids introducing a new FEDREC_CACHE_ROOT env-var contract.
 
 ### Todos
 
@@ -142,7 +147,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 03-personalized-migration-03-PLAN.md (PSN-02, PSN-03, PSN-04 client half, PSN-05, PSN-06 disk shape closed; Phase 3 Wave 2 done; Wave 3 = Plans 04 + 05 ready)
+**Stopped at:** Completed 03-personalized-migration-05-PLAN.md (PSN-04/PSN-05 regression-prevention axis closed; D-10 cache-hygiene helper shipped; Phase 3 migration COMPLETE across all 7 PSN requirements)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*

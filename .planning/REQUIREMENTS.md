@@ -53,7 +53,7 @@ Migrate `federated-personalized-cf` (split learning with local user embeddings).
 - [x] **PSN-01**: `federated-personalized-cf/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
 - [x] **PSN-02**: Benchmark-mode one-user assertion in `client_app.py`.
 - [x] **PSN-03**: Training negatives exclude the held-out test positive (FND-03).
-- [ ] **PSN-04**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics (FND-04, FND-05, FND-06).
+- [x] **PSN-04**: Server-side sampling seeded; evaluator RNG fixed; sufficient-stat metrics (FND-04, FND-05, FND-06).
 - [x] **PSN-05**: `.embedding_cache/` path includes run-id + method + num_users + num_items + dim + split_hash; loads hard-fail on mismatch.
 - [x] **PSN-06**: Local user-embedding row collapses from shape `(num_users, d)` to a single local row or key lookup, avoiding the global-table ghost.
 - [ ] **PSN-07**: Module logs FND-07 protocol fingerprint.
@@ -148,7 +148,7 @@ Deferred beyond this thesis cycle.
 | PSN-01 | Phase 3: Personalized Migration | Complete |
 | PSN-02 | Phase 3: Personalized Migration | Complete |
 | PSN-03 | Phase 3: Personalized Migration | Complete |
-| PSN-04 | Phase 3: Personalized Migration | Pending |
+| PSN-04 | Phase 3: Personalized Migration | Complete |
 | PSN-05 | Phase 3: Personalized Migration | Complete |
 | PSN-06 | Phase 3: Personalized Migration | Complete |
 | PSN-07 | Phase 3: Personalized Migration | Pending |
