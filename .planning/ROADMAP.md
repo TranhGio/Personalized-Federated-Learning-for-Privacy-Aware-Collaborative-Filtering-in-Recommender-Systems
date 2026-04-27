@@ -15,7 +15,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 - [x] **Phase 1: Foundation Contract** — Shared cross-device protocol (ID mapping, LOO manifest, exclusion set, primary evaluator, weight policy, seeding, run manifest) consumed by all four modules. (completed 2026-04-19)
 - [x] **Phase 2: Baseline Migration** — `federated-baseline-cf` moved to cross-device with seeded sampling, sufficient-stat metrics, and protocol fingerprint. (completed 2026-04-19)
 - [x] **Phase 3: Personalized Migration** — `federated-personalized-cf` (split-learning) moved to cross-device with run-namespaced cache and one-user client semantics. (completed 2026-04-20)
-- [ ] **Phase 4: Adaptive Migration & Bug Fixes** — `federated-adaptive-personalized-cf` (thesis module) moved to cross-device; per-user alpha / item perturbation / prototype accumulation bugs fixed.
+- [x] **Phase 4: Adaptive Migration & Bug Fixes** — `federated-adaptive-personalized-cf` (thesis module) moved to cross-device; per-user alpha / item perturbation / prototype accumulation bugs fixed. (completed 2026-04-28)
 - [ ] **Phase 5: PFedRec Migration & Reproduction** — `federated-pfedrec` re-audited against IJCAI-23 reference, migrated, and reproduces published HR@10 / NDCG@10 within ±2 points.
 - [ ] **Phase 6: Evaluation & Reporting Harness** — Best-round restore, per-user-group metrics, protocol fingerprint manifests, dedicated cross-device W&B project.
 - [ ] **Phase 7: Thesis Evaluation Run** — Standardized cross-device comparison + ablations; adaptive beats all baselines on overall and sparse-user NDCG@10.
@@ -128,7 +128,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 1. Foundation Contract | 6/6 | Complete | 2026-04-19 |
 | 2. Baseline Migration | 5/5 | Complete | 2026-04-19 |
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
-| 4. Adaptive Migration & Bug Fixes | 6/6 | Pending verification | - |
+| 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
 | 5. PFedRec Migration & Reproduction | 0/0 | Not started | - |
 | 6. Evaluation & Reporting Harness | 0/0 | Not started | - |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
@@ -161,4 +161,4 @@ All 52 v1 requirements mapped. No orphans. No duplicates.
 
 ---
 *Roadmap created: 2026-04-19*
-*Last updated: 2026-04-27 — backfilled Phase 2 + Phase 3 completion (both verified passed); Phase 4 plans 6/6 delivered, awaiting verification.*
+*Last updated: 2026-04-28 — Phase 4 verified passed after GAP-04-01 hot-fix (commit a03f7bf); 4/7 phases Complete; Phase 5 (PFedRec migration) is next.*
