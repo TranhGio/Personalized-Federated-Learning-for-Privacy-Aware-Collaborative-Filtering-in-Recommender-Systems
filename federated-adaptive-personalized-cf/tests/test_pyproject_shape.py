@@ -32,7 +32,10 @@ def test_phase3_foundation_contract_keys_present():
     d = _load()
     cfg = d["tool"]["flwr"]["app"]["config"]
     assert cfg["partition-mode"] == "natural"
-    assert cfg["mode"] == "cross_silo_legacy"  # launcher flips to benchmark_cross_device
+    # Default mode flipped 2026-04-27: cross-device is the canonical thesis path.
+    # Cross-silo escape hatch preserved via explicit --run-config "mode=cross_silo_legacy"
+    # (which still raises NotImplementedError per D-02). Commit 83b5120.
+    assert cfg["mode"] == "benchmark_cross_device"
     assert cfg["run-seed"] == 42
     assert cfg["weight-policy"] == "num_positives"
     assert cfg["eval-num-negatives"] == 99

@@ -285,6 +285,56 @@ def _cold_start_cache_root(run_id: str, reuse_cache: bool) -> Path:
     return Path(".embedding_cache") / run_id
 
 
+def _extract_sibling_records(
+    record_dict: RecordDict,
+    metrics_dict: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Merge top-level RecordDict sibling records into ``metrics_dict`` (D-05/D-06/D-16).
+
+    The Phase-4 client-server contract puts ``user_prototype`` and ``alpha_diagnostics``
+    as TOP-LEVEL sibling records in the response RecordDict (separate from the strict
+    ``metrics`` key) per D-21 — the FitMetricsContract validator rejects free-form
+    inline extras, so the client routes these payloads as their own MetricRecords
+    (see ``client_app.py`` lines 741 + 747). Downstream consumers
+    (``AdaptiveSplitFedAvg._aggregate_prototypes`` for the prototype EMA, the D-16
+    alpha-diagnostics aggregator inside ``main()``) both read from
+    ``fit_res.metrics``; without this merge the siblings are silently dropped,
+    surfacing at runtime as ``best_prototype = [0.0] * embedding_dim`` (D-08
+    fallback) and ``alpha_diagnostics_history`` missing from the result JSON.
+
+    Closes UAT GAP-04-01 surfaced by ``20260427-132620-eb2d19_results.json``.
+
+    Parameters
+    ----------
+    record_dict : RecordDict
+        Full ``response.content`` from a train Message reply.
+    metrics_dict : Dict[str, Any]
+        Mutable dict already populated from the strict ``metrics`` MetricRecord.
+        Mutated in place.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Same ``metrics_dict`` reference with ``user_prototype`` (List[float]) and
+        ``alpha_diagnostics`` (Dict[str, float]) merged in when their sibling
+        records are present.
+    """
+    proto_record = record_dict.get(USER_PROTOTYPE_KEY)
+    if proto_record is not None:
+        proto_dict = dict(proto_record)
+        proto_payload = proto_dict.get(USER_PROTOTYPE_KEY)
+        if isinstance(proto_payload, (list, tuple)):
+            metrics_dict[USER_PROTOTYPE_KEY] = list(proto_payload)
+
+    alpha_record = record_dict.get("alpha_diagnostics")
+    if alpha_record is not None:
+        alpha_dict = dict(alpha_record)
+        if alpha_dict:
+            metrics_dict["alpha_diagnostics"] = alpha_dict
+
+    return metrics_dict
+
+
 @app.main()
 def main(grid: Grid, context: Context) -> None:
     """Main entry point for the ServerApp (Phase 4 Plan 05).
@@ -670,6 +720,12 @@ def main(grid: Grid, context: Context) -> None:
             resp_metrics = response.content.get("metrics", MetricRecord())
 
             metrics_dict = dict(resp_metrics) if resp_metrics else {}
+            # D-05/D-06/D-16: merge sibling RecordDict records (user_prototype +
+            # alpha_diagnostics) into metrics_dict so strategy._aggregate_prototypes
+            # and the alpha-diagnostics aggregator can read them via fit_res.metrics.
+            # Without this, the siblings emitted by client_app.py:741, 747 are
+            # silently dropped (UAT GAP-04-01).
+            _extract_sibling_records(response.content, metrics_dict)
             num_examples = int(metrics_dict.get(
                 "num_training_examples",
                 metrics_dict.get("num-examples", 1),

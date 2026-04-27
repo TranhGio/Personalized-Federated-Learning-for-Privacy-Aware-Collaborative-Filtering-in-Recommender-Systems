@@ -302,3 +302,122 @@ def test_snapshot_best_prototype_called_inside_best_metric_branch() -> None:
         "D-07 violated: prototype restore code statement must follow "
         "`arrays = best_arrays` in source order"
     )
+
+
+# =============================================================================
+# UAT GAP-04-01: Sibling RecordDict extraction (D-05/D-06/D-16 runtime fix)
+# =============================================================================
+# Surfaced by results/federated/adaptive/20260427-132620-eb2d19_results.json:
+# best_prototype was [0.0]*128 + alpha_diagnostics_history was missing because
+# server_app.py:670 only extracted the strict "metrics" MetricRecord and dropped
+# the sibling user_prototype + alpha_diagnostics records that the client emits
+# as separate top-level RecordDict records (per client_app.py:741, 747 — the
+# strict FitMetricsContract D-21 forbids inline free-form extras).
+#
+# These tests pin the post-fix contract: the helper merges siblings into
+# metrics_dict so strategy._aggregate_prototypes (strategy.py:228) and the D-16
+# alpha aggregator (server_app.py:725) read them via fit_res.metrics.
+
+def test_extract_sibling_records_user_prototype() -> None:
+    """D-05/D-06: ``user_prototype`` sibling -> ``metrics_dict[USER_PROTOTYPE_KEY]`` list.
+
+    Constructs a RecordDict in the exact shape ``client_app.py`` emits at line 741
+    and asserts the helper unwraps the inner List[float] into ``metrics_dict``
+    where ``AdaptiveSplitFedAvg._aggregate_prototypes`` can read it.
+    """
+    from flwr.common.record import MetricRecord, RecordDict
+
+    from federated_adaptive_personalized_cf.server_app import _extract_sibling_records
+    from federated_adaptive_personalized_cf.strategy import USER_PROTOTYPE_KEY
+
+    proto_payload = [0.1, 0.2, 0.3, 0.4, 0.5]
+    record_dict = RecordDict({
+        "metrics": MetricRecord({
+            "hit_count_overall_at10": 1,
+            "evaluated_users": 1,
+        }),
+        USER_PROTOTYPE_KEY: MetricRecord({USER_PROTOTYPE_KEY: proto_payload}),
+    })
+    metrics_dict = {"hit_count_overall_at10": 1, "evaluated_users": 1}
+
+    result = _extract_sibling_records(record_dict, metrics_dict)
+
+    assert USER_PROTOTYPE_KEY in result, (
+        "GAP-04-01 regressed: user_prototype sibling not merged into metrics_dict"
+    )
+    assert list(result[USER_PROTOTYPE_KEY]) == proto_payload, (
+        f"user_prototype payload corrupted: expected {proto_payload}, "
+        f"got {result[USER_PROTOTYPE_KEY]}"
+    )
+    # Mutates in place + returns same reference
+    assert result is metrics_dict
+    # Original metrics keys preserved
+    assert result["hit_count_overall_at10"] == 1
+    assert result["evaluated_users"] == 1
+
+
+def test_extract_sibling_records_alpha_diagnostics() -> None:
+    """D-16: ``alpha_diagnostics`` sibling -> ``metrics_dict["alpha_diagnostics"]`` dict.
+
+    Pins the contract that the D-16 server-side aggregator at server_app.py:725
+    reads ``fit_res.metrics["alpha_diagnostics"]`` (a Dict[str, float] with the
+    6 scalar fields) populated by this helper from the sibling MetricRecord
+    emitted by client_app.py:747.
+    """
+    from flwr.common.record import MetricRecord, RecordDict
+
+    from federated_adaptive_personalized_cf.server_app import _extract_sibling_records
+
+    alpha_payload = {
+        "alpha_mean": 0.55,
+        "alpha_std": 0.12,
+        "alpha_p25": 0.42,
+        "alpha_p50": 0.55,
+        "alpha_p75": 0.68,
+        "alpha_clip_hit_rate": 0.05,
+    }
+    record_dict = RecordDict({
+        "metrics": MetricRecord({}),
+        "alpha_diagnostics": MetricRecord(alpha_payload),
+    })
+    metrics_dict: dict = {}
+
+    _extract_sibling_records(record_dict, metrics_dict)
+
+    assert "alpha_diagnostics" in metrics_dict, (
+        "GAP-04-01 regressed: alpha_diagnostics sibling not merged into metrics_dict"
+    )
+    assert metrics_dict["alpha_diagnostics"] == alpha_payload, (
+        f"alpha_diagnostics payload corrupted: expected {alpha_payload}, "
+        f"got {metrics_dict['alpha_diagnostics']}"
+    )
+
+
+def test_extract_sibling_records_no_siblings_no_op() -> None:
+    """No siblings -> ``metrics_dict`` unchanged (defensive).
+
+    Required because not every client emits both siblings (e.g., the
+    ``compute_user_prototype`` hook returns None for a model without a personal
+    user row, and ``alpha_diagnostics`` is None when ``enable_per_user_alpha=false``).
+    The server must still build a valid fit_res in those cases without injecting
+    spurious ``user_prototype: None`` or ``alpha_diagnostics: {}`` entries.
+    """
+    from flwr.common.record import MetricRecord, RecordDict
+
+    from federated_adaptive_personalized_cf.server_app import _extract_sibling_records
+    from federated_adaptive_personalized_cf.strategy import USER_PROTOTYPE_KEY
+
+    record_dict = RecordDict({"metrics": MetricRecord({"foo": 1})})
+    metrics_dict = {"foo": 1}
+
+    _extract_sibling_records(record_dict, metrics_dict)
+
+    assert USER_PROTOTYPE_KEY not in metrics_dict, (
+        "Spurious user_prototype injected when sibling absent"
+    )
+    assert "alpha_diagnostics" not in metrics_dict, (
+        "Spurious alpha_diagnostics injected when sibling absent"
+    )
+    assert metrics_dict == {"foo": 1}, (
+        f"metrics_dict corrupted by no-op path: {metrics_dict}"
+    )
