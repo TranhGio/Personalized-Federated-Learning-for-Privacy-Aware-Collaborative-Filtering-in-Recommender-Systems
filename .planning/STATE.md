@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-adaptive-migration-bug-fixes Plan 04 (ADP-07)
-last_updated: "2026-04-20T08:41:47.381Z"
+stopped_at: Completed 04-adaptive-migration-bug-fixes Plan 05 (ADP-03 + ADP-06 + ADP-08)
+last_updated: "2026-04-27T11:06:17.127Z"
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 22
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 04 (adaptive-migration-bug-fixes) — EXECUTING
-Plan: 4 of 6
+Plan: 3 of 6
 
 ## Performance Metrics
 
@@ -57,6 +57,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 04-adaptive-migration-bug-fixes P01 | 7min | 2 tasks tasks | 5 files files |
 | Phase 04-adaptive-migration-bug-fixes P02 | 7min | 2 tasks | 4 files |
 | Phase 04-adaptive-migration-bug-fixes P04 | 2min | 1 task tasks | 1 file files |
+| Phase 04-adaptive-migration-bug-fixes P06 | 4min | 1 tasks | 1 files |
+| Phase 04-adaptive-migration-bug-fixes P05 | 6min | 2 tasks tasks | 2 files files |
 
 ## Accumulated Context
 
@@ -129,6 +131,11 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 04-adaptive-migration-bug-fixes]: [Phase 04-adaptive-migration-bug-fixes Plan 02]: D-02 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (Phase-3 tightening pattern). Error message tokens D-02, cross-device, pre-Phase-4 match test assertion. D-18 preserved verbatim: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users. Wave-1 disjoint-file ownership held: Plan 02 touched pyproject.toml + dataset.py + 2 new test files ONLY; Plan 01 owns strategy.py + its 4 test files; both committed with --no-verify.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 04 ADP-07 regression surface shipped: 18 pytest items (12 functions + 8 parametrize expansions) against UNMODIFIED adaptive_alpha.py factory pin (a) clip bounds [0.1, 0.95] across all 3 alpha classes on adversarial edge-case inputs, (b) each of 4 HC rule branches fires on designed trigger and appears in applied_rules, (c) factory closed-enum whitelist on unknown method string. D-18 scope held: git diff --stat federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/ from Plan 04 commit is empty. Wave-2 file disjointness: Plan 04 touched ONLY tests/test_alpha_factory.py; Plan 03 owns client_app.py + task.py + 3 other test files.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 04 test input tracing pattern: every expected output traced against production formula before file creation (sigmoid endpoints + rule-branch thresholds) -> TDD lands GREEN on first run; HierarchicalConditionalAlpha._compute_quantity_factor returns RAW sigmoid (unlike MultiFactorAlpha._compute_quantity_factor which clips at line 339), so niche-bonus test relies on f_q raw ~0.993 > 0.6 threshold; regression surface for any future silent removal of np.clip at adaptive_alpha.py lines 208/306/339/486.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 06 ADP-06 three-layer regression-guard closure: (1) pure-RNG byte-identity (Phase 1 Plan 04) + (2) server-side seeded sampling integration tests (Phase 4 Plan 05) + (3) end-to-end subprocess byte-identity on selected_clients_per_round + _manifest.best_prototype + per-key torch.equal on schema_version=2 partition_{pid}.pt cache files including _logit_alpha.weight + _item_perturbation.weight (this Plan 06). The G-03-01 bug class cannot silently re-emerge without tripping at least one layer.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 06 best_prototype byte-identity uses pure JSON-list equality (no numeric tolerance). Two same-seed Python runs of np.float32 -> List[float] -> json.dumps -> json.loads should be bit-identical; tolerance would mask exactly the class of regression we want to catch (nondeterministic float reduction order in snapshot_best_prototype). If both runs return None on a degenerate 2-round tiny-config run, pytest.skip cleanly with a clear reason — invariant (a) selected_clients_per_round byte-identity is asserted before the skip-gate.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 06 coverage guard prevents false-GREEN on schema_version=2 cache check. After asserting no torch.equal mismatches, the test scans cache_dir_a for at least one partition_*.pt containing BOTH _logit_alpha.weight AND _item_perturbation.weight. If checked_partitions > 0 but adaptive_key_seen is False, pytest.fail with 'ADP-02 path not actually exercised by this run. Confirm enable-per-user-alpha=true and enable-item-perturbation=true propagated from --run-config.' Catches the silent-config-drift class of failure where a future change to run-config propagation would otherwise let the test pass without exercising the ADP-02 keys.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 06 torch.equal per-key replaces Phase 3's bytes-equality. Phase 4 schema_version=2 payload contains 6+ tensors with potentially different shapes per fusion_type / alpha_method / mlp_hidden_dims; per-tensor comparison gives an actionable failure message naming the divergent key, its shape, dtype, and max_abs_delta — instead of an opaque 'bytes differ' that would force the next debugger to manually torch.load both files. Phase 3's bytes-equality was correct for its 2-key ~516 B payload but doesn't scale to Phase 4's 7+-key adaptive layout. Performance overhead is negligible.
+- [Phase 04-adaptive-migration-bug-fixes]: Plan 05 server_app cross-device migration: D-25 mode resolver + G-03-01 discovery + ADP-06 partition-id-space _server_sampler = server_rng(run_seed) + AdaptiveSplitFedAvg/FedProx wire-up replaces SplitFedAvg/Prox. D-05 best_prototype snapshot fires inside the same checkpoint_rule branch as best_arrays = ArrayRecord(...) at the SAME moment current_ndcg > best_metric (verified by source-level proximity test 7 anchored on src.find('best_metric = current_ndcg')). D-07 paired restore: strategy._global_prototype = strategy.best_prototype runs alongside arrays = best_arrays inside the same post-loop checkpoint-restore block (test uses src.rfind() because the module docstring duplicates the literal restore string). D-06 best_prototype embedded in result JSON via post-embed mutation: results_data['_manifest']['best_prototype'] = list(...) — relies on embed_manifest_in_result returning the same dict (Research §Pattern 2). D-15 double-write with module='adaptive'. D-13 cold-start counter probes .embedding_cache/{run_id}/partition_{pid}.pt; reuse_cache=true short-circuits cold_count to 0 with documented log line. D-16 alpha diagnostics aggregate weights by num_examples (mirrors Phase-2/3 sufficient-stat convention) across the 6 scalar fields alpha_mean/std/p25/p50/p75/clip_hit_rate; logged to W&B + alpha_diagnostics_history. W&B project federated-cf-cross-device for benchmark_cross_device + paper_compat_pfedrec only. D-02 NotImplementedError fires BEFORE any data load. D-18 surgical: DummyClientProxy + weighted_average_metrics + print_evaluation_metrics + EarlyStopping + AlphaAnalyzer + CUDA fallback all preserved verbatim; git diff --stat over strategy.py/dataset.py/client_app.py/task.py/models/pyproject.toml across both Plan 05 commits is empty. stdlib random eradicated module-wide. 7 GREEN tests; suite goes 53 -> 60.
 
 ### Todos
 
@@ -161,7 +168,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 04-adaptive-migration-bug-fixes Plan 04 (ADP-07)
+**Stopped at:** Completed 04-adaptive-migration-bug-fixes Plan 05 (ADP-03 + ADP-06 + ADP-08)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
