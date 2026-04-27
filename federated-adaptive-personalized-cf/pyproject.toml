@@ -197,7 +197,7 @@ eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
 # =============================================================================
 # The canonical runtime source is fedrec_foundation.mode.resolve_mode_defaults(mode).
 # These values are FALLBACK only (consulted when the launcher did not pre-set them).
-mode = "cross_silo_legacy"  # flipped to "benchmark_cross_device" by scripts/run.py adaptive benchmark_cross_device
+mode = "benchmark_cross_device"  # cross-silo opt-in via: flwr run . --run-config "mode=cross_silo_legacy" (raises NotImplementedError per D-02)
 run-seed = 42
 weight-policy = "num_positives"
 eval-num-negatives = 99
