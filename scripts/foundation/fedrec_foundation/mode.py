@@ -138,10 +138,12 @@ _PAPER_COMPAT_PFEDREC = ModeProfile(
     mode="paper_compat_pfedrec",
     num_supernodes=6040,
     partition_mode="natural",
-    # Deferred confirmation to PFR-02; may be overridden per-module.
-    weight_policy="num_positives",
+    # D-24/D-25: Reference engine.py:81 divides by len(round_user_params),
+    # i.e. uniform weight = 1 per participating client. PFR-08 reproduction
+    # requires this. Closes Phase 1 deferred decision.
+    weight_policy="uniform",
     primary_evaluator="sampled_loo_99",
-    fraction_train=1.0,       # paper uses full participation
+    fraction_train=1.0,       # D-06: paper uses full participation
     fraction_eval=1.0,
     num_train_negatives=4,
     num_eval_negatives=99,

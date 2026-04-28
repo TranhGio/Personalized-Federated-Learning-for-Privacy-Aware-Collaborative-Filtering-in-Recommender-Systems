@@ -100,3 +100,31 @@ def test_assertion_skipped_on_override() -> None:
     # Simulate the override dict returned by log_mode_and_overrides.
     overrides = {"num_supernodes": 10}
     assert_benchmark_one_user_per_client(p, num_users_in_client=604, overrides=overrides)
+
+
+def test_paper_compat_pfedrec_weight_policy_uniform() -> None:
+    """D-25: _PAPER_COMPAT_PFEDREC.weight_policy is 'uniform' (was 'num_positives' pre-PFR-02).
+
+    Phase 1 deferred this decision. Phase 5 closes it: reference engine.py:81
+    divides by len(round_user_params) — uniform weight per participating client.
+    """
+    profile = resolve_mode_defaults("paper_compat_pfedrec")
+    assert profile.weight_policy == "uniform", (
+        f"D-25: expected 'uniform', got {profile.weight_policy!r}"
+    )
+    assert profile.fraction_train == 1.0, "D-06: paper uses full participation"
+    assert profile.num_supernodes == 6040
+    assert profile.optimizer == "sgd"
+    assert profile.lr == 0.1
+    assert profile.embedding_dim == 32
+
+    # D-25 documentation regression guard: comment must be removed.
+    import inspect
+
+    import fedrec_foundation.mode as _m
+
+    src = inspect.getsource(_m)
+    assert "Deferred confirmation to PFR-02" not in src, (
+        "D-25 closure incomplete: 'Deferred confirmation to PFR-02' comment "
+        "still in mode.py — remove it when flipping weight_policy to 'uniform'."
+    )

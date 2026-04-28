@@ -1,6 +1,10 @@
 # =====================================================================
 # PFedRec: Personalized Federated Recommendation (IJCAI-23)
 # Calibration baseline: Client-local score function + global item embeddings
+# Phase 5 cross-device migration (PFR-01): num-supernodes=6040, partition-mode=natural,
+# weight_policy=uniform (D-24, paper-compat). fedrec_foundation.mode.resolve_mode_defaults(mode)
+# is the canonical runtime hyperparameter source (D-25); pyproject values below are the
+# fallback / override surface only. Overrides are visible per D-11 ([MODE OVERRIDE] log lines).
 # =====================================================================
 
 [build-system]
@@ -25,6 +29,9 @@ dependencies = [
     "wandb>=0.16.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
@@ -36,16 +43,24 @@ serverapp = "federated_pfedrec.server_app:app"
 clientapp = "federated_pfedrec.client_app:app"
 
 [tool.flwr.app.config]
+# Phase-5 contract keys (D-25 mode resolver canonical hyperparam source).
+# Pyproject is the override surface; the mode profile owns canonical values.
+mode = "paper_compat_pfedrec"     # D-05: paper_compat is the only PFedRec mode
+run-seed = 42                     # FND-06 single source of truth
+weight-policy = "uniform"         # D-24 — matches engine.py:81 (uniform mean over participating clients)
+reuse-cache = false               # D-18 default; --run-config "reuse-cache=true" opt-in
+eval-num-negatives = 99           # NCF protocol (FND-04)
+checkpoint-rule = "best_round_restore"  # D-13 best-round monitor against sampled_ndcg@10
+
 # Federated Learning parameters
 num-server-rounds = 100         # Paper default: 100
-fraction-train = 1.0
+fraction-train = 1.0            # D-06: paper uses full participation
 local-epochs = 1                # Paper default: 1
 
-# Strategy
-strategy = "fedavg"             # Options: "fedavg" or "fedprox"
-proximal-mu = 0.0               # Proximal term for FedProx
+# Strategy (D-07: FedProx dropped for PFedRec — paper does not use it)
+strategy = "fedavg"
 
-# PFedRec Model parameters
+# PFedRec Model parameters (D-15 strict hyperparam lock — paper-faithful values)
 latent-dim = 32                 # Paper default: 32
 batch-size = 256                # Paper default: 256
 
@@ -56,15 +71,14 @@ lr-eta = 80                     # Paper default: 80 (item embedding LR multiplie
 num-negatives = 4               # Paper default: 4 (negative samples per positive)
 l2-regularization = 0.0         # Paper default: 0.0
 
-# Data partitioning
-alpha = 0.5                     # Dirichlet concentration (lower = more non-IID)
-partition-mode = "natural"      # "dirichlet" (cross-silo) or "natural" (cross-device, 1 user = 1 client)
+# Data partitioning (Phase 5 PFR-01: cross-device default)
+alpha = 0.5                     # Dirichlet concentration (legacy, unused under partition-mode=natural)
+partition-mode = "natural"      # D-09: cross-silo (dirichlet) FROZEN at pre-Phase-5 commits
 
 # Evaluation (same protocol as other modules)
 enable-ranking-eval = true
 ranking-k-values = "5,10,20"
 eval-split-mode = "leave-one-out"
-eval-num-negatives = 99
 
 # Early stopping
 early-stopping-enabled = false
@@ -73,9 +87,9 @@ early-stopping-metric = "sampled_ndcg@10"
 early-stopping-mode = "max"
 early-stopping-min-delta = 0.001
 
-# Weights & Biases
+# Weights & Biases (D-10: empty wandb-project => server_app.py defaults to federated-cf-cross-device)
 wandb-enabled = true
-wandb-project = "federated-pfedrec"
+wandb-project = ""
 wandb-entity = ""
 wandb-run-name = ""
 
@@ -84,9 +98,9 @@ wandb-run-name = ""
 default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 5
+options.num-supernodes = 6040   # PFR-01: cross-device (1 user = 1 client). To run cross-silo, check out a pre-Phase-5 commit.
 
 [tool.flwr.federations.local-sim-gpu]
-options.num-supernodes = 5
+options.num-supernodes = 6040   # PFR-01: cross-device (1 user = 1 client). Same opt-in note as above.
 options.backend.client-resources.num-cpus = 12
 options.backend.client-resources.num-gpus = 0.2
