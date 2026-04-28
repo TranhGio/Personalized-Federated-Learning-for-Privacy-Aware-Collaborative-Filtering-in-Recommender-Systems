@@ -39,10 +39,10 @@ Migrate `federated-pfedrec`, close the IJCAI-23 reference gap, and reproduce pub
 - [x] **PFR-01**: `federated-pfedrec/pyproject.toml` defaults to `num-supernodes = 6040` and `partition-mode = "natural"`.
 - [x] **PFR-02**: Re-audit Flower-vs-`IJCAI-23-PFedRec/` divergence from scratch; produce a diff table covering aggregation policy, `affine_output.weight` vs `.bias` scope, participation fraction, eval protocol, train negative handling, and early-stopping rule. Decide each divergence as `keep-flower` / `align-to-reference` and log the rationale.
 - [x] **PFR-03**: PFedRec per-user head (`affine_output.weight` + `affine_output.bias`) is saved and loaded as one atomic artifact per user keyed by stable `user_idx`; cache hard-fails on shape or schema mismatch.
-- [ ] **PFR-04**: Training negatives exclude the held-out test positive (FND-03); unit test asserts this.
-- [ ] **PFR-05**: Client-side partition-scope loop over `user_test_items.keys()` is collapsed to a single-user path in benchmark mode.
-- [ ] **PFR-06**: Server-side sampling, evaluator RNG, sufficient-statistic aggregation match the Foundation contract (FND-04, FND-05, FND-06).
-- [ ] **PFR-07**: Training negatives are re-sampled every round (not cached across rounds).
+- [x] **PFR-04**: Training negatives exclude the held-out test positive (FND-03); unit test asserts this.
+- [x] **PFR-05**: Client-side partition-scope loop over `user_test_items.keys()` is collapsed to a single-user path in benchmark mode.
+- [x] **PFR-06**: Server-side sampling, evaluator RNG, sufficient-statistic aggregation match the Foundation contract (FND-04, FND-05, FND-06).
+- [x] **PFR-07**: Training negatives are re-sampled every round (not cached across rounds).
 - [ ] **PFR-08**: Flower PFedRec reproduces the IJCAI-23 reference on ML-1M: HR@10 and NDCG@10 within ±2 points of paper numbers (HR@10 ≈ 0.729, NDCG@10 ≈ 0.441 at round 89), under `paper_compat_pfedrec` mode (dim=32, SGD lr=0.1, BCE, 1 local epoch, 4 training negatives, 100 rounds).
 - [x] **PFR-09**: Module logs the FND-07 protocol fingerprint alongside results.
 
@@ -163,10 +163,10 @@ Deferred beyond this thesis cycle.
 | PFR-01 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-02 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-03 | Phase 5: PFedRec Migration & Reproduction | Complete |
-| PFR-04 | Phase 5: PFedRec Migration & Reproduction | Pending |
-| PFR-05 | Phase 5: PFedRec Migration & Reproduction | Pending |
-| PFR-06 | Phase 5: PFedRec Migration & Reproduction | Pending |
-| PFR-07 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-04 | Phase 5: PFedRec Migration & Reproduction | Complete |
+| PFR-05 | Phase 5: PFedRec Migration & Reproduction | Complete |
+| PFR-06 | Phase 5: PFedRec Migration & Reproduction | Complete |
+| PFR-07 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-08 | Phase 5: PFedRec Migration & Reproduction | Pending |
 | PFR-09 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | EVL-01 | Phase 6: Evaluation & Reporting Harness | Pending |

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-pfedrec-migration-reproduction-01-PLAN.md
-last_updated: "2026-04-28T09:37:25.392Z"
+stopped_at: Completed 05-pfedrec-migration-reproduction-03-PLAN.md
+last_updated: "2026-04-28T18:09:03.979Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 05 (pfedrec-migration-reproduction) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 04-adaptive-migration-bug-fixes P05 | 6min | 2 tasks tasks | 2 files files |
 | Phase 05-pfedrec-migration-reproduction P02 | 4m 38s | 2 tasks | 6 files |
 | Phase 05-pfedrec-migration-reproduction P01 | 6min | 3 tasks tasks | 6 files files |
+| Phase 05 P03 | 12min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,12 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-25 closes Phase-1 deferred decision — _PAPER_COMPAT_PFEDREC.weight_policy flipped 'num_positives' -> 'uniform' in scripts/foundation/fedrec_foundation/mode.py; matches engine.py:81 reference (uniform mean over participating clients) which PFR-08 reproduction requires. 'Deferred confirmation to PFR-02' comment removed; documentation regression guard test pins this.
 - [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-17 rip-and-replace completed in federated-pfedrec/federated_pfedrec/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. Foundation-adapter scaffolding includes _FoundationBundle dataclass with all 4 IMP-2 fingerprints (mapping_sha256, split_hash, exclusion_sha256, raw_data_hash) surfaced for Plan 04's manifest. D-18 preserved verbatim: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users.
 - [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-09 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (Phase-3/Phase-4 D-02 tightening pattern). Error message tokens 'D-09', 'cross-device', 'pre-Phase-5' all present per test assertions. Plan 02 ships only the D-09 guard layer + adapter scaffolding; the natural-path body is Plan 03's scope (clearly-marked NotImplementedError with 'Plan 03 implements...' message). Wave-1 disjoint file ownership held: Plan 02 touched pyproject.toml + dataset.py + mode.py + 3 test files ONLY; Plan 01 owns strategy.py + pfedrec_mlp.py + their tests; both commits with --no-verify.
+- [Phase 05]: Plan 03 BSL-05 cross-file regression: zero stdlib random in BOTH task.py + client_app.py. _sample_train_negatives_seeded helper replaces stdlib uniform-without-replacement; FND-06 np_rng threaded for both train_neg + eval_neg purposes; per-round determinism via (run_seed, user_idx, round_num) tuple.
+- [Phase 05]: Plan 03 PFR-05 single-user collapse mechanically pinned: 'for user_idx in user_train_data' substring forbidden in client_app.py source; legacy save_user_local_params / load_user_local_params per-user-subdir helpers retired. Replaced by manifest-sidecar schema_v3 cache (D-16/D-17) keyed by partition_id.
+- [Phase 05]: Plan 03 schema_v3 manifest sentinel: bias_classification='global' is a D-17 sentinel field that catches future regressions reverting D-01 (bias-GLOBAL flip). Cache load hard-fails on signature mismatch. Same defense-in-depth pattern as Phase 4 schema_v2 mlp_hidden_dims/fusion_type sentinels.
+- [Phase 05]: Plan 03 SC-2 reconciliation surfaced in 4 places: _signature_fields docstring (client_app.py), _save_local_user_state docstring (client_app.py), client_app.py module docstring, plan SUMMARY's Decisions section. Per-user disk payload carries ONLY affine_output.weight; bias channel aggregated atomically server-side per engine.py:143.
+- [Phase 05]: Plan 03 D-22 cold-round probe-then-load: cache-miss (pt_path.exists() False) returns None and keeps the model's PyTorch nn.Linear default Kaiming init (D-19 paper-faithful); cache-load failure (signature mismatch / shape mismatch) hard-fails per D-17 / D-21. Cleanly separates 'first round' from 'stale cache'.
+- [Phase 05]: Plan 03 dataset.py natural-path body fill: replaced both Plan-02 NotImplementedError('Plan 03 implements...') placeholders with the real foundation-adapter bodies cloned from Phase 3 dataset.py with attribute access reshaped for the Plan-02 _FoundationBundle dataclass shape (mapping/split_manifest/exclusion attrs vs Phase 3's dict).
 
 ### Todos
 
@@ -176,7 +183,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 05-pfedrec-migration-reproduction-01-PLAN.md
+**Stopped at:** Completed 05-pfedrec-migration-reproduction-03-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
