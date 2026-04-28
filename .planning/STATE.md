@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-pfedrec-migration-reproduction-03-PLAN.md
-last_updated: "2026-04-28T18:09:03.979Z"
+stopped_at: Completed 05-pfedrec-migration-reproduction-05-PLAN.md
+last_updated: "2026-04-28T18:21:51.688Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 05 (pfedrec-migration-reproduction) — EXECUTING
-Plan: 3 of 5
+Plan: 5 of 5
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 05-pfedrec-migration-reproduction P02 | 4m 38s | 2 tasks | 6 files |
 | Phase 05-pfedrec-migration-reproduction P01 | 6min | 3 tasks tasks | 6 files files |
 | Phase 05 P03 | 12min | 2 tasks | 8 files |
+| Phase 05-pfedrec-migration-reproduction P05 | 3min | 1 task tasks | 1 file files |
 
 ## Accumulated Context
 
@@ -151,6 +152,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 05]: Plan 03 SC-2 reconciliation surfaced in 4 places: _signature_fields docstring (client_app.py), _save_local_user_state docstring (client_app.py), client_app.py module docstring, plan SUMMARY's Decisions section. Per-user disk payload carries ONLY affine_output.weight; bias channel aggregated atomically server-side per engine.py:143.
 - [Phase 05]: Plan 03 D-22 cold-round probe-then-load: cache-miss (pt_path.exists() False) returns None and keeps the model's PyTorch nn.Linear default Kaiming init (D-19 paper-faithful); cache-load failure (signature mismatch / shape mismatch) hard-fails per D-17 / D-21. Cleanly separates 'first round' from 'stale cache'.
 - [Phase 05]: Plan 03 dataset.py natural-path body fill: replaced both Plan-02 NotImplementedError('Plan 03 implements...') placeholders with the real foundation-adapter bodies cloned from Phase 3 dataset.py with attribute access reshaped for the Plan-02 _FoundationBundle dataclass shape (mapping/split_manifest/exclusion attrs vs Phase 3's dict).
+- [Phase 05-pfedrec-migration-reproduction]: Plan 05 subprocess determinism guard: scripts/foundation/tests/test_pfedrec_subprocess_determinism.py asserts 3 invariants across two same-seed scripts/run.py pfedrec paper_compat_pfedrec runs — (a) selected_clients_per_round byte-identity (PFR-06/G-03-01), (b) _manifest.pfr08_verification audit-dict byte-identity (D-14, Phase-5 unique vs Phase-4 best_prototype), (c) per-key torch.equal on partition_{pid}.pt for the single LOCAL key 'affine_output.weight' after D-01 bias-GLOBAL flip. Coverage guard scans for affine_output.weight key — pytest.fail on PFR-03 path not exercised. @pytest.mark.slow + FEDREC_SKIP_SLOW=1 escape hatch + cold-run sanity guards + triple-root cache probe (FEDREC_CACHE_ROOT alt_root + repo-root + module-root). Wave-3 disjoint with Plan 04: zero touches to federated-pfedrec/, scripts/run.py, scripts/foundation/fedrec_foundation/.
 
 ### Todos
 
@@ -183,7 +185,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Completed 05-pfedrec-migration-reproduction-03-PLAN.md
+**Stopped at:** Completed 05-pfedrec-migration-reproduction-05-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
