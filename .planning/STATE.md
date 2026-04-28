@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 5 context gathered
-last_updated: "2026-04-28T05:36:18.650Z"
+stopped_at: Completed 05-pfedrec-migration-reproduction-01-PLAN.md
+last_updated: "2026-04-28T09:37:25.392Z"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 22
-  completed_plans: 22
+  total_plans: 27
+  completed_plans: 24
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -20,14 +20,14 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 04 — adaptive-migration-bug-fixes
+**Current focus:** Phase 05 — pfedrec-migration-reproduction
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (pfedrec-migration-reproduction) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -59,6 +59,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 04-adaptive-migration-bug-fixes P04 | 2min | 1 task tasks | 1 file files |
 | Phase 04-adaptive-migration-bug-fixes P06 | 4min | 1 tasks | 1 files |
 | Phase 04-adaptive-migration-bug-fixes P05 | 6min | 2 tasks tasks | 2 files files |
+| Phase 05-pfedrec-migration-reproduction P02 | 4m 38s | 2 tasks | 6 files |
+| Phase 05-pfedrec-migration-reproduction P01 | 6min | 3 tasks tasks | 6 files files |
 
 ## Accumulated Context
 
@@ -136,6 +138,12 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 06 coverage guard prevents false-GREEN on schema_version=2 cache check. After asserting no torch.equal mismatches, the test scans cache_dir_a for at least one partition_*.pt containing BOTH _logit_alpha.weight AND _item_perturbation.weight. If checked_partitions > 0 but adaptive_key_seen is False, pytest.fail with 'ADP-02 path not actually exercised by this run. Confirm enable-per-user-alpha=true and enable-item-perturbation=true propagated from --run-config.' Catches the silent-config-drift class of failure where a future change to run-config propagation would otherwise let the test pass without exercising the ADP-02 keys.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 06 torch.equal per-key replaces Phase 3's bytes-equality. Phase 4 schema_version=2 payload contains 6+ tensors with potentially different shapes per fusion_type / alpha_method / mlp_hidden_dims; per-tensor comparison gives an actionable failure message naming the divergent key, its shape, dtype, and max_abs_delta — instead of an opaque 'bytes differ' that would force the next debugger to manually torch.load both files. Phase 3's bytes-equality was correct for its 2-key ~516 B payload but doesn't scale to Phase 4's 7+-key adaptive layout. Performance overhead is negligible.
 - [Phase 04-adaptive-migration-bug-fixes]: Plan 05 server_app cross-device migration: D-25 mode resolver + G-03-01 discovery + ADP-06 partition-id-space _server_sampler = server_rng(run_seed) + AdaptiveSplitFedAvg/FedProx wire-up replaces SplitFedAvg/Prox. D-05 best_prototype snapshot fires inside the same checkpoint_rule branch as best_arrays = ArrayRecord(...) at the SAME moment current_ndcg > best_metric (verified by source-level proximity test 7 anchored on src.find('best_metric = current_ndcg')). D-07 paired restore: strategy._global_prototype = strategy.best_prototype runs alongside arrays = best_arrays inside the same post-loop checkpoint-restore block (test uses src.rfind() because the module docstring duplicates the literal restore string). D-06 best_prototype embedded in result JSON via post-embed mutation: results_data['_manifest']['best_prototype'] = list(...) — relies on embed_manifest_in_result returning the same dict (Research §Pattern 2). D-15 double-write with module='adaptive'. D-13 cold-start counter probes .embedding_cache/{run_id}/partition_{pid}.pt; reuse_cache=true short-circuits cold_count to 0 with documented log line. D-16 alpha diagnostics aggregate weights by num_examples (mirrors Phase-2/3 sufficient-stat convention) across the 6 scalar fields alpha_mean/std/p25/p50/p75/clip_hit_rate; logged to W&B + alpha_diagnostics_history. W&B project federated-cf-cross-device for benchmark_cross_device + paper_compat_pfedrec only. D-02 NotImplementedError fires BEFORE any data load. D-18 surgical: DummyClientProxy + weighted_average_metrics + print_evaluation_metrics + EarlyStopping + AlphaAnalyzer + CUDA fallback all preserved verbatim; git diff --stat over strategy.py/dataset.py/client_app.py/task.py/models/pyproject.toml across both Plan 05 commits is empty. stdlib random eradicated module-wide. 7 GREEN tests; suite goes 53 -> 60.
+- [Phase 05-pfedrec-migration-reproduction]: Plan 01: D-01 bias-GLOBAL flip enforced symmetrically at strategy frozensets AND model class tuples (set(GLOBAL_PARAM_KEYS) == set(PFedRecMLP._GLOBAL_PARAMS) test mechanically prevents drift). D-12 hard rename: SplitFedAvg removed entirely (not aliased). D-07: BaseFedProx is not even imported. D-21 strict=True default with run_id-threaded rm -rf hint shipped on PFedRecMLP.set_local_parameters; client_app (Plan 03) will pass real run_id. D-19 paper-faithful Kaiming preserved with source-level forbidden-token grep guard. D-24/D-26 sufficient-stat aggregate_evaluate cloned from PersonalizedSplitFedAvg with frozensets flipped.
+- [Phase 05-pfedrec-migration-reproduction]: Plan 01: PFR-02-AUDIT.md materialized at .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md (path locked in must_haves.artifacts). Closes ROADMAP §Phase 5 SC-1 with all three primary anchors (engine.py:143 / engine.py:81 / engine.py:195-196) + explicit SC-2 reconciliation against D-01 (bias-disk-to-server-aggregation cross-walk). 9 rows, every row carries Decision drawn from {align-to-reference, align-to-reference (with adaptation), align-to-reference (BUT strictly stricter), strictly-better-than-reference, already-aligned}.
+- [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: PFR-01 closed in-file — federated-pfedrec/pyproject.toml flipped to cross-device defaults (6040 supernodes in BOTH local-simulation and local-sim-gpu federation blocks); 6 Phase-5 contract keys added (mode=paper_compat_pfedrec, run-seed=42, weight-policy=uniform, reuse-cache=false, eval-num-negatives=99, checkpoint-rule=best_round_restore); pytest dev dep added; FedProx dropped per D-07 (paper does not use it); wandb-project='' so server_app defaults to federated-cf-cross-device per D-10.
+- [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-25 closes Phase-1 deferred decision — _PAPER_COMPAT_PFEDREC.weight_policy flipped 'num_positives' -> 'uniform' in scripts/foundation/fedrec_foundation/mode.py; matches engine.py:81 reference (uniform mean over participating clients) which PFR-08 reproduction requires. 'Deferred confirmation to PFR-02' comment removed; documentation regression guard test pins this.
+- [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-17 rip-and-replace completed in federated-pfedrec/federated_pfedrec/dataset.py — 5 module-local helpers removed (create_global_mappings, create_leave_one_out_split, compute_user_genre_distribution, dirichlet_partition_users, create_train_test_split) + _partition_cache. Foundation-adapter scaffolding includes _FoundationBundle dataclass with all 4 IMP-2 fingerprints (mapping_sha256, split_hash, exclusion_sha256, raw_data_hash) surfaced for Plan 04's manifest. D-18 preserved verbatim: MovieLensDataset, download_movielens_1m, load_movielens_1m, natural_partition_users.
+- [Phase 05-pfedrec-migration-reproduction]: [Phase 05-pfedrec-migration-reproduction Plan 02]: D-09 NotImplementedError enforced at BOTH load_partition_data AND load_full_data (Phase-3/Phase-4 D-02 tightening pattern). Error message tokens 'D-09', 'cross-device', 'pre-Phase-5' all present per test assertions. Plan 02 ships only the D-09 guard layer + adapter scaffolding; the natural-path body is Plan 03's scope (clearly-marked NotImplementedError with 'Plan 03 implements...' message). Wave-1 disjoint file ownership held: Plan 02 touched pyproject.toml + dataset.py + mode.py + 3 test files ONLY; Plan 01 owns strategy.py + pfedrec_mlp.py + their tests; both commits with --no-verify.
 
 ### Todos
 
@@ -168,7 +176,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
 - `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
 
-**Stopped at:** Phase 5 context gathered
+**Stopped at:** Completed 05-pfedrec-migration-reproduction-01-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
