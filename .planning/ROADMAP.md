@@ -97,7 +97,12 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. `flwr run .` inside `federated-pfedrec/` spawns 6040 supernodes under natural partitioning by default, the client path collapses to the single-user branch in benchmark mode (no inner loop over `user_test_items.keys()`), and each user's `(affine_output.weight, affine_output.bias)` is persisted/restored as one atomic per-user artifact keyed by stable `user_idx`; cache loads hard-fail on schema or shape mismatch.
   3. Training negatives are re-sampled every round (not cached across rounds), and a unit test asserts that a user's held-out test positive never appears in that user's sampled training negatives.
   4. Under `paper_compat_pfedrec` mode (dim=32, SGD lr=0.1, BCE, 1 local epoch, 4 training negatives, 100 rounds), the final best-round result artifact reports HR@10 and NDCG@10 within ±2 absolute points of the IJCAI-23 reference (HR@10 ≈ 0.729, NDCG@10 ≈ 0.441), and the Phase-1 protocol fingerprint is attached.
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
+  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
+  - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
 ### Phase 6: Evaluation & Reporting Harness
 **Goal**: Every module emits best-round metrics from a restored best-round checkpoint, per-user-group (sparse/medium/dense) HR@10 and NDCG@10 as first-class fields, sampling-exposure support counts, and writes results plus a protocol fingerprint manifest to a cross-device-scoped location and W&B project.
@@ -108,7 +113,12 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. Every module's result artifact and W&B run contains `ndcg@10/sparse`, `ndcg@10/medium`, `ndcg@10/dense` (plus HR@10 variants) as first-class fields, together with per-group sampling-exposure counts so a reader can interpret per-group metrics with the right variance lens.
   3. Cross-device results are written under `results/federated/<module>/<run_id>/` with the full protocol fingerprint manifest, and the legacy cross-silo result locations under `results/federated/` are not touched or overwritten by any cross-device run.
   4. All four modules log their cross-device runs to a new, dedicated W&B project (separate from the existing cross-silo project), and the canonical reported field is `best_*` with `last_*` preserved only as a diagnostic.
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
+  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
+  - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
 ### Phase 7: Thesis Evaluation Run
 **Goal**: Under ONE standardized cross-device comparison config shared by all four modules, the adaptive method beats all three baselines on overall NDCG@10 and on sparse-user NDCG@10; ablations across alpha methods, per-user alpha, item perturbation, contrastive λ, and fusion type are produced with per-group breakdowns, and everything is exported as the thesis tables.
@@ -119,7 +129,12 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. The exported main comparison table at `results/federated/_thesis/` reports mean ± std over ≥3 seeds for HR@10 and NDCG@10 overall and per user group (sparse / medium / dense) for all four modules, and the adaptive module (`model-type=dual alpha-method=hierarchical_conditional`) wins on OVERALL NDCG@10 against baseline, personalized, and PFedRec.
   3. The same comparison on the SPARSE user slice shows the adaptive module winning on sparse NDCG@10 against all three baselines (primary thesis claim).
   4. An ablation table exists for the adaptive module covering {hierarchical_conditional, multi_factor, data_quantity} × {per-user alpha on/off} × {item perturbation on/off} × {contrastive λ ∈ 0, 0.1} × {fusion ∈ add, gate, concat}, each row reporting per-user-group metrics so the "where does the win come from" question is answerable directly from the artifact.
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
+  - [ ] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
+  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
+  - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
 ## Progress
 
@@ -129,7 +144,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 2. Baseline Migration | 5/5 | Complete | 2026-04-19 |
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
-| 5. PFedRec Migration & Reproduction | 0/0 | Not started | - |
+| 5. PFedRec Migration & Reproduction | 0/5 | In progress | - |
 | 6. Evaluation & Reporting Harness | 0/0 | Not started | - |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
 
