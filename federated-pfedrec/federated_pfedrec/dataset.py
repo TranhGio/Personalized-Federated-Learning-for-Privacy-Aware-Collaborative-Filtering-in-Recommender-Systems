@@ -340,13 +340,57 @@ def load_partition_data(
             "check out a pre-Phase-5 commit (see "
             ".planning/phases/05-pfedrec-migration-reproduction/05-CONTEXT.md §Deferred)."
         )
-    # D-09 guard fires above. The natural-path body (load bundle, build
-    # DataLoaders with PFedRec-specific BCE label format) is Plan 03's scope.
-    raise NotImplementedError(
-        "Plan 03 implements the foundation-adapter body for "
-        "load_partition_data(partition_mode='natural'). Plan 02 ships only the "
-        "D-09 guard layer + adapter scaffolding."
-    )
+
+    # Phase 5 Plan 03: foundation-adapter natural-path body.
+    from torch.utils.data import DataLoader
+
+    if split_mode == "random":
+        raise ValueError(
+            "split_mode='random' is no longer supported under the cross-device "
+            "Phase 5 contract — the foundation's leave-one-out split is "
+            "authoritative. Use split_mode='leave-one-out'."
+        )
+    if split_mode != "leave-one-out":
+        raise ValueError(
+            f"split_mode={split_mode!r} not supported post-Phase-5 foundation "
+            f"migration; use 'leave-one-out' (NCF protocol)."
+        )
+
+    bundle = _load_foundation_bundle(data_dir)
+    user2idx = bundle.mapping.user2idx
+    item2idx = bundle.mapping.item2idx
+    num_users = bundle.mapping.num_users
+    num_items = bundle.mapping.num_items
+
+    # Cross-device: 1 user = 1 client. partition_id IS user_idx.
+    download_movielens_1m(data_dir)
+    ratings_df, _, _ = load_movielens_1m(data_dir)
+    partitions = natural_partition_users(ratings_df, user2idx)
+    if partition_id not in partitions:
+        raise ValueError(
+            f"partition_id={partition_id} not in natural partition keyspace "
+            f"[0, {num_users}); did num-supernodes match num_users at federation init?"
+        )
+    client_ratings = partitions[partition_id].copy()
+    client_ratings["user_idx"] = client_ratings["user_id"].map(user2idx).astype(int)
+    client_ratings["item_idx"] = client_ratings["movie_id"].map(item2idx).astype(int)
+
+    # Foundation's per-user LOO test item drives the train/test split.
+    test_item = bundle.split_manifest.test_item_per_user.get(int(partition_id))
+    if test_item is not None:
+        test_mask = client_ratings["item_idx"] == int(test_item)
+        test_df = client_ratings[test_mask].copy()
+        train_df = client_ratings[~test_mask].copy()
+    else:
+        # User has < 2 interactions — no held-out test item.
+        test_df = client_ratings.iloc[0:0].copy()
+        train_df = client_ratings.copy()
+
+    train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
+    test_dataset = MovieLensDataset(test_df, user2idx, item2idx)
+    trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return trainloader, testloader, num_users, num_items, user2idx, item2idx
 
 
 def load_full_data(
@@ -393,9 +437,39 @@ def load_full_data(
             "check out a pre-Phase-5 commit (see "
             ".planning/phases/05-pfedrec-migration-reproduction/05-CONTEXT.md §Deferred)."
         )
-    # D-09 guard fires above. Plan 03 owns the centralized-eval data-flow body.
-    raise NotImplementedError(
-        "Plan 03 implements the foundation-adapter body for "
-        "load_full_data(partition_mode='natural'). Plan 02 ships only the "
-        "D-09 guard layer + adapter scaffolding."
+
+    # Phase 5 Plan 03: foundation-adapter centralized-eval body.
+    from torch.utils.data import DataLoader
+
+    if split_mode != "leave-one-out":
+        raise ValueError(
+            f"split_mode={split_mode!r} not supported post-Phase-5 foundation "
+            f"migration; use 'leave-one-out'."
+        )
+
+    bundle = _load_foundation_bundle(data_dir)
+    user2idx = bundle.mapping.user2idx
+    item2idx = bundle.mapping.item2idx
+    num_users = bundle.mapping.num_users
+    num_items = bundle.mapping.num_items
+
+    download_movielens_1m(data_dir)
+    ratings_df, _, _ = load_movielens_1m(data_dir)
+    ratings_df["user_idx"] = ratings_df["user_id"].map(user2idx).astype(int)
+    ratings_df["item_idx"] = ratings_df["movie_id"].map(item2idx).astype(int)
+
+    # Build test mask: one row per user matching test_item_per_user. Users
+    # without a held-out test item (single-interaction users) map to NaN
+    # which never equals an item_idx, so they stay entirely in train.
+    test_item_series = ratings_df["user_idx"].map(
+        bundle.split_manifest.test_item_per_user
     )
+    test_mask = ratings_df["item_idx"] == test_item_series
+    test_df = ratings_df[test_mask].copy()
+    train_df = ratings_df[~test_mask].copy()
+
+    train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
+    test_dataset = MovieLensDataset(test_df, user2idx, item2idx)
+    trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return trainloader, testloader, num_users, num_items, user2idx, item2idx
