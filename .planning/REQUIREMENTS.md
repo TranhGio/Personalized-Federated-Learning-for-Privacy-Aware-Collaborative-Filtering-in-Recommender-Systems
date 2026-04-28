@@ -43,7 +43,7 @@ Migrate `federated-pfedrec`, close the IJCAI-23 reference gap, and reproduce pub
 - [x] **PFR-05**: Client-side partition-scope loop over `user_test_items.keys()` is collapsed to a single-user path in benchmark mode.
 - [x] **PFR-06**: Server-side sampling, evaluator RNG, sufficient-statistic aggregation match the Foundation contract (FND-04, FND-05, FND-06).
 - [x] **PFR-07**: Training negatives are re-sampled every round (not cached across rounds).
-- [ ] **PFR-08**: Flower PFedRec reproduces the IJCAI-23 reference on ML-1M: HR@10 and NDCG@10 within ±2 points of paper numbers (HR@10 ≈ 0.729, NDCG@10 ≈ 0.441 at round 89), under `paper_compat_pfedrec` mode (dim=32, SGD lr=0.1, BCE, 1 local epoch, 4 training negatives, 100 rounds).
+- [x] **PFR-08**: Flower PFedRec reproduces the IJCAI-23 reference on ML-1M: HR@10 and NDCG@10 within ±2 points of paper numbers (HR@10 ≈ 0.729, NDCG@10 ≈ 0.441 at round 89), under `paper_compat_pfedrec` mode (dim=32, SGD lr=0.1, BCE, 1 local epoch, 4 training negatives, 100 rounds).
 - [x] **PFR-09**: Module logs the FND-07 protocol fingerprint alongside results.
 
 ### Personalized Migration (PSN)
@@ -167,7 +167,7 @@ Deferred beyond this thesis cycle.
 | PFR-05 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-06 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-07 | Phase 5: PFedRec Migration & Reproduction | Complete |
-| PFR-08 | Phase 5: PFedRec Migration & Reproduction | Pending |
+| PFR-08 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-09 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | EVL-01 | Phase 6: Evaluation & Reporting Harness | Pending |
 | EVL-02 | Phase 6: Evaluation & Reporting Harness | Pending |

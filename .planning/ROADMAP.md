@@ -16,7 +16,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 - [x] **Phase 2: Baseline Migration** — `federated-baseline-cf` moved to cross-device with seeded sampling, sufficient-stat metrics, and protocol fingerprint. (completed 2026-04-19)
 - [x] **Phase 3: Personalized Migration** — `federated-personalized-cf` (split-learning) moved to cross-device with run-namespaced cache and one-user client semantics. (completed 2026-04-20)
 - [x] **Phase 4: Adaptive Migration & Bug Fixes** — `federated-adaptive-personalized-cf` (thesis module) moved to cross-device; per-user alpha / item perturbation / prototype accumulation bugs fixed. (completed 2026-04-28)
-- [ ] **Phase 5: PFedRec Migration & Reproduction** — `federated-pfedrec` re-audited against IJCAI-23 reference, migrated, and reproduces published HR@10 / NDCG@10 within ±2 points.
+- [x] **Phase 5: PFedRec Migration & Reproduction** — `federated-pfedrec` re-audited against IJCAI-23 reference, migrated, and reproduces published HR@10 / NDCG@10 within ±2 points. (completed 2026-04-28)
 - [ ] **Phase 6: Evaluation & Reporting Harness** — Best-round restore, per-user-group metrics, protocol fingerprint manifests, dedicated cross-device W&B project.
 - [ ] **Phase 7: Thesis Evaluation Run** — Standardized cross-device comparison + ablations; adaptive beats all baselines on overall and sparse-user NDCG@10.
 
@@ -101,7 +101,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
   - [x] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
   - [x] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
-  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
+  - [x] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
   - [x] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
 ### Phase 6: Evaluation & Reporting Harness
@@ -118,7 +118,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
   - [x] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
   - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
-  - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
+  - [x] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
 ### Phase 7: Thesis Evaluation Run
 **Goal**: Under ONE standardized cross-device comparison config shared by all four modules, the adaptive method beats all three baselines on overall NDCG@10 and on sparse-user NDCG@10; ablations across alpha methods, per-user alpha, item perturbation, contrastive λ, and fusion type are produced with per-group breakdowns, and everything is exported as the thesis tables.
@@ -132,7 +132,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 **Plans**: 5 plans
   - [x] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
   - [x] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
-  - [ ] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
+  - [x] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
   - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
   - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
 
@@ -144,7 +144,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 2. Baseline Migration | 5/5 | Complete | 2026-04-19 |
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
-| 5. PFedRec Migration & Reproduction | 4/5 | In Progress|  |
+| 5. PFedRec Migration & Reproduction | 5/5 | Complete   | 2026-04-28 |
 | 6. Evaluation & Reporting Harness | 0/0 | Not started | - |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
 
