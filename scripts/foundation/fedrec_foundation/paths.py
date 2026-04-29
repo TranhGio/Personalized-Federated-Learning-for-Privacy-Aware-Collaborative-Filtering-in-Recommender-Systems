@@ -51,3 +51,52 @@ def data_derived() -> Path:
 def ml1m_dir() -> Path:
     """Return the data/ml-1m/ directory (not overridable)."""
     return repo_root() / "data" / "ml-1m"
+
+
+_ALLOWED_MODULES = frozenset({"baseline", "personalized", "adaptive", "pfedrec"})
+
+
+def module_run_results_dir(module: str, run_id: str) -> Path:
+    """Return ``<repo>/results/federated/<module>/<run_id>/`` (creating it).
+
+    Used by every per-module ``server_app.py`` to resolve the canonical write
+    path for a Phase-6 cross-device run. The directory is created with
+    ``parents=True, exist_ok=True`` so callers never see ``FileNotFoundError``
+    on the parent path. The directory IS the run identifier (D-01 -- one
+    directory per run; results.json + manifest.json live inside).
+
+    The path is repo-root anchored via :func:`repo_root` (D-02). This makes
+    the helper safe to call from any cwd -- Flower simulation may chdir
+    subprocesses; the returned path is independent of cwd.
+
+    Parameters
+    ----------
+    module : str
+        One of ``"baseline"`` / ``"personalized"`` / ``"adaptive"`` /
+        ``"pfedrec"``. Matches the literal value passed to
+        :func:`fedrec_foundation.manifest.build_run_manifest` ``module=`` kwarg
+        (manifest.py:80 comment is the source of truth).
+    run_id : str
+        Same string as ``RunManifest.run_id`` (from
+        :func:`fedrec_foundation.manifest.generate_run_id`).
+
+    Returns
+    -------
+    pathlib.Path
+        Absolute, resolved path to the per-run directory.
+
+    Raises
+    ------
+    ValueError
+        If ``module`` is not in the allowed-modules whitelist (Pitfall 6 --
+        typos in literals like ``"basline"`` must fail loud at runtime so
+        results never land in ``/results/federated/basline/<run_id>/``).
+    """
+    if module not in _ALLOWED_MODULES:
+        raise ValueError(
+            f"Unknown module {module!r}. Expected one of "
+            f"{sorted(_ALLOWED_MODULES)}."
+        )
+    out = repo_root() / "results" / "federated" / module / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    return out
