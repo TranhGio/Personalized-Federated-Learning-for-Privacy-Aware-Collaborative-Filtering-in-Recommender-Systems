@@ -643,3 +643,52 @@ def test_extra_eval_broadcasts_best_prototype() -> None:
     assert "PITFALL 4" in src or "Pitfall 4" in src, (
         "Pitfall-4: No Pitfall 4 comment found — future maintainers won't know why this matters"
     )
+
+
+def _server_app_src() -> str:
+    """Read this module's server_app.py source for static wiring assertions."""
+    src_path = Path(__file__).resolve().parents[1] / "federated_adaptive_personalized_cf" / "server_app.py"
+    return src_path.read_text(encoding="utf-8")
+
+
+def test_thesis_label_in_manifest() -> None:
+    """Phase 7 D-22 + Pitfall 2: server_app reads thesis-run-label / ablation-dimension /
+    ablation-value from context.run_config and mutates the manifest via dataclass_replace
+    BEFORE embed_manifest_in_result so results.json's _manifest carries the thesis-tagging fields.
+
+    This is a STATIC source-level wiring test — it does NOT spawn a Flower run.
+    The integration loop is exercised by Plan 05's smoke-run gate.
+    """
+    src = _server_app_src()
+    # The 3 thesis kwargs MUST appear inside the dataclass_replace(manifest, ...) call.
+    assert 'thesis_run_label=str(context.run_config.get("thesis-run-label"' in src, (
+        "Phase 7 D-22: server_app must read thesis-run-label from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_dimension=str(context.run_config.get("ablation-dimension"' in src, (
+        "Phase 7 D-22: server_app must read ablation-dimension from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_value=str(context.run_config.get("ablation-value"' in src, (
+        "Phase 7 D-22: server_app must read ablation-value from run_config and pass to dataclass_replace"
+    )
+    # Phase-6 final_eval_round_index + metrics kwargs must coexist (regression guard for Phase 6).
+    assert "final_eval_round_index=final_eval_round_index" in src, (
+        "Phase 6 D-07: final_eval_round_index kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    assert 'metrics=results_data["final_metrics"]' in src, (
+        "Phase 6 D-07: metrics kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    # Mutation MUST execute BEFORE embed_manifest_in_result.
+    idx_thesis_kwarg = src.find('thesis_run_label=str(context.run_config.get')
+    idx_embed = src.find("embed_manifest_in_result(manifest, results_data)")
+    assert idx_thesis_kwarg != -1, "Could not locate the thesis_run_label kwarg in server_app.py"
+    assert idx_embed != -1, "Could not locate embed_manifest_in_result(manifest, results_data) call site"
+    assert idx_thesis_kwarg < idx_embed, (
+        "Phase 7 D-22 + Pitfall 2 invariant: dataclass_replace(manifest, ...thesis fields...) "
+        "MUST execute BEFORE embed_manifest_in_result so the embedded _manifest dict "
+        "carries the thesis-tagging fields. Found embed_manifest_in_result first — order is wrong."
+    )
+    # Pitfall 3 site #1 + #2: BOTH mode tuples include thesis_crossdevice_main.
+    assert src.count('"thesis_crossdevice_main"') >= 2, (
+        "Phase 7 Pitfall 3: BOTH `mode in (...)` tuples in this server_app must include "
+        "'thesis_crossdevice_main' (W&B project gate + results-path gate)"
+    )

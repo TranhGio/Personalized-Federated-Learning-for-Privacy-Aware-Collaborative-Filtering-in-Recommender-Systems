@@ -391,13 +391,14 @@ def test_canonical_artifact_carries_best_and_last_blocks() -> None:
         "W&B migration: wandb.run.summary[f\"last/...\"] missing"
     )
 
-    # schema_version == 2.
+    # Phase 7 Plan 01 D-22: schema bumped 2->3 (added thesis_run_label / ablation_dimension / ablation_value).
+    # Phase 6 D-07 invariants (final_eval_round_index + metrics) preserved as v2 carry-forward.
     from fedrec_foundation.manifest import RUN_MANIFEST_SCHEMA_VERSION
-    assert RUN_MANIFEST_SCHEMA_VERSION == 2, (
-        f"Expected RUN_MANIFEST_SCHEMA_VERSION == 2, got {RUN_MANIFEST_SCHEMA_VERSION}"
+    assert RUN_MANIFEST_SCHEMA_VERSION == 3, (
+        f"Expected RUN_MANIFEST_SCHEMA_VERSION == 3, got {RUN_MANIFEST_SCHEMA_VERSION}"
     )
 
-    # _manifest.schema_version should be set to 2 through the manifest dataclass.
+    # _manifest.schema_version should be set to 3 through the manifest dataclass.
     # Check that dataclass_replace is imported.
     assert "from dataclasses import replace as dataclass_replace" in src, (
         "dataclass_replace import missing"
@@ -618,4 +619,53 @@ def test_pfr08_hook_consumes_nested_best_block() -> None:
     assert not legacy_pattern.search(src), (
         "Pitfall 1: legacy flat-input _emit_pfr_08_verification(final_metrics=final_metrics, ...) "
         "still present in server_app.py — must be removed"
+    )
+
+
+def test_thesis_label_in_manifest() -> None:
+    """Phase 7 D-22 + Pitfall 2: server_app reads thesis-run-label / ablation-dimension /
+    ablation-value from context.run_config and mutates the manifest via dataclass_replace
+    BEFORE embed_manifest_in_result so results.json's _manifest carries the thesis-tagging fields.
+
+    This is a STATIC source-level wiring test — it does NOT spawn a Flower run.
+    The integration loop is exercised by Plan 05's smoke-run gate.
+
+    PFedRec note: this module runs at paper_compat_pfedrec mode (D-06), but the
+    orchestrator passes thesis-run-label=main regardless of mode — so the
+    manifest-mutation patch is the load-bearing change here. The 2x
+    thesis_crossdevice_main occurrences in the mode-tuple gates are defensive
+    (a future thesis-mode run from pfedrec would still route correctly).
+    """
+    src = _pfedrec_server_app_src()
+    # The 3 thesis kwargs MUST appear inside the dataclass_replace(manifest, ...) call.
+    assert 'thesis_run_label=str(context.run_config.get("thesis-run-label"' in src, (
+        "Phase 7 D-22: server_app must read thesis-run-label from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_dimension=str(context.run_config.get("ablation-dimension"' in src, (
+        "Phase 7 D-22: server_app must read ablation-dimension from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_value=str(context.run_config.get("ablation-value"' in src, (
+        "Phase 7 D-22: server_app must read ablation-value from run_config and pass to dataclass_replace"
+    )
+    # Phase-6 final_eval_round_index + metrics kwargs must coexist (regression guard for Phase 6).
+    assert "final_eval_round_index=final_eval_round_index" in src, (
+        "Phase 6 D-07: final_eval_round_index kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    assert 'metrics=results_data["final_metrics"]' in src, (
+        "Phase 6 D-07: metrics kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    # Mutation MUST execute BEFORE embed_manifest_in_result.
+    idx_thesis_kwarg = src.find('thesis_run_label=str(context.run_config.get')
+    idx_embed = src.find("embed_manifest_in_result(manifest, results_data)")
+    assert idx_thesis_kwarg != -1, "Could not locate the thesis_run_label kwarg in server_app.py"
+    assert idx_embed != -1, "Could not locate embed_manifest_in_result(manifest, results_data) call site"
+    assert idx_thesis_kwarg < idx_embed, (
+        "Phase 7 D-22 + Pitfall 2 invariant: dataclass_replace(manifest, ...thesis fields...) "
+        "MUST execute BEFORE embed_manifest_in_result so the embedded _manifest dict "
+        "carries the thesis-tagging fields. Found embed_manifest_in_result first — order is wrong."
+    )
+    # Pitfall 3 site #1 + #2: BOTH mode tuples include thesis_crossdevice_main.
+    assert src.count('"thesis_crossdevice_main"') >= 2, (
+        "Phase 7 Pitfall 3: BOTH `mode in (...)` tuples in this server_app must include "
+        "'thesis_crossdevice_main' (W&B project gate + results-path gate)"
     )

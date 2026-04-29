@@ -394,10 +394,11 @@ def test_canonical_artifact_carries_best_and_last_blocks() -> None:
         "missing from server_app.py (path-(b) at best_round_metrics assignment site)"
     )
 
-    # schema_version == 2 in manifest.
+    # Phase 7 Plan 01 D-22: schema bumped 2->3 (added thesis_run_label / ablation_dimension / ablation_value).
+    # Phase 6 D-07 invariants (final_eval_round_index + metrics) preserved as v2 carry-forward.
     from fedrec_foundation.manifest import RUN_MANIFEST_SCHEMA_VERSION
-    assert RUN_MANIFEST_SCHEMA_VERSION == 2, (
-        f"Expected RUN_MANIFEST_SCHEMA_VERSION == 2, got {RUN_MANIFEST_SCHEMA_VERSION}"
+    assert RUN_MANIFEST_SCHEMA_VERSION == 3, (
+        f"Expected RUN_MANIFEST_SCHEMA_VERSION == 3, got {RUN_MANIFEST_SCHEMA_VERSION}"
     )
 
 
@@ -470,4 +471,47 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
     assert "eval_metrics_history[round_num] = dict(thesis_metrics)" in src, (
         "D-09: eval_metrics_history storage line 'eval_metrics_history[round_num] = dict(thesis_metrics)' "
         "missing from server_app.py — per-group exposure counts won't be persisted per round"
+    )
+
+
+def test_thesis_label_in_manifest() -> None:
+    """Phase 7 D-22 + Pitfall 2: server_app reads thesis-run-label / ablation-dimension /
+    ablation-value from context.run_config and mutates the manifest via dataclass_replace
+    BEFORE embed_manifest_in_result so results.json's _manifest carries the thesis-tagging fields.
+
+    This is a STATIC source-level wiring test — it does NOT spawn a Flower run.
+    The integration loop is exercised by Plan 05's smoke-run gate.
+    """
+    src = _server_app_src()
+    # The 3 thesis kwargs MUST appear inside the dataclass_replace(manifest, ...) call.
+    assert 'thesis_run_label=str(context.run_config.get("thesis-run-label"' in src, (
+        "Phase 7 D-22: server_app must read thesis-run-label from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_dimension=str(context.run_config.get("ablation-dimension"' in src, (
+        "Phase 7 D-22: server_app must read ablation-dimension from run_config and pass to dataclass_replace"
+    )
+    assert 'ablation_value=str(context.run_config.get("ablation-value"' in src, (
+        "Phase 7 D-22: server_app must read ablation-value from run_config and pass to dataclass_replace"
+    )
+    # Phase-6 final_eval_round_index + metrics kwargs must coexist (regression guard for Phase 6).
+    assert "final_eval_round_index=final_eval_round_index" in src, (
+        "Phase 6 D-07: final_eval_round_index kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    assert 'metrics=results_data["final_metrics"]' in src, (
+        "Phase 6 D-07: metrics kwarg MUST coexist with Phase 7 thesis kwargs"
+    )
+    # Mutation MUST execute BEFORE embed_manifest_in_result.
+    idx_thesis_kwarg = src.find('thesis_run_label=str(context.run_config.get')
+    idx_embed = src.find("embed_manifest_in_result(manifest, results_data)")
+    assert idx_thesis_kwarg != -1, "Could not locate the thesis_run_label kwarg in server_app.py"
+    assert idx_embed != -1, "Could not locate embed_manifest_in_result(manifest, results_data) call site"
+    assert idx_thesis_kwarg < idx_embed, (
+        "Phase 7 D-22 + Pitfall 2 invariant: dataclass_replace(manifest, ...thesis fields...) "
+        "MUST execute BEFORE embed_manifest_in_result so the embedded _manifest dict "
+        "carries the thesis-tagging fields. Found embed_manifest_in_result first — order is wrong."
+    )
+    # Pitfall 3 site #1 + #2: BOTH mode tuples include thesis_crossdevice_main.
+    assert src.count('"thesis_crossdevice_main"') >= 2, (
+        "Phase 7 Pitfall 3: BOTH `mode in (...)` tuples in this server_app must include "
+        "'thesis_crossdevice_main' (W&B project gate + results-path gate)"
     )
