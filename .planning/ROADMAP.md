@@ -132,11 +132,11 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   3. The same comparison on the SPARSE user slice shows the adaptive module winning on sparse NDCG@10 against all three baselines (primary thesis claim).
   4. An ablation table exists for the adaptive module covering {hierarchical_conditional, multi_factor, data_quantity} × {per-user alpha on/off} × {item perturbation on/off} × {contrastive λ ∈ 0, 0.1} × {fusion ∈ add, gate, concat}, each row reporting per-user-group metrics so the "where does the win come from" question is answerable directly from the artifact.
 **Plans**: 5 plans
-  - [x] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
-  - [x] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
-  - [x] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
-  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
-  - [ ] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
+  - [ ] 07-thesis-evaluation-run-01-PLAN.md — Foundation extensions: _THESIS_CROSSDEVICE_MAIN ModeProfile + RunManifest schema v3 (thesis_run_label/ablation_dimension/ablation_value) + atomic_write_text + scripts/run.py mode dict (THS-01) — Wave 1
+  - [ ] 07-thesis-evaluation-run-02-PLAN.md — All 4 server_app.py files: thesis_crossdevice_main mode tuples + manifest mutation patch + pyproject thesis-run-label/ablation-dimension/ablation-value keys + 4 integration tests (THS-01, THS-02) — Wave 2
+  - [ ] 07-thesis-evaluation-run-03-PLAN.md — Orchestrator scripts/thesis/run_thesis_sweep.py + tests: matrix builders, skip-on-existing, --dry-run, --retry-failed, failed_cells log (THS-02, THS-05) — Wave 3 parallel
+  - [ ] 07-thesis-evaluation-run-04-PLAN.md — Aggregator scripts/thesis/aggregate_results.py + tests: D-20 hard-fail, D-11 win criterion, mean+/-std rendering, 6-file emission, atomic write (THS-03, THS-04, THS-05, THS-06, THS-07) — Wave 3 parallel
+  - [ ] 07-thesis-evaluation-run-05-PLAN.md — Operational runbook + UAT (Gates A-E): smoke run + main matrix (~19.5hr) + ablation matrix (~31.5hr) + aggregator + thesis-claim verification (THS-02..THS-07) — Wave 4
 
 ## Progress
 
@@ -148,7 +148,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
 | 5. PFedRec Migration & Reproduction | 5/5 | Complete   | 2026-04-28 |
 | 6. Evaluation & Reporting Harness | 7/7 | Complete   | 2026-04-29 |
-| 7. Thesis Evaluation Run | 0/0 | Not started | - |
+| 7. Thesis Evaluation Run | 0/5 | In progress | - |
 
 ## Dependency Graph
 
