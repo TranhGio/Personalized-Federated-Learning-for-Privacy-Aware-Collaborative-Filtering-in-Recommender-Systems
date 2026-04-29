@@ -214,13 +214,22 @@ Apply identically in:
 
 **Step 3 — Update existing source-string assertions in test_server_integration.py.**
 
+First, run the grep safety net to find ALL occurrences across all 4 module test directories — do NOT trust the per-site list at face value:
+```bash
+grep -rn '"benchmark_cross_device", "paper_compat_pfedrec"' federated-baseline-cf/tests/ federated-personalized-cf/tests/ federated-adaptive-personalized-cf/tests/ federated-pfedrec/tests/
+```
+
+Update every match to the 3-element tuple form. Survey at planning time confirms 2 sites contain the literal:
+- federated-pfedrec/tests/test_server_integration.py line ~321
+- federated-personalized-cf/tests/test_server_integration.py line ~324
+
+Baseline and adaptive-personalized `test_server_integration.py` files do NOT currently contain this 2-element literal (their `test_client_assertion.py` files already use the 3-element tuple form via `("benchmark_cross_device", "paper_compat_pfedrec", "cross_silo_legacy")` which is a different code path and stays untouched). The grep step is the safety net to catch any drift between planning and execution.
+
 Locate any assertion of the form:
 ```python
 assert 'if mode in ("benchmark_cross_device", "paper_compat_pfedrec")' in src, (...)
 ```
-and replace the literal-tuple substring with the 3-element tuple. Confirmed sites:
-- federated-pfedrec/tests/test_server_integration.py line 321
-- federated-personalized-cf/tests/test_server_integration.py line 324
+and replace the literal-tuple substring with the 3-element tuple.
 
 EXACT replacement string:
 ```python
@@ -229,16 +238,21 @@ assert 'if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_
 )
 ```
 
-Run `grep -l 'if mode in (.benchmark_cross_device., .paper_compat_pfedrec.)' federated-*-cf/tests/test_server_integration.py` to verify all matching files are updated.
+After the edit, re-run the grep with a stricter pattern to verify ZERO 2-tuple literals remain:
+```bash
+grep -rn '"benchmark_cross_device", "paper_compat_pfedrec"[^,]' federated-*-cf/tests/test_server_integration.py
+```
+This MUST return zero matches — proves all old 2-tuple literals are upgraded to 3-tuples (the trailing `[^,]` excludes the 3-tuple form which has a comma after the second element).
   </action>
   <verify>
-    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && for module in federated-baseline-cf/federated_baseline_cf federated-personalized-cf/federated_personalized_cf federated-adaptive-personalized-cf/federated_adaptive_personalized_cf federated-pfedrec/federated_pfedrec; do count=$(grep -c '"thesis_crossdevice_main"' "$module/server_app.py"); test "$count" -ge 2 || (echo "FAIL: $module/server_app.py has only $count thesis_crossdevice_main occurrences (need >=2)" && exit 1); done && for module in federated-baseline-cf/federated_baseline_cf federated-personalized-cf/federated_personalized_cf federated-adaptive-personalized-cf/federated_adaptive_personalized_cf federated-pfedrec/federated_pfedrec; do count=$(grep -c 'thesis_run_label=str(context.run_config.get' "$module/server_app.py"); test "$count" -eq 1 || (echo "FAIL: $module/server_app.py manifest mutation patch missing or duplicated (count=$count)" && exit 1); done && for tomlfile in federated-baseline-cf/pyproject.toml federated-personalized-cf/pyproject.toml federated-adaptive-personalized-cf/pyproject.toml federated-pfedrec/pyproject.toml; do grep -q '^thesis-run-label = ""' "$tomlfile" || (echo "FAIL: $tomlfile missing thesis-run-label" && exit 1); grep -q '^ablation-dimension = "none"' "$tomlfile" || (echo "FAIL: $tomlfile missing ablation-dimension" && exit 1); grep -q '^ablation-value = ""' "$tomlfile" || (echo "FAIL: $tomlfile missing ablation-value" && exit 1); done && echo "All server_app + pyproject patches verified"</automated>
+    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && for module in federated-baseline-cf/federated_baseline_cf federated-personalized-cf/federated_personalized_cf federated-adaptive-personalized-cf/federated_adaptive_personalized_cf federated-pfedrec/federated_pfedrec; do count=$(grep -c '"thesis_crossdevice_main"' "$module/server_app.py"); test "$count" -ge 2 || (echo "FAIL: $module/server_app.py has only $count thesis_crossdevice_main occurrences (need >=2)" && exit 1); done && for module in federated-baseline-cf/federated_baseline_cf federated-personalized-cf/federated_personalized_cf federated-adaptive-personalized-cf/federated_adaptive_personalized_cf federated-pfedrec/federated_pfedrec; do count=$(grep -c 'thesis_run_label=str(context.run_config.get' "$module/server_app.py"); test "$count" -eq 1 || (echo "FAIL: $module/server_app.py manifest mutation patch missing or duplicated (count=$count)" && exit 1); done && for tomlfile in federated-baseline-cf/pyproject.toml federated-personalized-cf/pyproject.toml federated-adaptive-personalized-cf/pyproject.toml federated-pfedrec/pyproject.toml; do grep -q '^thesis-run-label = ""' "$tomlfile" || (echo "FAIL: $tomlfile missing thesis-run-label" && exit 1); grep -q '^ablation-dimension = "none"' "$tomlfile" || (echo "FAIL: $tomlfile missing ablation-dimension" && exit 1); grep -q '^ablation-value = ""' "$tomlfile" || (echo "FAIL: $tomlfile missing ablation-value" && exit 1); done && stale_2tuple=$(grep -rln '"benchmark_cross_device", "paper_compat_pfedrec"[^,]' federated-baseline-cf/tests/test_server_integration.py federated-personalized-cf/tests/test_server_integration.py federated-adaptive-personalized-cf/tests/test_server_integration.py federated-pfedrec/tests/test_server_integration.py 2>/dev/null | wc -l) && test "$stale_2tuple" -eq 0 || (echo "FAIL: $stale_2tuple test_server_integration.py file(s) still contain the OLD 2-tuple literal" && exit 1) && echo "All server_app + pyproject + 3-tuple-assertion patches verified"</automated>
   </verify>
   <done>
     - All 4 server_app.py files contain `"thesis_crossdevice_main"` at least 2 times (mode-tuple gates).
     - All 4 server_app.py files contain `thesis_run_label=str(context.run_config.get("thesis-run-label"` exactly once (manifest mutation patch).
     - All 4 pyproject.toml files declare `thesis-run-label = ""`, `ablation-dimension = "none"`, `ablation-value = ""`.
     - Existing source-string assertions in test_server_integration.py updated to expect the 3-element tuple.
+    - **Warning 3 closure:** `grep -rn '"benchmark_cross_device", "paper_compat_pfedrec"[^,]' federated-*-cf/tests/test_server_integration.py` returns ZERO matches across ALL 4 module test directories after the edit (proves all old 2-tuple literals are upgraded to 3-tuples; survey at planning time confirmed only pfedrec + personalized contain the 2-tuple, but the grep across all 4 dirs is the safety net against drift between planning and execution).
   </done>
 </task>
 

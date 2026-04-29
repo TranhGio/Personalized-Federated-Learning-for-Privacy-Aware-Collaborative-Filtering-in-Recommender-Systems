@@ -213,6 +213,7 @@ MODE_NUM_SUPERNODES = {
     - manifest.py: `RUN_MANIFEST_SCHEMA_VERSION` bumped from `2` to `3`. Three new fields appended to `RunManifest` AFTER the existing `metrics: Dict[str, Any] = field(default_factory=dict)`: `thesis_run_label: str = ""`, `ablation_dimension: str = "none"`, `ablation_value: str = ""`. All three carry NumPy-style docstrings. `build_run_manifest` is NOT touched — defaults flow through implicitly so callers don't have to pass these kwargs (Pitfall 7 backward-compat invariant).
     - atomic.py: New `atomic_write_text(path: str, content: str) -> None` function added AFTER `atomic_write_json` (after line 48). Mirrors the `atomic_write_json` body but: (a) no JSON serialization, (b) `tempfile.mkstemp(..., suffix=".txt")`, (c) `os.fdopen(fd, "w", encoding="utf-8")`. Same exception-cleanup semantics.
     - scripts/run.py: `MODE_NUM_SUPERNODES` dict at lines 68-72 gains a new key `"thesis_crossdevice_main": 6040` placed between `"benchmark_cross_device"` and `"paper_compat_pfedrec"`. argparse `choices=sorted(MODE_NUM_SUPERNODES.keys())` (line 167) inherits the new value automatically — no edit needed.
+    - **Warning 4 closure (checkpoint_rule):** `_THESIS_CROSSDEVICE_MAIN.checkpoint_rule="best_round"` clones `_BENCHMARK_CROSS_DEVICE` verbatim. Phase 2 Plan 04 established that all 4 server_app.py files accept BOTH spellings ("best_round" from ModeProfile AND "best_round_restore" from pyproject) in the same checkpoint-rule branch — see STATE.md Phase 2 decision: "checkpoint_rule branch accepts both 'best_round_restore' (pyproject) and 'best_round' (ModeProfile) spellings to avoid bikeshed." Therefore the mode-profile field is informational and inheriting "best_round" is functionally equivalent to "best_round_restore" downstream. No functional risk; no test change needed beyond the dual-spelling tolerance test inherited from Phase 6.
   </behavior>
   <action>
 1. Edit `scripts/foundation/fedrec_foundation/mode.py`:
@@ -340,9 +341,20 @@ MODE_NUM_SUPERNODES = {
      (Pitfall 5: argparse `choices=sorted(MODE_NUM_SUPERNODES.keys())` automatically picks up the new mode; no other edits needed in scripts/run.py.)
 
 5. Run `pytest scripts/foundation/tests/test_mode.py scripts/foundation/tests/test_manifest.py scripts/foundation/tests/test_launcher.py -x -v` to confirm existing tests do NOT regress. Expected: 1 failure (`test_all_three_modes_registered` — now stale; Task 2 updates it). Other tests must still pass.
+
+6. **Warning 4 verification — confirm both-spelling tolerance for checkpoint_rule.** Run:
+   ```bash
+   grep -n "checkpoint.rule\|checkpoint_rule\|best_round" \
+       federated-baseline-cf/federated_baseline_cf/server_app.py \
+       federated-personalized-cf/federated_personalized_cf/server_app.py \
+       federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/server_app.py \
+       federated-pfedrec/federated_pfedrec/server_app.py \
+       | head -40
+   ```
+   Expected: each module's server_app.py contains a checkpoint-rule branch that handles BOTH `"best_round"` and `"best_round_restore"` (per Phase 2 Plan 04 dual-spelling tolerance — see STATE.md "checkpoint_rule branch accepts both 'best_round_restore' (pyproject) and 'best_round' (ModeProfile) spellings to avoid bikeshed"). Document the finding inline as a one-line comment in this plan's commit message: "Verified dual-spelling tolerance — _THESIS_CROSSDEVICE_MAIN.checkpoint_rule='best_round' (cloned from _BENCHMARK_CROSS_DEVICE) is functionally equivalent to pyproject 'best_round_restore'."
   </action>
   <verify>
-    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && python -c "from fedrec_foundation.mode import resolve_mode_defaults, MODE_NAMES; p = resolve_mode_defaults('thesis_crossdevice_main'); assert p.embedding_dim == 64 and p.optimizer == 'adam' and p.lr == 0.001 and p.num_server_rounds == 100 and p.weight_policy == 'num_positives' and p.fraction_train == 0.1; assert 'thesis_crossdevice_main' in MODE_NAMES; print('mode OK')" && python -c "from fedrec_foundation.manifest import RUN_MANIFEST_SCHEMA_VERSION, RunManifest; assert RUN_MANIFEST_SCHEMA_VERSION == 3; import inspect; src = inspect.getsource(RunManifest); assert 'thesis_run_label' in src and 'ablation_dimension' in src and 'ablation_value' in src; print('manifest OK')" && python -c "from fedrec_foundation.atomic import atomic_write_text; import tempfile, os, pathlib; td = tempfile.mkdtemp(); p = pathlib.Path(td) / 'out.txt'; atomic_write_text(str(p), 'hello'); assert p.read_text() == 'hello' and not list(pathlib.Path(td).glob('.tmp-*')); print('atomic OK')" && python scripts/run.py adaptive thesis_crossdevice_main --dry-run 2>&1 | grep -q 'mode="thesis_crossdevice_main"' && echo "launcher OK"</automated>
+    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && python -c "from fedrec_foundation.mode import resolve_mode_defaults, MODE_NAMES; p = resolve_mode_defaults('thesis_crossdevice_main'); assert p.embedding_dim == 64 and p.optimizer == 'adam' and p.lr == 0.001 and p.num_server_rounds == 100 and p.weight_policy == 'num_positives' and p.fraction_train == 0.1; assert 'thesis_crossdevice_main' in MODE_NAMES; print('mode OK')" && python -c "from fedrec_foundation.manifest import RUN_MANIFEST_SCHEMA_VERSION, RunManifest; assert RUN_MANIFEST_SCHEMA_VERSION == 3; import inspect; src = inspect.getsource(RunManifest); assert 'thesis_run_label' in src and 'ablation_dimension' in src and 'ablation_value' in src; print('manifest OK')" && python -c "from fedrec_foundation.atomic import atomic_write_text; import tempfile, os, pathlib; td = tempfile.mkdtemp(); p = pathlib.Path(td) / 'out.txt'; atomic_write_text(str(p), 'hello'); assert p.read_text() == 'hello' and not list(pathlib.Path(td).glob('.tmp-*')); print('atomic OK')" && python scripts/run.py adaptive thesis_crossdevice_main --dry-run 2>&1 | grep -q 'mode="thesis_crossdevice_main"' && echo "launcher OK" && for module in federated-baseline-cf/federated_baseline_cf federated-personalized-cf/federated_personalized_cf federated-adaptive-personalized-cf/federated_adaptive_personalized_cf federated-pfedrec/federated_pfedrec; do count=$(grep -cE 'best_round|best_round_restore' "$module/server_app.py"); test "$count" -ge 1 || (echo "FAIL: $module/server_app.py has no best_round branch (count=$count)" && exit 1); done && echo "checkpoint-rule dual-spelling tolerance verified across all 4 modules"</automated>
   </verify>
   <done>
     - `scripts/foundation/fedrec_foundation/mode.py` has `_THESIS_CROSSDEVICE_MAIN = ModeProfile(` and `"thesis_crossdevice_main": _THESIS_CROSSDEVICE_MAIN` in `_REGISTRY`.
@@ -350,6 +362,7 @@ MODE_NUM_SUPERNODES = {
     - `scripts/foundation/fedrec_foundation/atomic.py` has `def atomic_write_text(path: str, content: str) -> None:`.
     - `scripts/run.py` has `"thesis_crossdevice_main": 6040,` in `MODE_NUM_SUPERNODES`.
     - All four existing-pattern smoke checks (mode resolve, schema version, atomic_write_text round-trip, launcher dry-run) pass.
+    - **Warning 4 closure:** `grep -cE 'best_round|best_round_restore' federated-*-cf/<package>/server_app.py` returns at least 1 in each of the 4 modules (confirms dual-spelling tolerance per Phase 2 Plan 04 — `_THESIS_CROSSDEVICE_MAIN.checkpoint_rule="best_round"` cloned from `_BENCHMARK_CROSS_DEVICE` is functionally equivalent to pyproject `"best_round_restore"` downstream; mode-profile field is informational).
   </done>
 </task>
 

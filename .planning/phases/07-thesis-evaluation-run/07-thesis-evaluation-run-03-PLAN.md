@@ -22,6 +22,7 @@ must_haves:
     - "build_ablation_matrix() returns 21 ThesisCell instances: 7 ablation knobs x 3 seeds, all module='adaptive' at thesis_crossdevice_main"
     - "cell_already_done() matches on the FULL tuple (module, thesis_run_label, run_seed, ablation_dimension, ablation_value) — not just (module, run_seed)"
     - "cell_run_config_string() produces TOML-quoted strings consumable by scripts/run.py's --run-config parser"
+    - "THESIS_BASE_OVERRIDES applies D-02 + D-03 to every cell: strategy=fedavg for all 4 modules; model-type=dual + alpha-method=hierarchical_conditional + next-gen knobs OFF for adaptive; merge order base->extra_run_config so ablation cells override base on conflict"
     - "--dry-run flag prints commands without invoking subprocess"
     - "--retry-failed flag re-runs only cells whose results.json is still missing on disk"
     - "Cell failures are caught, logged to results/federated/_thesis/failed_cells.json with stderr excerpt, and orchestrator continues to next cell (no stop-the-sweep)"
@@ -52,7 +53,7 @@ Build the matrix-driven orchestrator that fires `flwr run` per cell across the t
 The orchestrator is responsible for:
 1. **Matrix definition (D-13 + D-14)**: 12 main cells (3 baseline + 3 personalized + 3 adaptive at `thesis_crossdevice_main` + 3 pfedrec at `paper_compat_pfedrec`) + 21 ablation cells (7 ablations x 3 seeds, all `module="adaptive"` at `thesis_crossdevice_main`).
 2. **Idempotent skip (D-18)**: `cell_already_done(cell)` checks every results-dir's manifest.json against the cell's full identity tuple `(module, thesis_run_label, run_seed, ablation_dimension, ablation_value)` — Pitfall 8 mitigation (naive `(module, seed)` matching collides because adaptive at seed=42 happens 8 times).
-3. **Run config emission**: `cell_run_config_string(cell)` produces a single space-separated TOML-quoted KEY=VAL string consumable by `scripts/run.py --run-config "..."`. Includes `run-seed`, `thesis-run-label`, `ablation-dimension`, `ablation-value`, `wandb-run-name` (D-21 naming pattern), plus any extra knobs from `cell.extra_run_config`.
+3. **Run config emission**: `cell_run_config_string(cell)` produces a single space-separated TOML-quoted KEY=VAL string consumable by `scripts/run.py --run-config "..."`. Includes `run-seed`, `thesis-run-label`, `ablation-dimension`, `ablation-value`, `wandb-run-name` (D-21 naming pattern), `THESIS_BASE_OVERRIDES[cell.module]` (D-02 + D-03 enforcement: `strategy=fedavg` for all 4 modules; for adaptive ALSO `model-type=dual` + `alpha-method=hierarchical_conditional` + next-gen knobs OFF), plus any extra knobs from `cell.extra_run_config` which override the base where they conflict (e.g. the `alpha_method=multi_factor` ablation cell overrides the adaptive base `alpha-method=hierarchical_conditional`).
 4. **Subprocess invocation**: `execute_cell(cell, dry_run=False)` calls `subprocess.run([sys.executable, scripts/run.py, module, mode, --run-config, ...])`, captures stdout+stderr, returns `(success, stderr_excerpt)`.
 5. **Failure handling (D-23)**: append failed cells to `results/federated/_thesis/failed_cells.json` with stderr excerpt; continue to the next cell; at the end print summary + `python scripts/thesis/run_thesis_sweep.py --retry-failed` recovery command.
 6. **CLI**: `argparse` with `--phase=main|ablation|all`, `--dry-run`, `--retry-failed`, `--module=<one>` (smoke filter), `--seed=<int>` (smoke filter).
@@ -136,7 +137,7 @@ Pattern reference (verified):
   </read_first>
   <behavior>
     - `scripts/thesis/__init__.py` is an empty file (D-18 explicitly: "Empty (cross-script imports)").
-    - `scripts/thesis/run_thesis_sweep.py` exports the public symbols: `ThesisCell` (frozen dataclass), `build_main_matrix()`, `build_ablation_matrix()`, `cell_already_done(cell, results_root)`, `cell_run_config_string(cell)`, `execute_cell(cell, repo_root, dry_run=False) -> Tuple[bool, str]`, `main(argv) -> int`.
+    - `scripts/thesis/run_thesis_sweep.py` exports the public symbols: `ThesisCell` (frozen dataclass), `THESIS_BASE_OVERRIDES` (per-module D-02 + D-03 enforced overrides), `build_main_matrix()`, `build_ablation_matrix()`, `cell_already_done(cell, results_root)`, `cell_run_config_string(cell)` (merges THESIS_BASE_OVERRIDES BEFORE cell.extra_run_config), `execute_cell(cell, repo_root, dry_run=False) -> Tuple[bool, str]`, `main(argv) -> int`.
     - `main()` uses argparse with: positional/optional `--phase {main,ablation,all}` (default `all`), `--dry-run`, `--retry-failed`, `--module=<one>`, `--seed=<int>`, `--results-root=<path>` (overridable for tests; defaults to `repo_root() / "results"`).
     - On every cell completion, writes `<results_root>/federated/_thesis/_progress.json` atomically.
     - On every cell failure, appends to `<results_root>/federated/_thesis/failed_cells.json` (read-modify-write atomic via atomic_write_json).
@@ -220,6 +221,33 @@ _ABLATION_SHORT_NAME: Dict[str, str] = {
     "item_perturbation":  "ip",
     "contrastive_lambda": "cl",
     "fusion_type":        "fusion",
+}
+
+# Per-module base overrides for thesis runs (D-02, D-03 enforcement).
+# These overrides MUST be merged into every thesis cell's run-config BEFORE
+# cell.extra_run_config so that ablation cells can override knobs on top of
+# the locked base. The merge order is: THESIS_BASE_OVERRIDES[module] -> cell.extra_run_config.
+#
+# - All 4 modules: strategy=fedavg (D-03 — no FedProx in thesis runs).
+# - Adaptive only: model-type=dual + alpha-method=hierarchical_conditional (D-02 — main config).
+# - Adaptive only: enable-per-user-alpha=false + enable-item-perturbation=false +
+#   contrastive-lambda=0.0 (D-02 — next-gen knobs OFF in main; ablation cells override
+#   each one in turn). The adaptive pyproject.toml defaults these to true/0.1, so we
+#   MUST disable them explicitly for the main-comparison row.
+# - PFedRec / baseline / personalized: NO model-type/alpha-method overrides
+#   (those keys do not exist in their pyproject.toml).
+THESIS_BASE_OVERRIDES: Dict[str, Dict[str, str]] = {
+    "baseline":     {"strategy": "fedavg"},
+    "personalized": {"strategy": "fedavg"},
+    "adaptive":     {
+        "strategy": "fedavg",
+        "model-type": "dual",
+        "alpha-method": "hierarchical_conditional",
+        "enable-per-user-alpha": "false",
+        "enable-item-perturbation": "false",
+        "contrastive-lambda": "0.0",
+    },
+    "pfedrec":      {"strategy": "fedavg"},
 }
 
 
@@ -371,8 +399,15 @@ def _wandb_run_name(cell: ThesisCell) -> str:
 def cell_run_config_string(cell: ThesisCell) -> str:
     """Build the ``--run-config`` string for ``scripts/run.py``.
 
-    Includes: ``run-seed``, ``thesis-run-label``, ``ablation-dimension``,
-    ``ablation-value``, ``wandb-run-name``, plus ``cell.extra_run_config``.
+    Order of keys (later keys override earlier ones in flwr's fuse_dicts):
+      1. ``run-seed``, ``thesis-run-label``, ``ablation-dimension``,
+         ``ablation-value``, ``wandb-run-name``  — provenance metadata.
+      2. ``THESIS_BASE_OVERRIDES[cell.module]``  — D-02 + D-03 enforced base
+         (strategy=fedavg for all; model-type=dual + alpha-method=hierarchical_conditional
+         + next-gen knobs OFF for adaptive).
+      3. ``cell.extra_run_config``               — ablation cells override the
+         base where they conflict (e.g. ``alpha-method=multi_factor`` overrides
+         the adaptive base ``alpha-method=hierarchical_conditional``).
 
     Bare-word string values are passed RAW; scripts/run.py's
     ``_quote_value_for_flwr`` adds TOML quoting downstream.
@@ -382,7 +417,12 @@ def cell_run_config_string(cell: ThesisCell) -> str:
     parts.append(f"ablation-dimension={cell.ablation_dimension}")
     parts.append(f"ablation-value={cell.ablation_value}")
     parts.append(f"wandb-run-name={_wandb_run_name(cell)}")
-    for k, v in cell.extra_run_config.items():
+    # D-02 + D-03 base overrides BEFORE extra_run_config so ablation cells win
+    # where they conflict (e.g. alpha-method ablation overrides hierarchical_conditional).
+    base_overrides = THESIS_BASE_OVERRIDES.get(cell.module, {})
+    merged: Dict[str, str] = dict(base_overrides)
+    merged.update(cell.extra_run_config)
+    for k, v in merged.items():
         parts.append(f"{k}={v}")
     return " ".join(parts)
 
@@ -642,16 +682,20 @@ python scripts/thesis/run_thesis_sweep.py --phase=all --module=adaptive --seed=4
 ```
   </action>
   <verify>
-    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && test -f scripts/thesis/__init__.py && test -f scripts/thesis/run_thesis_sweep.py && test "$(wc -c < scripts/thesis/__init__.py)" -eq 0 && python -c "import sys; sys.path.insert(0, 'scripts'); from thesis.run_thesis_sweep import build_main_matrix, build_ablation_matrix, ThesisCell; main_cells = build_main_matrix(); abl_cells = build_ablation_matrix(); assert len(main_cells) == 12, f'main matrix size {len(main_cells)} != 12'; assert len(abl_cells) == 21, f'ablation matrix size {len(abl_cells)} != 21'; modules = sorted(set(c.module for c in main_cells)); assert modules == ['adaptive', 'baseline', 'personalized', 'pfedrec'], f'main modules {modules}'; abl_modules = sorted(set(c.module for c in abl_cells)); assert abl_modules == ['adaptive'], f'ablation modules must be only adaptive (D-13); got {abl_modules}'; pfedrec_cells = [c for c in main_cells if c.module == 'pfedrec']; assert all(c.mode == 'paper_compat_pfedrec' for c in pfedrec_cells), 'pfedrec cells must use paper_compat_pfedrec mode (D-06)'; thesis_cells = [c for c in main_cells if c.module != 'pfedrec']; assert all(c.mode == 'thesis_crossdevice_main' for c in thesis_cells), 'non-pfedrec main cells must use thesis_crossdevice_main mode'; print('matrix OK')" && python scripts/thesis/run_thesis_sweep.py --phase=main --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "12" && python scripts/thesis/run_thesis_sweep.py --phase=ablation --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "21" && python scripts/thesis/run_thesis_sweep.py --phase=all --module=adaptive --seed=42 --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "8" && echo "Orchestrator OK"</automated>
+    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && test -f scripts/thesis/__init__.py && test -f scripts/thesis/run_thesis_sweep.py && test "$(wc -c < scripts/thesis/__init__.py)" -eq 0 && grep -n "strategy.*fedavg" scripts/thesis/run_thesis_sweep.py >/dev/null && grep -n "model-type.*dual" scripts/thesis/run_thesis_sweep.py >/dev/null && grep -n "alpha-method.*hierarchical_conditional" scripts/thesis/run_thesis_sweep.py >/dev/null && python -c "import sys; sys.path.insert(0, 'scripts'); from thesis.run_thesis_sweep import build_main_matrix, build_ablation_matrix, ThesisCell, THESIS_BASE_OVERRIDES, cell_run_config_string; main_cells = build_main_matrix(); abl_cells = build_ablation_matrix(); assert len(main_cells) == 12, f'main matrix size {len(main_cells)} != 12'; assert len(abl_cells) == 21, f'ablation matrix size {len(abl_cells)} != 21'; modules = sorted(set(c.module for c in main_cells)); assert modules == ['adaptive', 'baseline', 'personalized', 'pfedrec'], f'main modules {modules}'; abl_modules = sorted(set(c.module for c in abl_cells)); assert abl_modules == ['adaptive'], f'ablation modules must be only adaptive (D-13); got {abl_modules}'; pfedrec_cells = [c for c in main_cells if c.module == 'pfedrec']; assert all(c.mode == 'paper_compat_pfedrec' for c in pfedrec_cells), 'pfedrec cells must use paper_compat_pfedrec mode (D-06)'; thesis_cells = [c for c in main_cells if c.module != 'pfedrec']; assert all(c.mode == 'thesis_crossdevice_main' for c in thesis_cells), 'non-pfedrec main cells must use thesis_crossdevice_main mode'; assert set(THESIS_BASE_OVERRIDES.keys()) == {'baseline', 'personalized', 'adaptive', 'pfedrec'}, 'THESIS_BASE_OVERRIDES must cover all 4 modules'; assert all(THESIS_BASE_OVERRIDES[m]['strategy'] == 'fedavg' for m in THESIS_BASE_OVERRIDES), 'D-03: strategy=fedavg for all modules'; assert THESIS_BASE_OVERRIDES['adaptive']['model-type'] == 'dual', 'D-02: adaptive base = dual'; assert THESIS_BASE_OVERRIDES['adaptive']['alpha-method'] == 'hierarchical_conditional', 'D-02: adaptive base alpha-method'; print('matrix + base-overrides OK')" && python scripts/thesis/run_thesis_sweep.py --phase=main --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "12" && python scripts/thesis/run_thesis_sweep.py --phase=ablation --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "21" && python scripts/thesis/run_thesis_sweep.py --phase=all --module=adaptive --seed=42 --dry-run 2>&1 | grep -c "DRY-RUN" | xargs -I{} test {} = "8" && echo "Orchestrator OK"</automated>
   </verify>
   <done>
     - `scripts/thesis/__init__.py` exists, 0 bytes.
-    - `scripts/thesis/run_thesis_sweep.py` exists and exports `ThesisCell`, `build_main_matrix`, `build_ablation_matrix`, `cell_already_done`, `cell_run_config_string`, `execute_cell`, `main`.
+    - `scripts/thesis/run_thesis_sweep.py` exists and exports `ThesisCell`, `THESIS_BASE_OVERRIDES`, `build_main_matrix`, `build_ablation_matrix`, `cell_already_done`, `cell_run_config_string`, `execute_cell`, `main`.
     - `build_main_matrix()` returns exactly 12 cells (3 baseline + 3 personalized + 3 adaptive at thesis_crossdevice_main; 3 pfedrec at paper_compat_pfedrec).
     - `build_ablation_matrix()` returns exactly 21 cells (7 ablations x 3 seeds, all adaptive at thesis_crossdevice_main).
     - `--phase=main --dry-run` prints 12 `[DRY-RUN]` lines.
     - `--phase=ablation --dry-run` prints 21 `[DRY-RUN]` lines.
     - `--phase=all --module=adaptive --seed=42 --dry-run` prints 8 `[DRY-RUN]` lines (1 main + 7 ablations for adaptive at seed 42).
+    - **BLOCKER 1 (D-02 + D-03 enforcement):** `grep -n "strategy.*fedavg" scripts/thesis/run_thesis_sweep.py` returns at least one match (in THESIS_BASE_OVERRIDES). `grep -n "model-type.*dual" scripts/thesis/run_thesis_sweep.py` returns at least one match (adaptive base override). `grep -n "alpha-method.*hierarchical_conditional" scripts/thesis/run_thesis_sweep.py` returns at least one match.
+    - **BLOCKER 1 (merge precedence):** `cell_run_config_string()` applies `THESIS_BASE_OVERRIDES[cell.module]` BEFORE `cell.extra_run_config`. Verified by `test_alpha_method_ablation_overrides_base_hc` (Task 2): an `alpha_method=multi_factor` ablation cell's run-config string contains `alpha-method=multi_factor`, NOT `alpha-method=hierarchical_conditional`.
+    - **BLOCKER 2 (fusion-type ablation correctness):** Adaptive base override sets `model-type=dual`, so a fusion-type ablation cell's run-config string contains BOTH `model-type=dual` AND `fusion-type=add` (verified by `test_fusion_type_ablation_includes_dual_model`).
+    - PFedRec base override does NOT include `model-type` or `alpha-method` (verified by `test_pfedrec_main_cell_does_not_set_model_type`); PFedRec's pyproject.toml has no such keys.
   </done>
 </task>
 
@@ -667,10 +711,13 @@ python scripts/thesis/run_thesis_sweep.py --phase=all --module=adaptive --seed=4
   <behavior>
     - The new test file `scripts/foundation/tests/test_thesis_orchestrator.py` lives alongside other foundation tests; pytest discovers it automatically (foundation `pyproject.toml` already declares `testpaths=["tests"]`).
     - Tests use the `tmp_path` fixture for synthetic results-root manifests and DO NOT require any actual flwr run.
-    - Test functions are named exactly per VALIDATION.md row IDs: `test_main_matrix_size`, `test_ablation_matrix_size`, `test_skip_on_existing_full_tuple`, `test_run_config_quoting`, `test_dry_run_no_subprocess`. Plus three more for completeness: `test_main_modules_correct`, `test_ablation_module_is_adaptive_only`, `test_seeds_are_canonical_set`.
+    - Test functions are named exactly per VALIDATION.md row IDs: `test_main_matrix_size`, `test_ablation_matrix_size`, `test_skip_on_existing_full_tuple`, `test_run_config_quoting`, `test_dry_run_no_subprocess`. Plus eight more for completeness: `test_main_modules_correct`, `test_ablation_module_is_adaptive_only`, `test_seeds_are_canonical_set`, `test_skip_on_existing_returns_false_when_no_disk`, `test_skip_on_existing_ignores_corrupt_manifest`, `test_run_config_string_includes_extra_knobs`, `test_run_config_string_item_perturbation_two_knobs`, `test_ablation_knobs_shape`.
+    - **BLOCKER 1 D-02/D-03 enforcement tests (3 new):** `test_adaptive_main_cell_includes_dual_model_and_hc_alpha`, `test_alpha_method_ablation_overrides_base_hc`, `test_pfedrec_main_cell_does_not_set_model_type`.
+    - **BLOCKER 2 fusion-type-ablation correctness test (1 new):** `test_fusion_type_ablation_includes_dual_model` — proves `fusion-type=add` ablation cell carries `model-type=dual` from the base override (without it, the fusion-type knob is a silent no-op).
     - `test_skip_on_existing_full_tuple` constructs synthetic manifests with same (module, seed) but different (thesis_run_label, ablation_dimension, ablation_value) and asserts cell_already_done correctly distinguishes them (Pitfall 8 mitigation test).
     - `test_dry_run_no_subprocess` mocks subprocess.run and asserts execute_cell with dry_run=True returns (True, "") WITHOUT invoking subprocess.run.
     - The test file imports the orchestrator via `sys.path.insert(0, scripts/)` then `from thesis.run_thesis_sweep import ...` (mirrors how the orchestrator runs).
+    - Total test count: **15 GREEN** (8 VALIDATION-mapped + supplementary + 4 BLOCKER 1+2 enforcement).
   </behavior>
   <action>
 Create the file `scripts/foundation/tests/test_thesis_orchestrator.py` with EXACT content:
@@ -695,6 +742,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 from thesis.run_thesis_sweep import (  # noqa: E402
     ABLATION_KNOBS,
+    THESIS_BASE_OVERRIDES,
     THESIS_SEEDS,
     ThesisCell,
     build_ablation_matrix,
@@ -924,6 +972,119 @@ def test_ablation_knobs_shape() -> None:
     assert dimensions.count("per_user_alpha") == 1
     assert dimensions.count("item_perturbation") == 1
     assert dimensions.count("contrastive_lambda") == 1
+
+
+# ============================================================================
+# BLOCKER 1 + BLOCKER 2: D-02 + D-03 enforcement (per-checker iteration 1)
+# ============================================================================
+
+
+def test_adaptive_main_cell_includes_dual_model_and_hc_alpha() -> None:
+    """BLOCKER 1 (D-02 + D-03): adaptive main cell's run-config MUST contain
+    strategy=fedavg AND model-type=dual AND alpha-method=hierarchical_conditional.
+
+    Without this, all 12 main + all 21 ablation cells silently run with
+    FedProx + whatever-model-type from pyproject.toml defaults, producing
+    invalid thesis numbers.
+    """
+    cell = ThesisCell(
+        module="adaptive", mode="thesis_crossdevice_main", run_seed=42,
+        thesis_run_label="main", ablation_dimension="none", ablation_value="",
+        extra_run_config={},
+    )
+    s = cell_run_config_string(cell)
+    assert "strategy=fedavg" in s, "D-03: adaptive main MUST run with fedavg, not fedprox"
+    assert "model-type=dual" in s, "D-02: adaptive main MUST use model-type=dual"
+    assert "alpha-method=hierarchical_conditional" in s, (
+        "D-02: adaptive main MUST use alpha-method=hierarchical_conditional"
+    )
+    # D-02: next-gen knobs OFF in main config (they default to true/0.1 in pyproject.toml).
+    assert "enable-per-user-alpha=false" in s, (
+        "D-02: next-gen knob enable-per-user-alpha MUST be OFF in main config"
+    )
+    assert "enable-item-perturbation=false" in s, (
+        "D-02: next-gen knob enable-item-perturbation MUST be OFF in main config"
+    )
+    assert "contrastive-lambda=0.0" in s, (
+        "D-02: next-gen knob contrastive-lambda MUST be 0.0 in main config"
+    )
+
+
+def test_alpha_method_ablation_overrides_base_hc() -> None:
+    """BLOCKER 1 (merge precedence): the alpha_method=multi_factor ablation cell
+    MUST contain alpha-method=multi_factor (NOT hierarchical_conditional).
+
+    This test PROVES the merge order is correct: cell.extra_run_config wins
+    over THESIS_BASE_OVERRIDES[module] on conflicting keys. If the merge were
+    reversed, the ablation would silently revert to hierarchical_conditional
+    and produce duplicate main-config rows instead of ablation data.
+    """
+    cell = ThesisCell(
+        module="adaptive", mode="thesis_crossdevice_main", run_seed=42,
+        thesis_run_label="ablation_alpha_method=multi_factor",
+        ablation_dimension="alpha_method", ablation_value="multi_factor",
+        extra_run_config={"alpha-method": "multi_factor"},
+    )
+    s = cell_run_config_string(cell)
+    assert "alpha-method=multi_factor" in s, (
+        "BLOCKER 1: ablation cell's alpha-method=multi_factor MUST appear in run-config"
+    )
+    assert "alpha-method=hierarchical_conditional" not in s, (
+        "BLOCKER 1 (merge order): the base override hierarchical_conditional "
+        "MUST NOT appear in the run-config — extra_run_config wins on conflict."
+    )
+    # Strategy + model-type overrides still apply (no conflict — ablation only flips alpha-method).
+    assert "strategy=fedavg" in s
+    assert "model-type=dual" in s
+
+
+def test_pfedrec_main_cell_does_not_set_model_type() -> None:
+    """BLOCKER 1: PFedRec's pyproject.toml has NO model-type or alpha-method keys.
+
+    THESIS_BASE_OVERRIDES['pfedrec'] MUST NOT include those keys, otherwise
+    flwr's fuse_dicts validation rejects the run-config with 'Key not present'
+    before the run starts.
+    """
+    cell = ThesisCell(
+        module="pfedrec", mode="paper_compat_pfedrec", run_seed=42,
+        thesis_run_label="main", ablation_dimension="none", ablation_value="",
+        extra_run_config={},
+    )
+    s = cell_run_config_string(cell)
+    assert "strategy=fedavg" in s, "D-03: pfedrec base override sets strategy=fedavg"
+    assert "model-type=" not in s, (
+        "BLOCKER 1: pfedrec has no model-type config key; THESIS_BASE_OVERRIDES "
+        "MUST NOT inject it (would cause fuse_dicts validation failure)"
+    )
+    assert "alpha-method=" not in s, (
+        "BLOCKER 1: pfedrec has no alpha-method config key; THESIS_BASE_OVERRIDES "
+        "MUST NOT inject it (would cause fuse_dicts validation failure)"
+    )
+
+
+def test_fusion_type_ablation_includes_dual_model() -> None:
+    """BLOCKER 2 (D-02 amplification): fusion-type ablations only have effect when
+    model-type=dual. Without the adaptive base override forcing model-type=dual,
+    fusion-type=add ablation runs as plain BPRMF (silently producing results
+    identical to the bpr default — wrong ablation data).
+    """
+    cell = ThesisCell(
+        module="adaptive", mode="thesis_crossdevice_main", run_seed=42,
+        thesis_run_label="ablation_fusion_type=add",
+        ablation_dimension="fusion_type", ablation_value="add",
+        extra_run_config={"fusion-type": "add"},
+    )
+    s = cell_run_config_string(cell)
+    # BLOCKER 2: fusion-type knob requires model-type=dual to take effect.
+    assert "model-type=dual" in s, (
+        "BLOCKER 2: fusion-type ablation MUST include model-type=dual from THESIS_BASE_OVERRIDES "
+        "or the fusion-type knob is a silent no-op (run reduces to BPRMF default)"
+    )
+    assert "fusion-type=add" in s, "Ablation cell sets fusion-type=add"
+    # alpha-method=hierarchical_conditional is preserved from base (not flipped by this ablation).
+    assert "alpha-method=hierarchical_conditional" in s, (
+        "fusion_type ablation does NOT touch alpha-method — base HC value preserved"
+    )
 ```
 
 Run the new tests:
@@ -931,16 +1092,18 @@ Run the new tests:
 cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system
 pytest scripts/foundation/tests/test_thesis_orchestrator.py -x -v
 ```
-Expect: 11 PASSED.
+Expect: **15 PASSED** (was 11 pre-revision; +3 BLOCKER 1 D-02/D-03 enforcement tests + 1 BLOCKER 2 fusion-type-ablation test).
   </action>
   <verify>
-    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && pytest scripts/foundation/tests/test_thesis_orchestrator.py -x -v 2>&1 | tail -15 | grep -E "passed|FAILED" | grep -q "11 passed"</automated>
+    <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system && pytest scripts/foundation/tests/test_thesis_orchestrator.py -x -v 2>&1 | tail -25 | grep -E "passed|FAILED" | grep -q "15 passed"</automated>
   </verify>
   <done>
     - `scripts/foundation/tests/test_thesis_orchestrator.py` exists.
-    - All 11 tests GREEN.
+    - All **15 tests GREEN** (was 11 pre-revision; +3 BLOCKER 1 + 1 BLOCKER 2 enforcement tests).
     - The 5 VALIDATION.md-named tests are present and pass: `test_main_matrix_size`, `test_ablation_matrix_size`, `test_skip_on_existing_full_tuple`, `test_run_config_quoting`, `test_dry_run_no_subprocess`.
-    - 6 supplementary tests also pass: `test_main_modules_correct`, `test_ablation_module_is_adaptive_only`, `test_seeds_are_canonical_set`, `test_skip_on_existing_returns_false_when_no_disk`, `test_skip_on_existing_ignores_corrupt_manifest`, `test_run_config_string_includes_extra_knobs`, `test_run_config_string_item_perturbation_two_knobs`, `test_ablation_knobs_shape`.
+    - **BLOCKER 1 (D-02/D-03) tests pass:** `test_adaptive_main_cell_includes_dual_model_and_hc_alpha`, `test_alpha_method_ablation_overrides_base_hc`, `test_pfedrec_main_cell_does_not_set_model_type`.
+    - **BLOCKER 2 (fusion-type-ablation correctness) test passes:** `test_fusion_type_ablation_includes_dual_model`.
+    - 7 supplementary tests pass: `test_main_modules_correct`, `test_ablation_module_is_adaptive_only`, `test_seeds_are_canonical_set`, `test_skip_on_existing_returns_false_when_no_disk`, `test_skip_on_existing_ignores_corrupt_manifest`, `test_run_config_string_includes_extra_knobs`, `test_run_config_string_item_perturbation_two_knobs`, `test_ablation_knobs_shape`.
   </done>
 </task>
 
@@ -960,8 +1123,11 @@ Expect: 11 PASSED.
 - [ ] `scripts/thesis/run_thesis_sweep.py` exists, exports the 7 public symbols.
 - [ ] `python scripts/thesis/run_thesis_sweep.py --phase=main --dry-run` prints 12 `[DRY-RUN]` lines.
 - [ ] `python scripts/thesis/run_thesis_sweep.py --phase=ablation --dry-run` prints 21 `[DRY-RUN]` lines.
-- [ ] `pytest scripts/foundation/tests/test_thesis_orchestrator.py -x -v` reports 11 PASSED.
+- [ ] `pytest scripts/foundation/tests/test_thesis_orchestrator.py -x -v` reports **15 PASSED** (was 11 pre-revision).
 - [ ] D-23 invariants verified by code review: failure handling appends to failed_cells.json + continues; never auto-retries within a sweep.
+- [ ] **BLOCKER 1 (D-02 + D-03 enforcement):** `THESIS_BASE_OVERRIDES` dict declares `strategy=fedavg` for all 4 modules; adaptive ALSO has `model-type=dual`, `alpha-method=hierarchical_conditional`, and next-gen knobs OFF (`enable-per-user-alpha=false`, `enable-item-perturbation=false`, `contrastive-lambda=0.0`).
+- [ ] **BLOCKER 1 (merge precedence):** `cell_run_config_string()` merges `THESIS_BASE_OVERRIDES[cell.module]` BEFORE `cell.extra_run_config` so ablation cells override the base on conflict.
+- [ ] **BLOCKER 2 (fusion-type-ablation correctness):** Adaptive base override sets `model-type=dual`, ensuring `fusion-type=add`/`fusion-type=gate` ablations are NOT silent no-ops.
 </success_criteria>
 
 <output>
