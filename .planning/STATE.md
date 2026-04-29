@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 07-thesis-evaluation-run-04-PLAN.md
-last_updated: "2026-04-29T14:36:24.806Z"
+stopped_at: "07-thesis-evaluation-run-05-PLAN.md Task 1 complete; Tasks 2-5 PAUSED at checkpoint:human-verify (Gate A pre-flight smoke ~1.5hr GPU pending)"
+last_updated: "2026-04-29T14:42:08.561Z"
 progress:
   total_phases: 7
   completed_phases: 6
@@ -75,6 +75,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 07-thesis-evaluation-run P02 | 10min | 2 tasks tasks | 12 files files |
 | Phase 07-thesis-evaluation-run P03 | 12min | 2 tasks | 3 files |
 | Phase 07-thesis-evaluation-run P04 | 15min | 2 tasks | 2 files |
+| Phase 07 P05 | 2min (Task 1; Tasks 2-5 paused) | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 07-thesis-evaluation-run]: Aggregator imports build_main_matrix + build_ablation_matrix from Plan 03's orchestrator — single source of truth for D-20 expected-cell set
 - [Phase 07-thesis-evaluation-run]: Population std (np.std(arr, ddof=0)) over sample std (ddof=1) — matches de facto thesis-reporting convention; deterministic across rows so winner ranking is preserved at N=3 seeds
 - [Phase 07-thesis-evaluation-run]: --check-only flag returns 0 on success without writing files (pre-aggregation gate for Plan 05 runbook); D-20 hard-fail behavior unchanged
+- [Phase 07-thesis-evaluation-run]: Plan 05 Task 1: shipped RUNBOOK + UAT operational docs (5-gate execution path). Tasks 2-5 paused at checkpoint:human-verify — represent ~50hr GPU wallclock that cannot be auto-approved (would falsify THS-03/THS-04 attribution).
+- [Phase 07-thesis-evaluation-run]: Plan 05 D-12 contingency documented inline in BOTH RUNBOOK Gate E.5 AND UAT E.5 — Outcome A (THS-03/04 PASS), Outcome B-1 (recovery via ablation), Outcome B-2 (thesis replan via PROJECT.md core value). Operator never needs to make a decision the planner did not anticipate.
 
 ### Todos
 
@@ -225,7 +228,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed 07-thesis-evaluation-run-04-PLAN.md
+**Stopped at:** 07-thesis-evaluation-run-05-PLAN.md Task 1 complete; Tasks 2-5 PAUSED at checkpoint:human-verify (Gate A pre-flight smoke ~1.5hr GPU pending)
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
