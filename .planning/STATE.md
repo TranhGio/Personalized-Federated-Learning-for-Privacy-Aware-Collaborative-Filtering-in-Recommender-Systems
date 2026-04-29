@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 07-thesis-evaluation-run-01-PLAN.md
-last_updated: "2026-04-29T14:04:02.722Z"
+stopped_at: Completed 07-thesis-evaluation-run-02-PLAN.md
+last_updated: "2026-04-29T14:24:59.642Z"
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 39
-  completed_plans: 35
+  completed_plans: 36
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -72,6 +72,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 06 P06 | 30min | 1 tasks | 3 files |
 | Phase 06-evaluation-reporting-harness P07 | 8min | 2 tasks | 5 files |
 | Phase 07-thesis-evaluation-run P01 | 25min | 2 tasks tasks | 8 files files |
+| Phase 07-thesis-evaluation-run P02 | 10min | 2 tasks tasks | 12 files files |
 
 ## Accumulated Context
 
@@ -182,6 +183,10 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 07-thesis-evaluation-run]: Plan 01 D-17 closure: atomic_write_text(path, content) added to fedrec_foundation.atomic for markdown/CSV writes (Phase 7 Plan 04 aggregator dependency); UTF-8 + tempfile + os.replace + cleanup-on-exception, mirrors atomic_write_json with suffix='.txt'.
 - [Phase 07-thesis-evaluation-run]: Plan 01 Pitfall 5 closure: scripts/run.py MODE_NUM_SUPERNODES dict gained thesis_crossdevice_main: 6040; argparse choices=sorted(MODE_NUM_SUPERNODES.keys()) auto-extends; launcher dry-run verified to emit mode='thesis_crossdevice_main' under all 4 module aliases (baseline/personalized/adaptive/pfedrec).
 - [Phase 07-thesis-evaluation-run]: Plan 01 Warning 4 closure: dual-spelling tolerance for checkpoint_rule verified across all 4 server_app.py files (baseline 19 / personalized 22 / adaptive 21 / pfedrec 24 occurrences of best_round|best_round_restore in checkpoint-rule branch); _THESIS_CROSSDEVICE_MAIN.checkpoint_rule='best_round' (cloned from _BENCHMARK_CROSS_DEVICE) is functionally equivalent to pyproject 'best_round_restore' downstream — mode-profile field is informational.
+- [Phase 07-thesis-evaluation-run]: Plan 02 Pitfall 3 closure: all 4 server_app.py files extend BOTH mode-tuple gates (W&B project + per-run-dir results path) from 2-tuple to 3-tuple form including thesis_crossdevice_main; verified by negative grep returning 0 matches across all 4 module test directories.
+- [Phase 07-thesis-evaluation-run]: Plan 02 Pitfall 2 closure: thesis kwargs (thesis_run_label / ablation_dimension / ablation_value) appended to the SAME existing Phase-6 D-07 dataclass_replace call in all 4 server_apps; mutation precedes embed_manifest_in_result; static idx_kwarg < idx_embed ordering check pinned by 4 new test_thesis_label_in_manifest tests.
+- [Phase 07-thesis-evaluation-run]: Plan 02 fuse_dicts contract closure: all 4 pyproject.toml [tool.flwr.app.config] blocks declare default sentinels for thesis-run-label / ablation-dimension / ablation-value so flwr's --run-config validator accepts orchestrator (Plan 03) overrides at CLI time without 'Key not present' errors.
+- [Phase 07-thesis-evaluation-run]: Plan 02 Rule 1 auto-fix: 3 stale RUN_MANIFEST_SCHEMA_VERSION == 2 / _manifest.schema_version == 2 literals in test_canonical_artifact_carries_best_and_last_blocks (baseline + personalized + pfedrec) bumped to == 3 to match Plan 01's v2->v3 schema bump; same auto-fix class as Plan 01's test_run_manifest_backward_compat_v1 literal bump.
 
 ### Todos
 
@@ -212,7 +217,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed 07-thesis-evaluation-run-01-PLAN.md
+**Stopped at:** Completed 07-thesis-evaluation-run-02-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
