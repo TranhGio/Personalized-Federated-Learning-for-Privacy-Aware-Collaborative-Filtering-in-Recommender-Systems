@@ -17,7 +17,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 - [x] **Phase 3: Personalized Migration** — `federated-personalized-cf` (split-learning) moved to cross-device with run-namespaced cache and one-user client semantics. (completed 2026-04-20)
 - [x] **Phase 4: Adaptive Migration & Bug Fixes** — `federated-adaptive-personalized-cf` (thesis module) moved to cross-device; per-user alpha / item perturbation / prototype accumulation bugs fixed. (completed 2026-04-28)
 - [x] **Phase 5: PFedRec Migration & Reproduction** — `federated-pfedrec` re-audited against IJCAI-23 reference, migrated, and reproduces published HR@10 / NDCG@10 within ±2 points. (completed 2026-04-28)
-- [ ] **Phase 6: Evaluation & Reporting Harness** — Best-round restore, per-user-group metrics, protocol fingerprint manifests, dedicated cross-device W&B project.
+- [x] **Phase 6: Evaluation & Reporting Harness** — Best-round restore, per-user-group metrics, protocol fingerprint manifests, dedicated cross-device W&B project. (completed 2026-04-29)
 - [ ] **Phase 7: Thesis Evaluation Run** — Standardized cross-device comparison + ablations; adaptive beats all baselines on overall and sparse-user NDCG@10.
 
 ## Phase Details
@@ -120,7 +120,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 06-evaluation-reporting-harness-04-PLAN.md — Personalized server_app: extra-eval-round (replaces line-796 D-06-forbidden lookup) + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
   - [x] 06-evaluation-reporting-harness-05-PLAN.md — Adaptive server_app: extra-eval-round with Pitfall-4 best_prototype attached to ConfigRecord + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
   - [x] 06-evaluation-reporting-harness-06-PLAN.md — PFedRec server_app: extra-eval-round + Pitfall-1 D-14 PFR-08 hook rewire to consume final_metrics[best] + per-run-dir + path probe migration (EVL-01..06) — Wave 3 parallel
-  - [ ] 06-evaluation-reporting-harness-07-PLAN.md — Cross-cutting: sweep.yaml metric.name migration (Pitfall 7) + test_wandb_summary_keys.py + D-09 per-round exposure history regression guards across all 4 module test suites (EVL-03, EVL-05, EVL-06) — Wave 3
+  - [x] 06-evaluation-reporting-harness-07-PLAN.md — Cross-cutting: sweep.yaml metric.name migration (Pitfall 7) + test_wandb_summary_keys.py + D-09 per-round exposure history regression guards across all 4 module test suites (EVL-03, EVL-05, EVL-06) — Wave 3
 
 ### Phase 7: Thesis Evaluation Run
 **Goal**: Under ONE standardized cross-device comparison config shared by all four modules, the adaptive method beats all three baselines on overall NDCG@10 and on sparse-user NDCG@10; ablations across alpha methods, per-user alpha, item perturbation, contrastive λ, and fusion type are produced with per-group breakdowns, and everything is exported as the thesis tables.
@@ -147,7 +147,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
 | 5. PFedRec Migration & Reproduction | 5/5 | Complete   | 2026-04-28 |
-| 6. Evaluation & Reporting Harness | 6/7 | In Progress|  |
+| 6. Evaluation & Reporting Harness | 7/7 | Complete   | 2026-04-29 |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
 
 ## Dependency Graph

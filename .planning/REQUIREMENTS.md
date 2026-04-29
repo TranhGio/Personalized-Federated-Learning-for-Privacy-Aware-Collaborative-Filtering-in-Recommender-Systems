@@ -79,7 +79,7 @@ Unified evaluation layer, best-round restore, per-group reporting.
 - [x] **EVL-02**: Per-user-group (sparse 0–30 / medium 30–100 / dense 100+) NDCG@10 and HR@10 are emitted as first-class fields (`ndcg@10/sparse`, `ndcg@10/medium`, `ndcg@10/dense`, plus HR@10 variants) by every module.
 - [x] **EVL-03**: Per-user and per-group sampling-exposure counts are logged each round; reports surface support counts so per-group metrics can be read with the right variance lens.
 - [x] **EVL-04**: Results are written to `results/federated/<module>/<run_id>/` with the FND-07 manifest; legacy cross-silo result locations stay untouched.
-- [ ] **EVL-05**: All cross-device W&B runs log to a NEW W&B project (named `<ENTITY>/thesis-crossdevice-*` or similar), separate from the existing cross-silo project.
+- [x] **EVL-05**: All cross-device W&B runs log to a NEW W&B project (named `<ENTITY>/thesis-crossdevice-*` or similar), separate from the existing cross-silo project.
 - [x] **EVL-06**: Canonical reporting uses `best_*` metrics; `last_*` is kept as a diagnostic field only; result filenames encode `best_round`.
 
 ### Thesis Evaluation Run (THS)
@@ -173,7 +173,7 @@ Deferred beyond this thesis cycle.
 | EVL-02 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-03 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-04 | Phase 6: Evaluation & Reporting Harness | Complete |
-| EVL-05 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-05 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-06 | Phase 6: Evaluation & Reporting Harness | Complete |
 | THS-01 | Phase 7: Thesis Evaluation Run | Pending |
 | THS-02 | Phase 7: Thesis Evaluation Run | Pending |
