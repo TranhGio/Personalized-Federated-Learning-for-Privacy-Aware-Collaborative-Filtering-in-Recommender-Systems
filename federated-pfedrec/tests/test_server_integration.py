@@ -459,8 +459,15 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
     _loss, metrics = strategy.aggregate_evaluate(1, results, [])
 
     # D-09: per-group evaluated_users counts must be present.
-    # PFedRecSplitFedAvg.aggregate_evaluate emits slash-delimited keys
-    # (e.g. "evaluated_users/sparse") matching Flower metrics convention.
+    # PFedRecSplitFedAvg.aggregate_evaluate emits slash-delimited keys for
+    # per-group variants (e.g. "evaluated_users/sparse") while the overall
+    # count uses the unsuffixed "evaluated_users" key (plan-07 strengthening:
+    # canonical required_keys includes evaluated_users + the three slash-keyed
+    # per-group counts).
+    assert "evaluated_users" in metrics, (
+        f"D-09: 'evaluated_users' (overall) missing from PFedRecSplitFedAvg.aggregate_evaluate output. "
+        f"Available keys: {set(metrics.keys())}"
+    )
     assert "evaluated_users/sparse" in metrics, (
         f"D-09: 'evaluated_users/sparse' missing from PFedRecSplitFedAvg.aggregate_evaluate output. "
         f"Available keys: {set(metrics.keys())}"

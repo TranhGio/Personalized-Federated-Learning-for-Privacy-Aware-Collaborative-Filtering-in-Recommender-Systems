@@ -542,16 +542,20 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
         _loss, thesis = strategy.aggregate_evaluate(rnd, results, [])
         eval_metrics_history[rnd] = dict(thesis) if thesis else {}
 
-    # Verify at least one round has all three per-group exposure keys (D-09).
+    # Verify every round has the full required D-09 key set (plan-07 strengthening:
+    # canonical required_keys = {evaluated_users, evaluated_users_sparse,
+    # evaluated_users_medium, evaluated_users_dense}).
+    required_keys = {
+        "evaluated_users",
+        "evaluated_users_sparse",
+        "evaluated_users_medium",
+        "evaluated_users_dense",
+    }
     for rnd, metrics in eval_metrics_history.items():
-        assert "evaluated_users_sparse" in metrics, (
-            f"D-09: evaluated_users_sparse missing from round {rnd} eval_metrics_history"
-        )
-        assert "evaluated_users_medium" in metrics, (
-            f"D-09: evaluated_users_medium missing from round {rnd} eval_metrics_history"
-        )
-        assert "evaluated_users_dense" in metrics, (
-            f"D-09: evaluated_users_dense missing from round {rnd} eval_metrics_history"
+        missing = required_keys - set(metrics.keys())
+        assert not missing, (
+            f"D-09 regression: round {rnd} eval_metrics_history missing keys: {missing}. "
+            f"Available: {sorted(metrics.keys())[:20]}"
         )
 
     # Spot-check the counts: both rounds should have sparse=3, medium=3, dense=2 total.

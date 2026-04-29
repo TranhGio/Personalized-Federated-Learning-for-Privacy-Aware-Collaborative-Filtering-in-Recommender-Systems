@@ -437,15 +437,19 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
     ]
     _loss, metrics = strategy.aggregate_evaluate(1, results, [])
 
-    # D-09: per-group evaluated_users counts must be present.
-    assert "evaluated_users_sparse" in metrics, (
-        "D-09: 'evaluated_users_sparse' missing from strategy.aggregate_evaluate output"
-    )
-    assert "evaluated_users_medium" in metrics, (
-        "D-09: 'evaluated_users_medium' missing from strategy.aggregate_evaluate output"
-    )
-    assert "evaluated_users_dense" in metrics, (
-        "D-09: 'evaluated_users_dense' missing from strategy.aggregate_evaluate output"
+    # D-09: full required key set must be present (plan-07 strengthening:
+    # canonical required_keys = {evaluated_users, evaluated_users_sparse,
+    # evaluated_users_medium, evaluated_users_dense}).
+    required_keys = {
+        "evaluated_users",
+        "evaluated_users_sparse",
+        "evaluated_users_medium",
+        "evaluated_users_dense",
+    }
+    missing = required_keys - set(metrics.keys())
+    assert not missing, (
+        f"D-09 regression: strategy.aggregate_evaluate output missing keys: {missing}. "
+        f"Available: {sorted(metrics.keys())[:20]}"
     )
 
     # Verify the summed values are correct (not averaged per-client).
