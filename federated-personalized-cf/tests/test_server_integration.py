@@ -459,8 +459,12 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
         f"D-09: evaluated_users_dense should be 2+1=3, got {metrics['evaluated_users_dense']}"
     )
 
-    # Source-level check: server_app must reference these keys in eval_metrics_history.
+    # Source-level check: server_app stores thesis_metrics dict (which carries all
+    # per-group keys) into eval_metrics_history. Verify the storage line is present.
     src = _server_app_src()
-    assert "evaluated_users_sparse" in src, (
-        "D-09: 'evaluated_users_sparse' key never referenced in server_app.py eval path"
+    # eval_metrics_history[round_num] = dict(thesis_metrics) stores all per-group keys
+    # without explicitly naming them; the strategy output carries evaluated_users_sparse etc.
+    assert "eval_metrics_history[round_num] = dict(thesis_metrics)" in src, (
+        "D-09: eval_metrics_history storage line 'eval_metrics_history[round_num] = dict(thesis_metrics)' "
+        "missing from server_app.py — per-group exposure counts won't be persisted per round"
     )

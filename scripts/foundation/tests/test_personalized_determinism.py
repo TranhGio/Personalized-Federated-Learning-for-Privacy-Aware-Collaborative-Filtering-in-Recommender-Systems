@@ -106,12 +106,19 @@ def _run_personalized(run_id: str) -> Path:
             f"launcher failed (rc={proc.returncode}); skipping real-loop test. "
             f"stdout tail: {proc.stdout[-500:]!r} stderr tail: {proc.stderr[-500:]!r}"
         )
-    # Locate the result JSON. scripts/run.py may or may not stamp run_id into
-    # the filename depending on how server_app.py constructs it; probe both
-    # patterns, then fall back to the newest JSON by mtime.
-    candidates = list(_RESULTS_DIR.glob(f"*{run_id}*_results.json"))
+    # Locate the result JSON. Phase 6 D-01/D-02: per-run-dir layout writes to
+    # <repo>/results/federated/personalized/<run_id>/results.json.
+    # Probe the new per-run-dir layout first, then fall back to the legacy
+    # flat *_results.json pattern for pre-Phase-6 runs.
+    candidates = list(_RESULTS_DIR.glob(f"personalized/*/results.json"))
+    # Filter to only the run_id we launched (subdirectory name contains run_id).
+    candidates = [p for p in candidates if run_id in str(p)]
     if not candidates:
-        all_results = list(_RESULTS_DIR.glob("*_results.json"))
+        # Legacy fallback: flat <run_id>_results.json (cross-silo or pre-Phase-6).
+        candidates = list(_RESULTS_DIR.glob(f"*{run_id}*_results.json"))
+    if not candidates:
+        # Last resort: newest results.json in the per-run-dir tree.
+        all_results = list(_RESULTS_DIR.glob("*/results.json"))
         all_results.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         candidates = all_results[:1]
     assert candidates, f"No result JSON found after launcher run_id={run_id}"
