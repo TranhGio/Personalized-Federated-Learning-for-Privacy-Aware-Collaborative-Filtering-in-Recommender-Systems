@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 07-thesis-evaluation-run-02-PLAN.md
-last_updated: "2026-04-29T14:24:59.642Z"
+stopped_at: Completed 07-thesis-evaluation-run-03-PLAN.md
+last_updated: "2026-04-29T14:35:37.079Z"
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 39
-  completed_plans: 36
+  completed_plans: 37
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 07 (thesis-evaluation-run) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 06-evaluation-reporting-harness P07 | 8min | 2 tasks | 5 files |
 | Phase 07-thesis-evaluation-run P01 | 25min | 2 tasks tasks | 8 files files |
 | Phase 07-thesis-evaluation-run P02 | 10min | 2 tasks tasks | 12 files files |
+| Phase 07-thesis-evaluation-run P03 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -187,6 +188,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 07-thesis-evaluation-run]: Plan 02 Pitfall 2 closure: thesis kwargs (thesis_run_label / ablation_dimension / ablation_value) appended to the SAME existing Phase-6 D-07 dataclass_replace call in all 4 server_apps; mutation precedes embed_manifest_in_result; static idx_kwarg < idx_embed ordering check pinned by 4 new test_thesis_label_in_manifest tests.
 - [Phase 07-thesis-evaluation-run]: Plan 02 fuse_dicts contract closure: all 4 pyproject.toml [tool.flwr.app.config] blocks declare default sentinels for thesis-run-label / ablation-dimension / ablation-value so flwr's --run-config validator accepts orchestrator (Plan 03) overrides at CLI time without 'Key not present' errors.
 - [Phase 07-thesis-evaluation-run]: Plan 02 Rule 1 auto-fix: 3 stale RUN_MANIFEST_SCHEMA_VERSION == 2 / _manifest.schema_version == 2 literals in test_canonical_artifact_carries_best_and_last_blocks (baseline + personalized + pfedrec) bumped to == 3 to match Plan 01's v2->v3 schema bump; same auto-fix class as Plan 01's test_run_manifest_backward_compat_v1 literal bump.
+- [Phase 07-thesis-evaluation-run]: Plan 03 D-18 closure: scripts/thesis/run_thesis_sweep.py orchestrator ships with 12-cell main matrix + 21-cell ablation matrix; THESIS_BASE_OVERRIDES per-module dict enforces D-02 (model-type=dual + alpha-method=hierarchical_conditional + 3 next-gen knobs OFF for adaptive) and D-03 (strategy=fedavg for all 4 modules); merge order base BEFORE extras so ablation cells override base on conflict (proven by test_alpha_method_ablation_overrides_base_hc).
+- [Phase 07-thesis-evaluation-run]: Plan 03 Pitfall 8 closure: cell_already_done() matches on full 5-tuple (module, thesis_run_label, run_seed, ablation_dimension, ablation_value) — adaptive at seed=42 has 8 distinct cells (1 main + 7 ablations); naive (module, seed) match would skip 7 unrelated cells. test_skip_on_existing_full_tuple constructs synthetic manifests at the same (module, seed) but different ablation knobs and asserts cell_already_done correctly distinguishes them.
+- [Phase 07-thesis-evaluation-run]: Plan 03 D-23 + D-31 closure: --retry-failed always uses skip_existing=True (filter by disk presence, idempotent); failed cells appended atomically to results/federated/_thesis/failed_cells.json via read-modify-write atomic_write_json; orchestrator never stops the sweep on first failure — continues to next cell, prints recovery command at end. _progress.json written after every cell (D-32 'emit progress JSON every cell') except under --dry-run.
 
 ### Todos
 
@@ -217,7 +221,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed 07-thesis-evaluation-run-02-PLAN.md
+**Stopped at:** Completed 07-thesis-evaluation-run-03-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
