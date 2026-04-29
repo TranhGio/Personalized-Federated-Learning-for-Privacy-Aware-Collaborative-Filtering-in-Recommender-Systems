@@ -15,7 +15,7 @@ entity: vinh-federated-learning
 program: scripts/run_wandb_sweep.py
 method: bayes  # Options: grid, random, bayes
 metric:
-  name: final/sampled_ndcg@10
+  name: best/sampled_ndcg@10
   goal: maximize
 
 # Early terminate poorly performing runs
