@@ -86,7 +86,7 @@ Unified evaluation layer, best-round restore, per-group reporting.
 
 Run the standardized cross-device comparison under one shared config and produce the thesis comparison.
 
-- [ ] **THS-01**: Define ONE standardized cross-device comparison config shared by all four modules (dim, optimizer, training negatives, local epochs, rounds, eval protocol, weight policy); document deviations from per-module historical configs.
+- [x] **THS-01**: Define ONE standardized cross-device comparison config shared by all four modules (dim, optimizer, training negatives, local epochs, rounds, eval protocol, weight policy); document deviations from per-module historical configs.
 - [ ] **THS-02**: Run all four modules under the standardized config, multiple seeds (≥3); produce one comparison table with mean ± std on HR@10, NDCG@10 overall and per user group (sparse/medium/dense).
 - [ ] **THS-03**: Adaptive module (`model-type=dual alpha-method=hierarchical_conditional`) beats all three baselines on OVERALL NDCG@10 under the standardized config.
 - [ ] **THS-04**: Adaptive module beats all three baselines on SPARSE-user NDCG@10 (thesis claim is strongest here).
@@ -175,7 +175,7 @@ Deferred beyond this thesis cycle.
 | EVL-04 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-05 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-06 | Phase 6: Evaluation & Reporting Harness | Complete |
-| THS-01 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-01 | Phase 7: Thesis Evaluation Run | Complete |
 | THS-02 | Phase 7: Thesis Evaluation Run | Pending |
 | THS-03 | Phase 7: Thesis Evaluation Run | Pending |
 | THS-04 | Phase 7: Thesis Evaluation Run | Pending |

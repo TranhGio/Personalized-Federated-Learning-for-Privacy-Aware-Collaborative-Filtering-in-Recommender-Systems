@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 7 context gathered
-last_updated: "2026-04-29T10:24:19.675Z"
+stopped_at: Completed 07-thesis-evaluation-run-01-PLAN.md
+last_updated: "2026-04-29T14:04:02.722Z"
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 34
-  completed_plans: 34
+  total_plans: 39
+  completed_plans: 35
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -20,14 +20,14 @@ progress:
 
 **Core value:** Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/hierarchical-conditional method beats all three baselines on NDCG@10 — including on sparse users — while the Flower PFedRec reproduces the IJCAI-23 reference within ±2 points.
 
-**Current focus:** Phase 06 — evaluation-reporting-harness
+**Current focus:** Phase 07 — thesis-evaluation-run
 
 **Branch:** `feat/try_to_run_the_baseline` (existing; thesis work continues on this branch until milestone boundary is reached).
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
+Phase: 07 (thesis-evaluation-run) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 06-evaluation-reporting-harness P05 | 6min | 1 tasks | 3 files |
 | Phase 06 P06 | 30min | 1 tasks | 3 files |
 | Phase 06-evaluation-reporting-harness P07 | 8min | 2 tasks | 5 files |
+| Phase 07-thesis-evaluation-run P01 | 25min | 2 tasks tasks | 8 files files |
 
 ## Accumulated Context
 
@@ -176,6 +177,11 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 06-evaluation-reporting-harness]: yaml.safe_load structured parse for sweep.yaml metric.name assertion (not substring grep) — comment-proof per plan-checker MAJOR fix
 - [Phase 06-evaluation-reporting-harness]: Both f-string and raw-string wandb.run.summary["final/ patterns guarded in test_wandb_summary_keys.py
 - [Phase 06-evaluation-reporting-harness]: D-09 required_keys issubset pattern: all four exposure keys {evaluated_users, evaluated_users_sparse, evaluated_users_medium, evaluated_users_dense} checked in all four module test_server_integration.py files
+- [Phase 07-thesis-evaluation-run]: Plan 01 D-04 closure: _THESIS_CROSSDEVICE_MAIN clones _BENCHMARK_CROSS_DEVICE byte-for-byte (mode-name only diff); registered in _REGISTRY at fedrec_foundation.mode; the mode name itself IS the provenance discriminant the aggregator filters on (THS-01).
+- [Phase 07-thesis-evaluation-run]: Plan 01 D-22 closure: RUN_MANIFEST_SCHEMA_VERSION bumped 2->3; 3 thesis-tagging fields (thesis_run_label='', ablation_dimension='none', ablation_value='') appended with safe defaults; build_run_manifest UNTOUCHED — server_app populates via dataclasses.replace post-build mutation (mirrors Phase 6 D-07).
+- [Phase 07-thesis-evaluation-run]: Plan 01 D-17 closure: atomic_write_text(path, content) added to fedrec_foundation.atomic for markdown/CSV writes (Phase 7 Plan 04 aggregator dependency); UTF-8 + tempfile + os.replace + cleanup-on-exception, mirrors atomic_write_json with suffix='.txt'.
+- [Phase 07-thesis-evaluation-run]: Plan 01 Pitfall 5 closure: scripts/run.py MODE_NUM_SUPERNODES dict gained thesis_crossdevice_main: 6040; argparse choices=sorted(MODE_NUM_SUPERNODES.keys()) auto-extends; launcher dry-run verified to emit mode='thesis_crossdevice_main' under all 4 module aliases (baseline/personalized/adaptive/pfedrec).
+- [Phase 07-thesis-evaluation-run]: Plan 01 Warning 4 closure: dual-spelling tolerance for checkpoint_rule verified across all 4 server_app.py files (baseline 19 / personalized 22 / adaptive 21 / pfedrec 24 occurrences of best_round|best_round_restore in checkpoint-rule branch); _THESIS_CROSSDEVICE_MAIN.checkpoint_rule='best_round' (cloned from _BENCHMARK_CROSS_DEVICE) is functionally equivalent to pyproject 'best_round_restore' downstream — mode-profile field is informational.
 
 ### Todos
 
@@ -206,7 +212,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Phase 7 context gathered
+**Stopped at:** Completed 07-thesis-evaluation-run-01-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
