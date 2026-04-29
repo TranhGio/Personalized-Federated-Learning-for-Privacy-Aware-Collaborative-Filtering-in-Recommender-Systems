@@ -484,9 +484,10 @@ def main(grid: Grid, context: Context) -> None:
             "checkpoint_rule": checkpoint_rule,
             "reuse_cache": reuse_cache_flag,
         }
+        # Phase 7 D-04: thesis_crossdevice_main joins the cross-device W&B project gate.
         default_project = (
             "federated-cf-cross-device"
-            if mode in ("benchmark_cross_device", "paper_compat_pfedrec")
+            if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")
             else "federated-adaptive-personalized-cf"
         )
         wandb_project_cfg = str(context.run_config.get("wandb-project", "")).strip()
@@ -1264,12 +1265,16 @@ def main(grid: Grid, context: Context) -> None:
 
     # Phase 6 Plan 05 Edit 6: mutate manifest with final_eval_round_index + metrics
     # BEFORE embed_manifest_in_result so the embedded _manifest dict carries schema-v2 fields.
+    # Phase 7 D-22: thesis-tagging fields read from run_config; sentinels for non-thesis runs.
     # The Phase-4 best_prototype post-embed mutation below is PRESERVED verbatim — it layers
-    # on top of this Phase-6 schema-v2 metrics field (not a replacement).
+    # on top of this Phase-6 schema-v2 metrics field + Phase-7 thesis fields (not a replacement).
     manifest = dataclass_replace(
         manifest,
         final_eval_round_index=final_eval_round_index,
         metrics=results_data["final_metrics"],
+        thesis_run_label=str(context.run_config.get("thesis-run-label", "")),
+        ablation_dimension=str(context.run_config.get("ablation-dimension", "none")),
+        ablation_value=str(context.run_config.get("ablation-value", "")),
     )
 
     # D-15 part 1: embed manifest INTO the result JSON.
@@ -1285,11 +1290,12 @@ def main(grid: Grid, context: Context) -> None:
         results_data["_manifest"]["best_prototype"] = None
 
     # Phase 6 Plan 05 Edit 7: repo-root-anchored per-run dir (D-02) + atomic write.
-    # benchmark_cross_device and paper_compat_pfedrec: per-run-dir (D-01) + clean filename (D-04).
+    # benchmark_cross_device, thesis_crossdevice_main, and paper_compat_pfedrec: per-run-dir (D-01) + clean filename (D-04).
+    # Phase 7 D-04: thesis_crossdevice_main joins the per-run-dir gate.
     # Note: the D-02 guard above raises NotImplementedError for cross_silo_legacy
     # before reaching here, so the else-branch is a safety net for unknown future modes.
     print("\nSaving evaluation results...")
-    if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
+    if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec"):
         run_dir = module_run_results_dir(_MODULE, run_id)
         results_filename = run_dir / "results.json"
         atomic_write_json(str(results_filename), results_data)

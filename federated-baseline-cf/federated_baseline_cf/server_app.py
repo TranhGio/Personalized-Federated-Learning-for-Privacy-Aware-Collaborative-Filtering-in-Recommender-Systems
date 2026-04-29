@@ -289,9 +289,10 @@ def main(grid: Grid, context: Context) -> None:
             "checkpoint_rule": checkpoint_rule,
         })
         # Cross-device runs go to a dedicated W&B project per PROJECT.md constraint; legacy stays on "federated-cf".
+        # Phase 7 D-04: thesis_crossdevice_main joins the cross-device W&B project gate.
         default_project = (
             "federated-cf-cross-device"
-            if mode in ("benchmark_cross_device", "paper_compat_pfedrec")
+            if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")
             else "federated-cf"
         )
         # Empty-string in pyproject means "use mode-based default"; explicit non-empty wins.
@@ -883,13 +884,17 @@ def main(grid: Grid, context: Context) -> None:
     }
 
     # Phase 6: post-build mutation to populate schema-v2 fields (final_eval_round_index, metrics).
+    # Phase 7 D-22: thesis-tagging fields read from run_config; sentinels for non-thesis runs.
     # IMPORTANT: must happen BEFORE embed_manifest_in_result so the _manifest key in
-    # results_data carries the Phase-6 fields (final_eval_round_index, metrics).
+    # results_data carries the Phase-6 + Phase-7 fields.
     # Acceptance: idx_final must appear before idx_replace in source order (plan-checker iter 1).
     manifest = dataclass_replace(
         manifest,
         final_eval_round_index=final_eval_round_index,
         metrics=results_data["final_metrics"],
+        thesis_run_label=str(context.run_config.get("thesis-run-label", "")),
+        ablation_dimension=str(context.run_config.get("ablation-dimension", "none")),
+        ablation_value=str(context.run_config.get("ablation-value", "")),
     )
 
     # D-15: double-write (embedded in result JSON + sibling file).
@@ -897,10 +902,11 @@ def main(grid: Grid, context: Context) -> None:
 
     # =========================================================================
     # Phase 6 D-01/D-02: per-module per-run directory layout for cross-device.
+    # Phase 7 D-04: thesis_crossdevice_main joins the per-run-dir gate.
     # Cross-silo legacy mode keeps the flat <run_id>_results.json layout (D-03).
     # =========================================================================
     print("\nSaving evaluation results...")
-    if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
+    if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec"):
         run_dir = module_run_results_dir(_MODULE, run_id)
         results_filename = run_dir / "results.json"  # D-04 clean filename
         atomic_write_json(str(results_filename), results_data)

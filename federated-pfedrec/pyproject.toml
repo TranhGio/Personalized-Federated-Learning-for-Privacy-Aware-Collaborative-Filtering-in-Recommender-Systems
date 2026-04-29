@@ -52,6 +52,13 @@ reuse-cache = false               # D-18 default; --run-config "reuse-cache=true
 eval-num-negatives = 99           # NCF protocol (FND-04)
 checkpoint-rule = "best_round_restore"  # D-13 best-round monitor against sampled_ndcg@10
 
+# Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
+# Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
+# fuse_dicts requires the keys to exist with default values — declaring here is the contract.
+thesis-run-label = ""        # "" = non-thesis | "main" | "ablation_<knob>=<value>"
+ablation-dimension = "none"  # "none" | "alpha_method" | "per_user_alpha" | "item_perturbation" | "contrastive_lambda" | "fusion_type"
+ablation-value = ""           # specific value of the ablated knob; empty for main/non-thesis
+
 # Federated Learning parameters
 num-server-rounds = 100         # Paper default: 100
 fraction-train = 1.0            # D-06: paper uses full participation

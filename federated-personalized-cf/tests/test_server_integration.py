@@ -288,8 +288,8 @@ def test_extra_eval_round_replaces_history_lookup() -> None:
     - ``strategy.aggregate_evaluate(final_eval_round_index`` call must be present
       (the extra-eval-round calls the strategy aggregator).
     - The Pitfall-9 guard ``max(eval_metrics_history.keys())`` must be present.
-    - The mode conditional ``if mode in ("benchmark_cross_device", "paper_compat_pfedrec")``
-      must be present (Pitfall 8 cross-silo coexistence).
+    - The mode conditional ``if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")``
+      must be present (Pitfall 8 cross-silo coexistence + Phase 7 D-04 thesis-mode gate).
     Also checks that the D-06 extra-eval-round is ordered AFTER arrays = best_arrays.
     """
     src = _server_app_src()
@@ -320,10 +320,9 @@ def test_extra_eval_round_replaces_history_lookup() -> None:
         "last_round must derive from max key, not actual_rounds"
     )
 
-    # Pitfall 8: cross-silo mode branch.
-    assert 'if mode in ("benchmark_cross_device", "paper_compat_pfedrec")' in src, (
-        "Pitfall 8: 'if mode in (\"benchmark_cross_device\", \"paper_compat_pfedrec\")' "
-        "missing — cross-silo legacy path must be preserved"
+    # Pitfall 8 + Phase 7 D-04: cross-silo mode branch carries thesis_crossdevice_main.
+    assert 'if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")' in src, (
+        "Phase 7 D-04: thesis_crossdevice_main mode joins the per-run-dir gate"
     )
 
     # D-06 ordering: best_arrays restore must precede extra-eval-round.

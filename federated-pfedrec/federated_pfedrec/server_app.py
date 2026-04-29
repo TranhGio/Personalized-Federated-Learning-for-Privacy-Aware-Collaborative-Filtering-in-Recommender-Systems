@@ -508,9 +508,10 @@ def main(grid: Grid, context: Context) -> None:
             "reuse_cache": reuse_cache_flag,
             "run_id": run_id,
         }
+        # Phase 7 D-04: thesis_crossdevice_main joins the cross-device W&B project gate.
         default_project = (
             "federated-cf-cross-device"
-            if mode in ("benchmark_cross_device", "paper_compat_pfedrec")
+            if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")
             else "federated-pfedrec"
         )
         wandb_project_cfg = str(context.run_config.get("wandb-project", "")).strip()
@@ -1107,9 +1108,16 @@ def main(grid: Grid, context: Context) -> None:
 
     # Phase 6 D-06/D-07: mutate manifest with final_eval_round_index + metrics
     # AFTER final_metrics is assigned and BEFORE embed_manifest_in_result.
+    # Phase 7 D-22: thesis-tagging fields read from run_config; sentinels for non-thesis runs.
+    # PFedRec runs at paper_compat_pfedrec mode (D-06), but the orchestrator passes
+    # thesis-run-label=main regardless of mode — so the manifest mutation is the
+    # load-bearing change here even though PFedRec rarely runs at thesis_crossdevice_main.
     manifest = dataclass_replace(manifest,
         final_eval_round_index=final_eval_round_index,
         metrics=results_data["final_metrics"],
+        thesis_run_label=str(context.run_config.get("thesis-run-label", "")),
+        ablation_dimension=str(context.run_config.get("ablation-dimension", "none")),
+        ablation_value=str(context.run_config.get("ablation-value", "")),
     )
 
     # D-15 part 1: embed manifest INTO the result JSON.
@@ -1149,11 +1157,12 @@ def main(grid: Grid, context: Context) -> None:
 
     # =========================================================================
     # Phase 6 D-01/D-02: per-module per-run directory layout for cross-device.
+    # Phase 7 D-04: thesis_crossdevice_main joins the per-run-dir gate.
     # Cross-silo legacy (cross_silo_legacy) keeps the pre-Phase-6 flat layout
     # (D-03 + PROJECT.md backwards-compat constraint).
     # =========================================================================
     print("\nSaving evaluation results...")
-    if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
+    if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec"):
         run_dir = module_run_results_dir(_MODULE, run_id)
         results_filename = run_dir / "results.json"  # D-04 clean filename
         atomic_write_json(str(results_filename), results_data)

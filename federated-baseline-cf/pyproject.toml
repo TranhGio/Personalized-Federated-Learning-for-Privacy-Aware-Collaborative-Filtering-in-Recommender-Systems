@@ -96,6 +96,13 @@ weight-policy = "num_positives"  # FND-05: aggregation weight policy. Values: un
 eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out positive (sampled_loo_99).
 checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; restore at final evaluation.
 
+# Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
+# Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
+# fuse_dicts requires the keys to exist with default values — declaring here is the contract.
+thesis-run-label = ""        # "" = non-thesis | "main" | "ablation_<knob>=<value>"
+ablation-dimension = "none"  # "none" | "alpha_method" | "per_user_alpha" | "item_perturbation" | "contrastive_lambda" | "fusion_type"
+ablation-value = ""           # specific value of the ablated knob; empty for main/non-thesis
+
 # Default federation to use when running the app
 [tool.flwr.federations]
 default = "local-sim-gpu"

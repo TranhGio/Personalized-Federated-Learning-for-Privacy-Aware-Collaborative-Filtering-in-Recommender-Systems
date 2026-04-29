@@ -288,7 +288,7 @@ def test_extra_eval_round_after_best_arrays_restore() -> None:
     - ``final_eval_round_index`` appears >= 5 times.
     - ``strategy.aggregate_evaluate(final_eval_round_index`` call present.
     - Pitfall-9 ``max(eval_metrics_history.keys())`` present.
-    - Pitfall-8 ``if mode in ("benchmark_cross_device", "paper_compat_pfedrec")`` present.
+    - Pitfall-8 + Phase 7 D-04 ``if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")`` present.
     - D-06 ordering: extra-eval-round appears AFTER arrays = best_arrays.
     - cross_silo_legacy fallback preserved (no NotImplementedError in else branch).
     - ``legacy_dir = repo_root() / "results" / "federated" / "pfedrec"`` present.
@@ -317,9 +317,9 @@ def test_extra_eval_round_after_best_arrays_restore() -> None:
         "Pitfall 9: 'max(eval_metrics_history.keys())' missing"
     )
 
-    # Pitfall 8: cross-silo mode branch.
-    assert 'if mode in ("benchmark_cross_device", "paper_compat_pfedrec")' in src, (
-        "Pitfall 8: cross-silo coexistence conditional missing"
+    # Pitfall 8 + Phase 7 D-04: cross-silo mode branch carries thesis_crossdevice_main.
+    assert 'if mode in ("benchmark_cross_device", "thesis_crossdevice_main", "paper_compat_pfedrec")' in src, (
+        "Phase 7 D-04: thesis_crossdevice_main mode joins the per-run-dir gate"
     )
 
     # cross_silo_legacy fallback preservation (plan-checker MAJOR check).
