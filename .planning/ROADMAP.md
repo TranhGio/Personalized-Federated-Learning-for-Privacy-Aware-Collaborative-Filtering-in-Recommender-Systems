@@ -113,12 +113,14 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   2. Every module's result artifact and W&B run contains `ndcg@10/sparse`, `ndcg@10/medium`, `ndcg@10/dense` (plus HR@10 variants) as first-class fields, together with per-group sampling-exposure counts so a reader can interpret per-group metrics with the right variance lens.
   3. Cross-device results are written under `results/federated/<module>/<run_id>/` with the full protocol fingerprint manifest, and the legacy cross-silo result locations under `results/federated/` are not touched or overwritten by any cross-device run.
   4. All four modules log their cross-device runs to a new, dedicated W&B project (separate from the existing cross-silo project), and the canonical reported field is `best_*` with `last_*` preserved only as a diagnostic.
-**Plans**: 5 plans
-  - [x] 05-pfedrec-migration-reproduction-01-PLAN.md — Strategy + Model: PFedRecSplitFedAvg (D-12) + D-01 bias-GLOBAL flip + D-21 strict=True + D-07 drop FedProx (PFR-02 + PFR-03 partial) — Wave 1 parallel
-  - [x] 05-pfedrec-migration-reproduction-02-PLAN.md — pyproject cross-device defaults (PFR-01) + dataset.py foundation adapter + D-09 NotImplementedError + foundation mode.py D-25 (PFR-01, PFR-02 D-25, PFR-09 partial) — Wave 1 parallel
-  - [x] 05-pfedrec-migration-reproduction-03-PLAN.md — client_app + task: PFR-05 single-user collapse + FND-03 exclusion + FND-06 RNG + D-04 eval BCE + D-22 cold-round + manifest-sidecar schema_v3 with bias_classification sentinel (PFR-02, PFR-03, PFR-04, PFR-05, PFR-06 client, PFR-07) — Wave 2
-  - [ ] 05-pfedrec-migration-reproduction-04-PLAN.md — server_app: G-03-01 discovery + ADP-06 sampler + PFedRecSplitFedAvg wire-up + D-13 cold-start + D-14 PFR-08 auto-verify hook + D-15 manifest module=pfedrec + D-27 best-round-restore (PFR-02, PFR-06 server, PFR-08, PFR-09) — Wave 3 parallel
-  - [x] 05-pfedrec-migration-reproduction-05-PLAN.md — Subprocess determinism regression guard (PFR-06) — Wave 3 parallel
+**Plans**: 7 plans
+  - [ ] 06-evaluation-reporting-harness-01-PLAN.md — Foundation paths helper module_run_results_dir + 3 unit tests (EVL-04 D-02 closure) — Wave 1 parallel
+  - [ ] 06-evaluation-reporting-harness-02-PLAN.md — Manifest schema v2 (final_eval_round_index + metrics fields, safe defaults) + write_manifest_sibling sibling_name kwarg + 5 unit tests (EVL-01, EVL-06) — Wave 1 parallel
+  - [ ] 06-evaluation-reporting-harness-03-PLAN.md — Baseline server_app: extra-eval-round + per-run-dir + nested final_metrics + best/last W&B namespaces + re-enable phase2 path-bug regression guard (EVL-01..06) — Wave 2 parallel
+  - [ ] 06-evaluation-reporting-harness-04-PLAN.md — Personalized server_app: extra-eval-round (replaces line-796 D-06-forbidden lookup) + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
+  - [ ] 06-evaluation-reporting-harness-05-PLAN.md — Adaptive server_app: extra-eval-round with Pitfall-4 best_prototype attached to ConfigRecord + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
+  - [ ] 06-evaluation-reporting-harness-06-PLAN.md — PFedRec server_app: extra-eval-round + Pitfall-1 D-14 PFR-08 hook rewire to consume final_metrics[best] + per-run-dir + path probe migration (EVL-01..06) — Wave 3 parallel
+  - [ ] 06-evaluation-reporting-harness-07-PLAN.md — Cross-cutting: sweep.yaml metric.name migration (Pitfall 7) + test_wandb_summary_keys.py + D-09 per-round exposure history regression guards across all 4 module test suites (EVL-03, EVL-05, EVL-06) — Wave 3
 
 ### Phase 7: Thesis Evaluation Run
 **Goal**: Under ONE standardized cross-device comparison config shared by all four modules, the adaptive method beats all three baselines on overall NDCG@10 and on sparse-user NDCG@10; ablations across alpha methods, per-user alpha, item perturbation, contrastive λ, and fusion type are produced with per-group breakdowns, and everything is exported as the thesis tables.
@@ -145,7 +147,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
 | 5. PFedRec Migration & Reproduction | 5/5 | Complete   | 2026-04-28 |
-| 6. Evaluation & Reporting Harness | 0/0 | Not started | - |
+| 6. Evaluation & Reporting Harness | 0/7 | Planned | - |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
 
 ## Dependency Graph
