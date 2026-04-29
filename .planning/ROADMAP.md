@@ -118,7 +118,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 06-evaluation-reporting-harness-02-PLAN.md — Manifest schema v2 (final_eval_round_index + metrics fields, safe defaults) + write_manifest_sibling sibling_name kwarg + 5 unit tests (EVL-01, EVL-06) — Wave 1 parallel
   - [x] 06-evaluation-reporting-harness-03-PLAN.md — Baseline server_app: extra-eval-round + per-run-dir + nested final_metrics + best/last W&B namespaces + re-enable phase2 path-bug regression guard (EVL-01..06) — Wave 2 parallel
   - [x] 06-evaluation-reporting-harness-04-PLAN.md — Personalized server_app: extra-eval-round (replaces line-796 D-06-forbidden lookup) + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
-  - [ ] 06-evaluation-reporting-harness-05-PLAN.md — Adaptive server_app: extra-eval-round with Pitfall-4 best_prototype attached to ConfigRecord + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
+  - [x] 06-evaluation-reporting-harness-05-PLAN.md — Adaptive server_app: extra-eval-round with Pitfall-4 best_prototype attached to ConfigRecord + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
   - [ ] 06-evaluation-reporting-harness-06-PLAN.md — PFedRec server_app: extra-eval-round + Pitfall-1 D-14 PFR-08 hook rewire to consume final_metrics[best] + per-run-dir + path probe migration (EVL-01..06) — Wave 3 parallel
   - [ ] 06-evaluation-reporting-harness-07-PLAN.md — Cross-cutting: sweep.yaml metric.name migration (Pitfall 7) + test_wandb_summary_keys.py + D-09 per-round exposure history regression guards across all 4 module test suites (EVL-03, EVL-05, EVL-06) — Wave 3
 
@@ -147,7 +147,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
 | 3. Personalized Migration | 5/5 | Complete | 2026-04-20 |
 | 4. Adaptive Migration & Bug Fixes | 6/6 | Complete | 2026-04-28 |
 | 5. PFedRec Migration & Reproduction | 5/5 | Complete   | 2026-04-28 |
-| 6. Evaluation & Reporting Harness | 4/7 | In Progress|  |
+| 6. Evaluation & Reporting Harness | 5/7 | In Progress|  |
 | 7. Thesis Evaluation Run | 0/0 | Not started | - |
 
 ## Dependency Graph
