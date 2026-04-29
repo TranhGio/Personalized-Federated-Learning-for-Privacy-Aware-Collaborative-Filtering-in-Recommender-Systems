@@ -18,15 +18,15 @@ from __future__ import annotations
 
 import subprocess
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fedrec_foundation.atomic import atomic_write_json
 
 # Bump when the manifest schema gains/loses a field or changes semantics.
-RUN_MANIFEST_SCHEMA_VERSION: int = 1
+RUN_MANIFEST_SCHEMA_VERSION: int = 2  # Phase 6: adds final_eval_round_index + metrics fields
 
 
 @dataclass
@@ -82,6 +82,25 @@ class RunManifest:
     flwr_version: str
     torch_version: str
     git_commit: str
+    # Phase 6 additions (both with safe defaults so v1 fixtures still construct
+    # without TypeError — Pitfall 3 from RESEARCH.md):
+    final_eval_round_index: int = 0
+    """Index of the post-restore extra-eval-round broadcast (D-06).
+
+    Sentinel ``0`` = no extra eval ran (mode is ``last_round``, or ``best_round``
+    with no best-round recorded). Values ``>= 1`` mean a fresh evaluation ran
+    on the restored best-round state and produced ``metrics["best"]``.
+    """
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    """Mirror of ``results_data["final_metrics"]`` block (D-07).
+
+    Top-level keys: ``best``, ``last``, ``best_round``, ``last_round``,
+    ``final_eval_round_index``. The ``best`` and ``last`` sub-dicts carry
+    ``sampled_hr@10``, ``sampled_ndcg@10``, ``evaluated_users``, plus per-group
+    variants (``sampled_hr@10/sparse``, ``sampled_ndcg@10/sparse``,
+    ``evaluated_users_sparse``, ...). Defaults to ``{}`` on a fresh manifest;
+    server_app overwrites via ``dataclasses.replace`` post-build mutation.
+    """
 
 
 def generate_run_id() -> str:
@@ -203,8 +222,9 @@ def build_run_manifest(
 def write_manifest_sibling(
     manifest: RunManifest,
     result_json_path: Path,
+    sibling_name: Optional[str] = None,
 ) -> Path:
-    """D-15 sibling file: write ``<run_id>-manifest.json`` next to the result.
+    """D-15 sibling file: write the manifest as a sibling JSON next to the result.
 
     The sibling is written via :func:`atomic_write_json` — partial writes on
     crash are impossible and no ``.tmp-*`` leftovers are left behind.
@@ -214,14 +234,23 @@ def write_manifest_sibling(
     manifest : RunManifest
     result_json_path : Path
         The main result JSON. Its parent directory is used as the sibling's
-        parent — ``<parent>/<run_id>-manifest.json``.
+        parent.
+    sibling_name : Optional[str]
+        Override the sibling filename. Defaults to ``None``, which preserves
+        the legacy ``<run_id>-manifest.json`` naming used by cross-silo callers.
+        Phase-6 callers (D-04 clean per-run-dir filenames) pass
+        ``"manifest.json"`` to land the sibling at
+        ``<parent>/manifest.json`` instead.
 
     Returns
     -------
     Path
         Absolute path of the newly written sibling file.
     """
-    sibling = Path(result_json_path).parent / f"{manifest.run_id}-manifest.json"
+    sibling_filename = (
+        sibling_name if sibling_name is not None else f"{manifest.run_id}-manifest.json"
+    )
+    sibling = Path(result_json_path).parent / sibling_filename
     atomic_write_json(str(sibling), asdict(manifest))
     return sibling
 
