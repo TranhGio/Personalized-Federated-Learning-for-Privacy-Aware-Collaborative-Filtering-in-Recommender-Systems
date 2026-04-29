@@ -116,10 +116,17 @@ def _run_adaptive(run_id: str, tmp_cache_root: Path) -> Path:
             f"launcher failed (rc={proc.returncode}); skipping real-loop test. "
             f"stdout tail: {proc.stdout[-500:]!r} stderr tail: {proc.stderr[-500:]!r}"
         )
-    # Result JSON location: results/federated/[adaptive/]<...>{run_id}<...>_results.json
-    candidates = list(_RESULTS_DIR.rglob(f"*{run_id}*_results.json"))
+    # Phase 6 Plan 05: per-run-dir layout — results/federated/adaptive/<run_id>/results.json
+    # Fall back to legacy flat layout for older runs that predate Phase 6.
+    candidates = list((_RESULTS_DIR / "adaptive").glob("*/results.json"))
+    # Filter to the run with matching run_id in the directory name (per-run-dir keyed by run_id)
+    candidates = [p for p in candidates if run_id in str(p)]
     if not candidates:
-        all_results = list(_RESULTS_DIR.rglob("*_results.json"))
+        # Legacy flat layout fallback: *{run_id}*_results.json
+        candidates = list(_RESULTS_DIR.rglob(f"*{run_id}*_results.json"))
+    if not candidates:
+        # Last-resort: newest results.json under adaptive/
+        all_results = list((_RESULTS_DIR / "adaptive").glob("*/results.json"))
         all_results.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         candidates = all_results[:1]
     assert candidates, f"No result JSON found after launcher run_id={run_id}"

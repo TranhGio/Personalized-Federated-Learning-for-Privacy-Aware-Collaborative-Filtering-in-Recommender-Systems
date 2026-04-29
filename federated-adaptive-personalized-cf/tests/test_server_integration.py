@@ -529,11 +529,16 @@ def test_canonical_artifact_carries_best_and_last_blocks() -> None:
         "federated_adaptive_personalized_cf" / "server_app.py"
     src = src_path.read_text()
 
-    # Manifest dataclass_replace must appear AFTER final_metrics block (edit-order invariant)
-    idx_final = src.find("final_metrics = {")
-    idx_replace = src.find("dataclass_replace(manifest")
+    # Manifest dataclass_replace must appear AFTER final_metrics block (edit-order invariant).
+    # Note: final_metrics uses a type annotation: "final_metrics: Dict[str, Any] = {"
+    # and the call site is "manifest = dataclass_replace(" (not "dataclass_replace(manifest").
+    idx_final = src.find("final_metrics")
+    idx_replace = src.find("manifest = dataclass_replace(")
     assert idx_final >= 0, (
-        "final_metrics = { block missing — nested schema not implemented"
+        "final_metrics block missing — nested schema not implemented"
+    )
+    assert idx_replace > 0, (
+        "dataclass_replace manifest mutation missing from server_app.py"
     )
     assert idx_replace > idx_final, (
         "Edit-order invariant VIOLATED: dataclass_replace must appear AFTER final_metrics block"

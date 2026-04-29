@@ -85,8 +85,12 @@ from fedrec_foundation.mode import (
     resolve_mode_defaults,
 )
 from fedrec_foundation.paths import data_derived
+from fedrec_foundation.paths import module_run_results_dir
 from fedrec_foundation.rng import server_rng
 from fedrec_foundation.split import load_split_manifest
+# Phase 6 Plan 05: repo-root-anchored path + atomic write + dataclasses.replace.
+from fedrec_foundation.atomic import atomic_write_json
+from dataclasses import replace as dataclass_replace
 
 # Create ServerApp
 app = ServerApp()
@@ -417,6 +421,7 @@ def main(grid: Grid, context: Context) -> None:
     # Materialize the run_id early so the D-13 cold-start probe resolves to
     # the same cache dir the client will write into this round.
     run_id = str(context.run_config.get("run-id", "")) or generate_run_id()
+    _MODULE: str = "adaptive"   # cross-references: build_run_manifest, module_run_results_dir
 
     # Early stopping configuration
     early_stopping_enabled = context.run_config.get("early-stopping-enabled", False)
@@ -959,41 +964,131 @@ def main(grid: Grid, context: Context) -> None:
         print(f"\n[CHECKPOINT] checkpoint_rule={checkpoint_rule!r}: keeping last-round params")
 
     # =========================================================================
+    # D-06: extra eval round on the restored best-round state.
+    # PITFALL 4 closure: eval ConfigRecord ATTACHES the restored best_prototype
+    # so clients see the same prototype that produced best_round_num's metrics.
+    # Without this attach, every client falls back to a zero/stale prototype
+    # during the canonical eval and the best_* block reports lower NDCG than
+    # the in-loop best round did (warning sign in RESEARCH §Pitfall 4).
+    # =========================================================================
+    final_eval_round_index: int = 0
+    best_round_metrics: Dict[str, Any] = {}
+
+    if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
+        final_eval_round_index = actual_rounds + 1
+        # Use the RESTORED prototype (D-07) — strategy._global_prototype was just
+        # assigned to strategy.best_prototype at the restore block above.
+        final_global_prototype = strategy.get_global_prototype()
+        print(
+            f"\n[D-06] Broadcasting extra eval round {final_eval_round_index} "
+            f"on restored best-round state (best_round={best_round_num}, "
+            f"target nodes={len(partition_to_node_id)}, "
+            f"prototype_attached={final_global_prototype is not None})..."
+        )
+
+        eval_node_ids = sorted(partition_to_node_id.values())
+        extra_eval_messages = []
+        for nid in eval_node_ids:
+            extra_eval_config_dict: Dict[str, Any] = {"lr": lr}
+            # PITFALL 4: attach the restored prototype, mirroring in-loop eval
+            # ConfigRecord construction at server_app.py lines 814-815.
+            if final_global_prototype is not None:
+                extra_eval_config_dict["global_prototype"] = final_global_prototype.tolist()
+            eval_config = ConfigRecord(extra_eval_config_dict)
+            content = RecordDict({"arrays": arrays, "config": eval_config})
+            extra_eval_messages.append(grid.create_message(
+                content=content,
+                message_type="evaluate",
+                dst_node_id=nid,
+                group_id=f"final_eval_round_{final_eval_round_index}",
+            ))
+        extra_eval_responses = list(grid.send_and_receive(extra_eval_messages))
+
+        extra_results: List[Tuple[ClientProxy, EvaluateRes]] = []
+        for response in extra_eval_responses:
+            if response.has_error():
+                continue
+            m = dict(response.content.get("metrics", MetricRecord()))
+            num_examples = int(
+                m.get("num_training_examples", m.get("evaluated_users", m.get("num-examples", 1)))
+            )
+            extra_results.append((
+                DummyClientProxy(str(response.metadata.src_node_id)),
+                EvaluateRes(
+                    status=Status(code=Code.OK, message="ok"),
+                    loss=float(m.get("eval_loss", 0.0)),
+                    num_examples=num_examples,
+                    metrics=m,
+                ),
+            ))
+        if extra_results:
+            _agg_loss, thesis = strategy.aggregate_evaluate(
+                final_eval_round_index, extra_results, []
+            )
+            # MAJOR fix (plan-checker iteration 1, np.float64 JSON-serialization):
+            # coerce numeric values to Python floats at assignment so downstream
+            # dataclass_replace + atomic_write_json never raise TypeError on np.float64.
+            best_round_metrics = {
+                k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in (thesis or {}).items()
+            }
+            print(
+                f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
+                f"{best_round_metrics.get('sampled_ndcg@10')}"
+            )
+        else:
+            print("[D-06] WARNING: no extra-eval responses; best block falls back to in-loop value.")
+
+    # =========================================================================
+    # D-07: nested final_metrics schema. `best` from D-06 extra-eval-round;
+    # `last` from max-key of eval_metrics_history (Pitfall 9 — guards against
+    # early-stopping edge cases).
+    # =========================================================================
+    if eval_metrics_history:
+        last_round = max(eval_metrics_history.keys())
+        last_block = dict(eval_metrics_history[last_round])
+    else:
+        last_round = 0
+        last_block = {}
+
+    final_metrics: Dict[str, Any] = {
+        "best": best_round_metrics or last_block,
+        "last": last_block,
+        "best_round": best_round_num if best_round_num > 0 else last_round,
+        "last_round": last_round,
+        "final_eval_round_index": final_eval_round_index,
+    }
+
+    # =========================================================================
     # FEDERATED-EVAL-ONLY final metrics (split learning cannot run centralized
     # eval — the server never sees the LOCAL user rows).
     # =========================================================================
     print("\n  Using federated evaluation metrics...")
     print("  (Centralized evaluation not possible in split learning)")
 
-    if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
-        final_round_for_metrics = best_round_num
-        print(f"  Using metrics from best round: {final_round_for_metrics}")
-    elif early_stopper and early_stopper.best_round > 0:
-        final_round_for_metrics = int(early_stopper.best_round)
-        print(f"  Using metrics from early-stopper best round: {final_round_for_metrics}")
-    else:
-        final_round_for_metrics = int(actual_rounds)
-        print(f"  Using metrics from final round: {final_round_for_metrics}")
-
-    final_metrics = dict(eval_metrics_history.get(final_round_for_metrics, {}))
-    if not final_metrics:
-        print("  Warning: No evaluation metrics from selected round")
-        final_metrics = {}
-
     # Print evaluation results
-    print_evaluation_metrics(final_round_for_metrics, final_metrics, context)
+    print_evaluation_metrics(final_metrics["best_round"], final_metrics["best"], context)
 
     # Log final metrics to wandb
     if wandb_enabled and wandb_run is not None:
+        # Phase 6 Plan 05: ship best block to W&B under final_eval/best/ namespace.
         final_log = {"round": actual_rounds + 1}
-        for key, value in final_metrics.items():
+        for key, value in final_metrics["best"].items():
             if isinstance(value, (int, float)):
-                final_log[f"final/{key}"] = value
+                final_log[f"final_eval/best/{key}"] = value
         wandb.log(final_log, step=actual_rounds + 1)
 
-        for key, value in final_metrics.items():
+        # W&B run.summary: best/* and last/* namespaces (EVL-06).
+        # alpha/* + prototype/* + early_stopping/* + training/* surfaces preserved verbatim below.
+        for key, value in final_metrics["best"].items():
             if isinstance(value, (int, float)):
-                wandb.run.summary[f"final/{key}"] = value
+                wandb.run.summary[f"best/{key}"] = value
+        for key, value in final_metrics["last"].items():
+            if isinstance(value, (int, float)):
+                wandb.run.summary[f"last/{key}"] = value
+        wandb.run.summary["best_round"] = final_metrics["best_round"]
+        wandb.run.summary["last_round"] = final_metrics["last_round"]
+        wandb.run.summary["final_eval_round_index"] = final_metrics["final_eval_round_index"]
 
         if early_stopper:
             wandb.run.summary["early_stopping/enabled"] = early_stopping_enabled
@@ -1167,9 +1262,20 @@ def main(grid: Grid, context: Context) -> None:
         module="adaptive",
     )
 
+    # Phase 6 Plan 05 Edit 6: mutate manifest with final_eval_round_index + metrics
+    # BEFORE embed_manifest_in_result so the embedded _manifest dict carries schema-v2 fields.
+    # The Phase-4 best_prototype post-embed mutation below is PRESERVED verbatim — it layers
+    # on top of this Phase-6 schema-v2 metrics field (not a replacement).
+    manifest = dataclass_replace(
+        manifest,
+        final_eval_round_index=final_eval_round_index,
+        metrics=results_data["final_metrics"],
+    )
+
     # D-15 part 1: embed manifest INTO the result JSON.
     embed_manifest_in_result(manifest, results_data)
 
+    # Phase 4 D-06 — DO NOT TOUCH (preserved verbatim by Phase 6):
     # D-06: embed best_prototype in the _manifest dict AFTER embed_manifest_in_result
     # mutates results_data. The _manifest dict is extensible — Research §Pattern 2
     # confirms post-hoc mutation is safe (dict is held by reference).
@@ -1178,17 +1284,26 @@ def main(grid: Grid, context: Context) -> None:
     else:
         results_data["_manifest"]["best_prototype"] = None
 
-    # Save results to JSON file (D-15 flat adaptive results dir).
+    # Phase 6 Plan 05 Edit 7: repo-root-anchored per-run dir (D-02) + atomic write.
+    # benchmark_cross_device and paper_compat_pfedrec: per-run-dir (D-01) + clean filename (D-04).
+    # Note: the D-02 guard above raises NotImplementedError for cross_silo_legacy
+    # before reaching here, so the else-branch is a safety net for unknown future modes.
     print("\nSaving evaluation results...")
-    results_dir = Path("../results/federated/adaptive")
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    results_filename = results_dir / f"{run_id}_results.json"
-    with open(results_filename, 'w') as f:
-        json.dump(results_data, f, indent=4, default=str)
-
-    # D-15 part 2: sibling manifest JSON (double-write).
-    sibling_path = write_manifest_sibling(manifest, results_filename)
+    if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
+        run_dir = module_run_results_dir(_MODULE, run_id)
+        results_filename = run_dir / "results.json"
+        atomic_write_json(str(results_filename), results_data)
+        # D-04: clean per-run-dir filename via sibling_name="manifest.json".
+        sibling_path = write_manifest_sibling(manifest, results_filename, sibling_name="manifest.json")
+    else:
+        # Fallback for any non-cross-device mode that does NOT raise at D-02 guard.
+        # Uses repo_root() anchor not module-relative path. D-03 coexistence preserved.
+        from fedrec_foundation.paths import repo_root as _repo_root
+        _legacy_dir = _repo_root() / "results" / "federated" / "adaptive"
+        _legacy_dir.mkdir(parents=True, exist_ok=True)
+        results_filename = _legacy_dir / f"{run_id}_results.json"
+        atomic_write_json(str(results_filename), results_data)
+        sibling_path = write_manifest_sibling(manifest, results_filename)
     print(f"Results saved to: {results_filename.resolve()}")
     print(f"Manifest sibling: {sibling_path.resolve()}")
 
