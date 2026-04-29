@@ -459,25 +459,28 @@ def test_round_metrics_history_carries_per_group_exposure() -> None:
     _loss, metrics = strategy.aggregate_evaluate(1, results, [])
 
     # D-09: per-group evaluated_users counts must be present.
-    assert "evaluated_users_sparse" in metrics, (
-        "D-09: 'evaluated_users_sparse' missing from PFedRecSplitFedAvg.aggregate_evaluate output"
+    # PFedRecSplitFedAvg.aggregate_evaluate emits slash-delimited keys
+    # (e.g. "evaluated_users/sparse") matching Flower metrics convention.
+    assert "evaluated_users/sparse" in metrics, (
+        f"D-09: 'evaluated_users/sparse' missing from PFedRecSplitFedAvg.aggregate_evaluate output. "
+        f"Available keys: {set(metrics.keys())}"
     )
-    assert "evaluated_users_medium" in metrics, (
-        "D-09: 'evaluated_users_medium' missing"
+    assert "evaluated_users/medium" in metrics, (
+        f"D-09: 'evaluated_users/medium' missing. Available keys: {set(metrics.keys())}"
     )
-    assert "evaluated_users_dense" in metrics, (
-        "D-09: 'evaluated_users_dense' missing"
+    assert "evaluated_users/dense" in metrics, (
+        f"D-09: 'evaluated_users/dense' missing. Available keys: {set(metrics.keys())}"
     )
 
     # Verify the summed values are correct (not averaged per-client).
-    assert metrics["evaluated_users_sparse"] == 4, (
-        f"D-09: evaluated_users_sparse should be 3+1=4, got {metrics['evaluated_users_sparse']}"
+    assert metrics["evaluated_users/sparse"] == pytest.approx(4.0), (
+        f"D-09: evaluated_users/sparse should be 3+1=4, got {metrics['evaluated_users/sparse']}"
     )
-    assert metrics["evaluated_users_medium"] == 8, (
-        f"D-09: evaluated_users_medium should be 5+3=8, got {metrics['evaluated_users_medium']}"
+    assert metrics["evaluated_users/medium"] == pytest.approx(8.0), (
+        f"D-09: evaluated_users/medium should be 5+3=8, got {metrics['evaluated_users/medium']}"
     )
-    assert metrics["evaluated_users_dense"] == 3, (
-        f"D-09: evaluated_users_dense should be 2+1=3, got {metrics['evaluated_users_dense']}"
+    assert metrics["evaluated_users/dense"] == pytest.approx(3.0), (
+        f"D-09: evaluated_users/dense should be 2+1=3, got {metrics['evaluated_users/dense']}"
     )
 
     # Source-level check: server_app stores thesis_metrics into eval_metrics_history.

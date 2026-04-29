@@ -95,6 +95,7 @@ from flwr.server.client_proxy import ClientProxy
 from flwr.serverapp import Grid, ServerApp
 
 # Phase 5 Plan 04 foundation imports.
+from fedrec_foundation.atomic import atomic_write_json
 from fedrec_foundation.bundle import verify_bundle
 from fedrec_foundation.manifest import (
     build_run_manifest,
@@ -107,8 +108,10 @@ from fedrec_foundation.mode import (
     resolve_mode_defaults,
 )
 from fedrec_foundation.paths import data_derived
+from fedrec_foundation.paths import module_run_results_dir, repo_root
 from fedrec_foundation.rng import server_rng
 from fedrec_foundation.split import load_split_manifest
+from dataclasses import replace as dataclass_replace
 
 from federated_pfedrec.early_stopping import EarlyStopping
 from federated_pfedrec.strategy import PFedRecSplitFedAvg
@@ -398,6 +401,8 @@ def main(grid: Grid, context: Context) -> None:
             f"  OVERRIDE: {len(overrides)} key(s) diverge from mode default. "
             f"Run is NOT comparable to PFR-08 reproduction."
         )
+
+    _MODULE: str = "pfedrec"   # cross-references: build_run_manifest, module_run_results_dir
 
     # D-02 mirror: cross-silo PFedRec is FROZEN per Phase 5 D-09.
     if mode == "cross_silo_legacy":
@@ -905,37 +910,100 @@ def main(grid: Grid, context: Context) -> None:
         )
 
     # =========================================================================
-    # Final metrics. Split learning has no centralized eval (server holds
-    # no LOCAL params); use the federated eval at the best round.
+    # D-06: extra eval round on the restored best-round state. All nodes
+    # broadcast (no sampling). Result becomes the canonical final_metrics["best"].
     # =========================================================================
-    print("\n  Using federated evaluation metrics...")
-    print("  (Centralized evaluation not possible in split learning)")
+    final_eval_round_index: int = 0
+    best_round_metrics: Dict[str, Any] = {}
 
     if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
-        final_round_for_metrics = best_round_num
-        print(f"  Using metrics from best round: {final_round_for_metrics}")
-    elif early_stopper and early_stopper.best_round > 0:
-        final_round_for_metrics = int(early_stopper.best_round)
-        print(f"  Using metrics from early-stopper best round: {final_round_for_metrics}")
+        final_eval_round_index = actual_rounds + 1
+        print(
+            f"\n[D-06] Broadcasting extra eval round {final_eval_round_index} "
+            f"on restored best-round state (best_round={best_round_num}, "
+            f"target nodes={len(partition_to_node_id)})..."
+        )
+
+        eval_node_ids = sorted(partition_to_node_id.values())
+        extra_eval_messages = []
+        for nid in eval_node_ids:
+            eval_config = ConfigRecord({"lr": lr})
+            content = RecordDict({"arrays": arrays, "config": eval_config})
+            extra_eval_messages.append(grid.create_message(
+                content=content,
+                message_type="evaluate",
+                dst_node_id=nid,
+                group_id=f"final_eval_round_{final_eval_round_index}",
+            ))
+        extra_eval_responses = list(grid.send_and_receive(extra_eval_messages))
+
+        extra_results: List[Tuple[ClientProxy, EvaluateRes]] = []
+        for response in extra_eval_responses:
+            if response.has_error():
+                continue
+            m = dict(response.content.get("metrics", MetricRecord()))
+            num_examples = int(
+                m.get("num_training_examples", m.get("evaluated_users", m.get("num-examples", 1)))
+            )
+            extra_results.append((
+                DummyClientProxy(str(response.metadata.src_node_id)),
+                EvaluateRes(
+                    status=Status(code=Code.OK, message="ok"),
+                    loss=float(m.get("eval_loss", 0.0)),
+                    num_examples=num_examples,
+                    metrics=m,
+                ),
+            ))
+        if extra_results:
+            _agg_loss, thesis = strategy.aggregate_evaluate(final_eval_round_index, extra_results, [])
+            # MAJOR fix (plan-checker iteration 1, np.float64 JSON-serialization):
+            # coerce numeric values to Python floats at assignment so downstream
+            # dataclass_replace + atomic_write_json never raise TypeError on np.float64.
+            best_round_metrics = {
+                k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in (thesis or {}).items()
+            }
+            print(
+                f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
+                f"{best_round_metrics.get('sampled_ndcg@10')} "
+                f"best/sampled_hr@10={best_round_metrics.get('sampled_hr@10')}"
+            )
+        else:
+            print("[D-06] WARNING: no extra-eval responses; best block falls back to in-loop value.")
+
+    # =========================================================================
+    # D-07: nested final_metrics. `best` from D-06 extra-eval-round; `last`
+    # from max-key of eval_metrics_history (Pitfall 9).
+    # =========================================================================
+    if eval_metrics_history:
+        last_round = max(eval_metrics_history.keys())
+        last_block = dict(eval_metrics_history[last_round])
     else:
-        final_round_for_metrics = int(actual_rounds)
-        print(f"  Using metrics from final round: {final_round_for_metrics}")
+        last_round = 0
+        last_block = {}
 
-    final_metrics: Dict[str, Any] = dict(
-        eval_metrics_history.get(final_round_for_metrics, {})
+    final_metrics = {
+        "best": best_round_metrics or last_block,
+        "last": last_block,
+        "best_round": best_round_num if best_round_num > 0 else last_round,
+        "last_round": last_round,
+        "final_eval_round_index": final_eval_round_index,
+    }  # type: Dict[str, Any]
+
+    print("\n  Using federated evaluation metrics...")
+    print("  (Centralized evaluation not possible in split learning)")
+    print_evaluation_metrics(
+        final_metrics["best_round"],
+        final_metrics["best"],
+        context,
     )
-    if not final_metrics:
-        print("  Warning: No evaluation metrics from selected round")
-        final_metrics = {}
 
-    print_evaluation_metrics(final_round_for_metrics, final_metrics, context)
-
-    # W&B per-key final summary.
+    # W&B per-key final summary (D-07 best/* + last/* namespaces).
     if wandb_enabled and wandb_run is not None:
         final_log: Dict[str, Any] = {"round": actual_rounds + 1}
-        for key, value in final_metrics.items():
+        for key, value in final_metrics["best"].items():
             if isinstance(value, (int, float)):
-                final_log[f"final/{key}"] = value
+                final_log[f"final_eval/best/{key}"] = value
         wandb.log(final_log, step=actual_rounds + 1)
 
         if early_stopper:
@@ -1037,6 +1105,13 @@ def main(grid: Grid, context: Context) -> None:
         module="pfedrec",
     )
 
+    # Phase 6 D-06/D-07: mutate manifest with final_eval_round_index + metrics
+    # AFTER final_metrics is assigned and BEFORE embed_manifest_in_result.
+    manifest = dataclass_replace(manifest,
+        final_eval_round_index=final_eval_round_index,
+        metrics=results_data["final_metrics"],
+    )
+
     # D-15 part 1: embed manifest INTO the result JSON.
     embed_manifest_in_result(manifest, results_data)
 
@@ -1057,10 +1132,14 @@ def main(grid: Grid, context: Context) -> None:
     # summary write (so failure surfaces in W&B). Non-fatal — a failed
     # reproduction does NOT raise / abort the run.
     # =========================================================================
-    repo_root = Path(__file__).resolve().parents[2]
-    reference_path = repo_root / "IJCAI-23-PFedRec" / "sh_result" / "ml-1m.txt"
+    _ref_root = Path(__file__).resolve().parents[2]
+    reference_path = _ref_root / "IJCAI-23-PFedRec" / "sh_result" / "ml-1m.txt"
+    # Pitfall 1 closure: under the new D-07 nested schema, sampled_hr@10 and
+    # sampled_ndcg@10 live at final_metrics["best"][...], NOT at
+    # final_metrics[...]. Passing final_metrics directly would make the hook
+    # read None for both keys and stamp PFR-08 FAILED with NaN deltas.
     pfr08_passed, pfr08_log_line, pfr08_audit = _emit_pfr_08_verification(
-        final_metrics=final_metrics,
+        final_metrics["best"],
         reference_path=reference_path,
         tolerance_pts=2.0,
     )
@@ -1068,36 +1147,54 @@ def main(grid: Grid, context: Context) -> None:
     # Embed the audit dict in the manifest so the result JSON carries it.
     results_data["_manifest"]["pfr08_verification"] = pfr08_audit
 
-    # Save results to JSON file.
+    # =========================================================================
+    # Phase 6 D-01/D-02: per-module per-run directory layout for cross-device.
+    # Cross-silo legacy (cross_silo_legacy) keeps the pre-Phase-6 flat layout
+    # (D-03 + PROJECT.md backwards-compat constraint).
+    # =========================================================================
     print("\nSaving evaluation results...")
-    results_dir = Path("../results/federated/pfedrec")
-    results_dir.mkdir(parents=True, exist_ok=True)
-    results_filename = results_dir / f"{run_id}_results.json"
-    with open(results_filename, "w") as f:
-        json.dump(results_data, f, indent=4, default=str)
-
-    # D-15 part 2: sibling manifest JSON (double-write).
-    sibling_path = write_manifest_sibling(manifest, results_filename)
+    if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
+        run_dir = module_run_results_dir(_MODULE, run_id)
+        results_filename = run_dir / "results.json"  # D-04 clean filename
+        atomic_write_json(str(results_filename), results_data)
+        sibling_path = write_manifest_sibling(manifest, results_filename, sibling_name="manifest.json")
+    else:  # cross_silo_legacy — preserved per D-03 + PROJECT.md backwards-compat constraint
+        legacy_dir = repo_root() / "results" / "federated" / "pfedrec"
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        results_filename = legacy_dir / f"{run_id}_results.json"
+        sibling_kwarg = {}  # default <run_id>-manifest.json — byte-identical to pre-Phase-6
+        atomic_write_json(str(results_filename), results_data)
+        sibling_path = write_manifest_sibling(manifest, results_filename)
     print(f"Results saved to: {results_filename.resolve()}")
     print(f"Manifest sibling: {sibling_path.resolve()}")
 
     # =========================================================================
     # D-14 W&B summary push (non-fatal). Fires AFTER embed_manifest_in_result
     # to keep the documented sequence: embed -> verify -> stdout -> JSON write
-    # -> W&B summary. Failure status is a single boolean for dashboard filters;
-    # delta_*_pts are also pushed as numeric summaries for plotting.
+    # -> W&B summary.
+    # D-07 migration: thesis metrics use best/* + last/* namespaces.
+    # PFR-08 audit migrates from final/pfr08* to top-level pfr08* (independent
+    # surface — the audit dict is its own W&B namespace).
     # =========================================================================
     if wandb_enabled and wandb_run is not None:
-        wandb.run.summary["final/pfr08"] = bool(pfr08_passed)
-        wandb.run.summary["final/pfr08_delta_hr_pts"] = float(
+        # PFR-08 audit surface (independent of best/last namespacing — top-level keys)
+        wandb.run.summary["pfr08"] = bool(pfr08_passed)
+        wandb.run.summary["pfr08_delta_hr_pts"] = float(
             pfr08_audit.get("delta_hr_pts", float("nan"))
         )
-        wandb.run.summary["final/pfr08_delta_ndcg_pts"] = float(
+        wandb.run.summary["pfr08_delta_ndcg_pts"] = float(
             pfr08_audit.get("delta_ndcg_pts", float("nan"))
         )
-        for key, value in final_metrics.items():
+        # Thesis metrics (D-07 best/* + last/* namespaces; final/* deprecated)
+        for key, value in final_metrics["best"].items():
             if isinstance(value, (int, float)):
-                wandb.run.summary[f"final/{key}"] = value
+                wandb.run.summary[f"best/{key}"] = value
+        for key, value in final_metrics["last"].items():
+            if isinstance(value, (int, float)):
+                wandb.run.summary[f"last/{key}"] = value
+        wandb.run.summary["best_round"] = final_metrics["best_round"]
+        wandb.run.summary["last_round"] = final_metrics["last_round"]
+        wandb.run.summary["final_eval_round_index"] = final_metrics["final_eval_round_index"]
         wandb.config.update({
             "_manifest": {
                 "run_id": manifest.run_id,

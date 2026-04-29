@@ -131,10 +131,17 @@ def _run_pfedrec(run_id: str, tmp_cache_root: Path) -> Path:
             f"launcher failed (rc={proc.returncode}); skipping real-loop test. "
             f"stdout tail: {proc.stdout[-500:]!r} stderr tail: {proc.stderr[-500:]!r}"
         )
-    # Result JSON location: results/federated/[pfedrec/]<...>{run_id}<...>_results.json
-    candidates = list(_RESULTS_DIR.rglob(f"*{run_id}*_results.json"))
+    # Phase 6 per-run-dir layout: results/federated/pfedrec/<run_id>/results.json.
+    # Primary probe: per-run-dir layout (Phase 6 benchmark_cross_device + paper_compat_pfedrec).
+    candidates = list(_RESULTS_DIR.glob(f"pfedrec/*/results.json"))
+    # Filter to the specific run_id directory if multiple runs are present.
+    candidates = [p for p in candidates if run_id in str(p)]
     if not candidates:
-        all_results = list(_RESULTS_DIR.rglob("*_results.json"))
+        # Fallback: legacy flat layout (cross_silo_legacy: <run_id>_results.json).
+        candidates = list(_RESULTS_DIR.rglob(f"*{run_id}*_results.json"))
+    if not candidates:
+        # Last resort: newest result file (covers any layout variant).
+        all_results = list(_RESULTS_DIR.rglob("*results.json"))
         all_results.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         candidates = all_results[:1]
     assert candidates, f"No result JSON found after launcher run_id={run_id}"
