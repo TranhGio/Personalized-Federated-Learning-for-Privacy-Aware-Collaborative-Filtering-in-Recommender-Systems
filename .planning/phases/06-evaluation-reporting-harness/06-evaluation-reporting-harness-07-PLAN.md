@@ -136,6 +136,7 @@ eval_metrics_history[round_num] = {
     - federated-pfedrec/federated_pfedrec/server_app.py — same (Plan 06 output); note: pfedrec also has standalone wandb.run.summary["pfr08"] etc. — those are NOT thesis-metric keys, do not flag them
     - .planning/phases/06-evaluation-reporting-harness/06-RESEARCH.md §Common Pitfalls Pitfall 7 (sweep.yaml metric.name)
     - .planning/phases/06-evaluation-reporting-harness/06-VALIDATION.md §Per-Task Verification Map row 6-07-01
+    - **MAJOR fix note (plan-checker iteration 1):** before authoring the sweep test, executor MUST read `federated-adaptive-personalized-cf/sweep.yaml` end-to-end so the YAML schema (top-level `metric` block, `name` / `goal` keys) is concretely understood. The test then uses `yaml.safe_load` to navigate that schema, NOT a substring grep. PyYAML is already a wandb transitive dep so no new install is required; document this in the SUMMARY.
   </read_first>
   <action>
 **Edit 1: Single-line sweep.yaml mutation.**
@@ -189,13 +190,31 @@ def test_sweep_yaml_metric_name_uses_best_namespace():
     After Phase 6 the canonical thesis metric lives at
     ``wandb.run.summary["best/sampled_ndcg@10"]``; the legacy
     ``final/sampled_ndcg@10`` would silently report NaN, breaking convergence.
+
+    MAJOR fix (plan-checker iteration 1): we YAML-parse the file and assert
+    against the structured ``loaded["metric"]["name"]`` field, NOT a substring
+    grep. A future comment like ``# was final/sampled_ndcg@10`` would have
+    spuriously satisfied the substring check; structured parse cannot be
+    fooled. PyYAML is already a wandb transitive dependency — no new install.
     """
-    text = _SWEEP_YAML.read_text()
-    assert "name: best/sampled_ndcg@10" in text, (
-        f"sweep.yaml metric.name not migrated to best/* namespace. "
-        f"Expected 'name: best/sampled_ndcg@10' in {_SWEEP_YAML}."
+    import yaml  # PyYAML — wandb transitive dep, no new install needed
+
+    loaded = yaml.safe_load(_SWEEP_YAML.read_text())
+    assert isinstance(loaded, dict), (
+        f"sweep.yaml did not parse as a dict: {type(loaded).__name__}"
     )
-    assert "name: final/sampled_ndcg@10" not in text, (
+    assert "metric" in loaded, (
+        f"sweep.yaml is missing top-level 'metric' block; cannot verify name."
+    )
+    metric = loaded["metric"]
+    assert isinstance(metric, dict), (
+        f"sweep.yaml metric block is not a dict: {type(metric).__name__}"
+    )
+    assert metric.get("name") == "best/sampled_ndcg@10", (
+        f"sweep.yaml metric.name not migrated to best/* namespace. "
+        f"Expected 'best/sampled_ndcg@10', got {metric.get('name')!r}."
+    )
+    assert metric.get("name") != "final/sampled_ndcg@10", (
         f"sweep.yaml still references legacy final/* namespace. "
         f"Active wandb agents would silently report NaN."
     )
@@ -230,6 +249,19 @@ def test_summary_keys_use_best_last_namespace(server_app_path):
         f"{server_app_path} still references legacy final/* namespace "
         f"for thesis metrics (D-07 / Pitfall 7 regression)."
     )
+
+    # MINOR fix (plan-checker iteration 1): also catch the NON-f-string variant
+    # ``wandb.run.summary["final/..."]`` (raw string literal). Plan 06 removed
+    # both forms (`final/pfr08*` migrated to top-level `pfr08*`, thesis metrics
+    # migrated to best/last namespaces). This guards against either future
+    # regression. The pfedrec PFR-08 audit surface uses
+    # ``wandb.run.summary["pfr08"]`` etc. which does NOT match the
+    # ``"final/`` prefix — so this assertion does not flag pfedrec audit keys.
+    assert 'wandb.run.summary["final/' not in src, (
+        f"{server_app_path} still references legacy final/* namespace via "
+        f"a raw (non-f-string) literal — likely a pre-Phase-6 holdover that "
+        f"the migration missed (Pitfall 7 regression, raw-string variant)."
+    )
 ```
 
 Verify by running:
@@ -249,10 +281,14 @@ The 2 test functions × 4 parametrize expansion = 5 test items MUST pass.
     - `test -f federated-adaptive-personalized-cf/tests/test_wandb_summary_keys.py` exits 0
     - `cd federated-adaptive-personalized-cf && pytest tests/test_wandb_summary_keys.py -x -v` exits 0 with all 5 test items (1 sweep test + 4 server_app parametrized) passing
     - File otherwise unchanged: `git diff federated-adaptive-personalized-cf/sweep.yaml` shows ONLY the line-18 mutation (single line)
+    - **MAJOR fix (sweep YAML structured parse, plan-checker iteration 1):** Sweep test uses `yaml.safe_load` + `loaded["metric"]["name"] == "best/sampled_ndcg@10"`, NOT a substring `in text` check. A comment like `# was final/sampled_ndcg@10` cannot satisfy the structured parse. Acceptance: `grep -c "yaml.safe_load(_SWEEP_YAML.read_text())" federated-adaptive-personalized-cf/tests/test_wandb_summary_keys.py` returns 1; `grep -c 'loaded\["metric"\]\["name"\]' federated-adaptive-personalized-cf/tests/test_wandb_summary_keys.py` returns at least 1; `grep -c '"name: best/sampled_ndcg@10" in text' federated-adaptive-personalized-cf/tests/test_wandb_summary_keys.py` returns 0 (the legacy substring assertion is removed). PyYAML is a wandb transitive dependency — no new install needed.
+    - **MINOR fix (raw-string final/* assertion, plan-checker iteration 1):** Test asserts BOTH `wandb.run.summary[f"final/` (f-string variant) AND `wandb.run.summary["final/` (raw-string variant) are absent from every module's server_app.py. Acceptance: `grep -c 'wandb.run.summary\["final/' federated-adaptive-personalized-cf/tests/test_wandb_summary_keys.py` returns at least 1 (the new third assertion is present in the test body)
   </acceptance_criteria>
   <done>
     - sweep.yaml metric.name migrated to best/sampled_ndcg@10 (Pitfall 7 closure)
     - test_wandb_summary_keys.py NEW file with 2 tests pinning sweep + all 4 server_app namespace migrations
+    - **MAJOR closure (sweep YAML structured parse, plan-checker iteration 1):** sweep test uses `yaml.safe_load` + `loaded["metric"]["name"]` structured navigation; substring grep variant explicitly removed
+    - **MINOR closure (raw-string final/* assertion, plan-checker iteration 1):** test asserts BOTH f-string and raw-string forms of `wandb.run.summary["final/...]` are absent
     - All 5 test items pass
   </done>
 </task>
@@ -350,11 +386,15 @@ Every module's full unit-test suite (excluding @pytest.mark.slow) MUST exit 0.
     <automated>cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure && cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-personalized-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure && cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-adaptive-personalized-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure && cd /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-pfedrec && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure</automated>
   </verify>
   <acceptance_criteria>
-    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-baseline-cf/tests/test_server_integration.py` returns at least 1
-    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-personalized-cf/tests/test_server_integration.py` returns at least 1
-    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-adaptive-personalized-cf/tests/test_server_integration.py` returns at least 1
-    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-pfedrec/tests/test_server_integration.py` returns at least 1
-    - All four `pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure` invocations exit 0
+    - **MAJOR fix (per-module verification, plan-checker iteration 1):** Each module's regression guard MUST be verifiable in isolation so a failure points to a SPECIFIC module rather than reporting "one of four failed". The four explicit per-module greps + four explicit per-module pytest invocations below collectively give that diagnostic granularity.
+    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-baseline-cf/tests/test_server_integration.py` returns 1 (exactly one definition — duplicates would indicate Plan 03 + Plan 07 both added it)
+    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-personalized-cf/tests/test_server_integration.py` returns 1
+    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-adaptive-personalized-cf/tests/test_server_integration.py` returns 1
+    - `grep -c "test_round_metrics_history_carries_per_group_exposure" federated-pfedrec/tests/test_server_integration.py` returns 1
+    - `cd federated-baseline-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure` exits 0 (baseline-only invocation — failure isolates to baseline)
+    - `cd federated-personalized-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure` exits 0 (personalized-only invocation — failure isolates to personalized)
+    - `cd federated-adaptive-personalized-cf && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure` exits 0 (adaptive-only invocation — failure isolates to adaptive)
+    - `cd federated-pfedrec && pytest tests/test_server_integration.py -x -v -k test_round_metrics_history_carries_per_group_exposure` exits 0 (pfedrec-only invocation — failure isolates to pfedrec)
     - All four `pytest tests/ -q -m "not slow"` invocations exit 0 (no regressions in any module)
     - The test body in each file checks for the FULL set `{evaluated_users, evaluated_users_sparse, evaluated_users_medium, evaluated_users_dense}` (not a subset)
   </acceptance_criteria>
@@ -362,6 +402,7 @@ Every module's full unit-test suite (excluding @pytest.mark.slow) MUST exit 0.
     - All four test_server_integration.py files contain (or had already contained) the cross-cutting D-09 per-round exposure regression guard
     - All test invocations green
     - Documentation of any test strengthening from upstream Plan 03-06 weaker variants captured in this plan's SUMMARY
+    - **MAJOR closure (per-module test verification, plan-checker iteration 1):** Acceptance criteria + verify both run pytest against each module separately (4 commands, not one chained union), so a failure points to the SPECIFIC failing module rather than reporting "one of four failed"
   </done>
 </task>
 

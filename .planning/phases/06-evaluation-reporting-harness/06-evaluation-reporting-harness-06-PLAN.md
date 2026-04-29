@@ -215,7 +215,14 @@ _MODULE: str = "pfedrec"   # cross-references: build_run_manifest, module_run_re
             _agg_loss, thesis = strategy.aggregate_evaluate(
                 final_eval_round_index, extra_results, []
             )
-            best_round_metrics = dict(thesis) if thesis else {}
+            # MAJOR fix (plan-checker iteration 1, np.float64 JSON-serialization):
+            # coerce numeric values to Python floats at assignment so downstream
+            # dataclass_replace + atomic_write_json never raise TypeError on
+            # np.float64. Path (b) from checker spec.
+            best_round_metrics = {
+                k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in (thesis or {}).items()
+            }
             print(
                 f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
                 f"{best_round_metrics.get('sampled_ndcg@10')} "
@@ -286,18 +293,20 @@ Change ONLY the first arg to `final_metrics["best"]`:
 
 **Edit 7: PRESERVE existing pfr08_verification post-embed mutation.** Line 1069 (`results_data["_manifest"]["pfr08_verification"] = pfr08_audit`) MUST remain verbatim. The audit dict is independent of the Phase-6 schema-v2 metrics field.
 
-**Edit 8: Replace results-dir + filename + manifest-sibling.** REPLACE lines 1073-1080. New body:
+**Edit 8: Replace results-dir + filename + manifest-sibling.** REPLACE lines 1073-1080. New body.
+
+**MAJOR fix context (plan-checker iteration 1):** I verified `scripts/foundation/fedrec_foundation/mode.py:159-182` and confirmed that the `cross_silo_legacy` ModeProfile IS registered at the foundation layer (alongside `benchmark_cross_device` and `paper_compat_pfedrec`). All four modules — including pfedrec — can legitimately resolve `mode == "cross_silo_legacy"` at runtime when a user explicitly opts in via the launcher. The `else` branch is therefore NOT dead code — it is the legacy-fallback path required for D-03 cross-silo coexistence (PROJECT.md constraint: "Backwards compatibility — cross-silo configs must continue to run"). The branch MUST preserve the pre-Phase-6 write location byte-for-byte: `<repo>/results/federated/pfedrec/<run_id>_results.json` plus the legacy sibling `<run_id>-manifest.json` (default `write_manifest_sibling` behavior, no `sibling_name` kwarg).
 
 ```python
     if mode in ("benchmark_cross_device", "paper_compat_pfedrec"):
         run_dir = module_run_results_dir(_MODULE, run_id)
         results_filename = run_dir / "results.json"
         sibling_kwarg = {"sibling_name": "manifest.json"}
-    else:  # cross_silo_legacy
+    else:  # cross_silo_legacy — preserved per D-03 + PROJECT.md backwards-compat constraint
         legacy_dir = repo_root() / "results" / "federated" / "pfedrec"
         legacy_dir.mkdir(parents=True, exist_ok=True)
         results_filename = legacy_dir / f"{run_id}_results.json"
-        sibling_kwarg = {}
+        sibling_kwarg = {}  # default <run_id>-manifest.json — byte-identical to pre-Phase-6 cross-silo writes
 
     atomic_write_json(str(results_filename), results_data)
     sibling_path = write_manifest_sibling(manifest, results_filename, **sibling_kwarg)
@@ -361,11 +370,17 @@ cd scripts/foundation && pytest tests/test_pfedrec_subprocess_determinism.py -x 
     - `grep -E "pfedrec/\\*/results\\.json|.\\*/results\\.json" scripts/foundation/tests/test_pfedrec_subprocess_determinism.py` returns at least 1 line (path probe migrated)
     - `cd federated-pfedrec && pytest tests/test_server_integration.py -x -v -k "results_path or extra_eval or pfr08_consumes_best or best_last_blocks or per_group_exposure"` exits 0 with all 5 NEW tests passing
     - `cd federated-pfedrec && pytest tests/ -q -m "not slow"` exits 0 (no regressions; PFR-08 hook still functional)
+    - **MAJOR (cross_silo_legacy fallback preservation, plan-checker iteration 1):** `scripts/foundation/fedrec_foundation/mode.py` registers a `cross_silo_legacy` ModeProfile (verified at lines 159-182). The Edit 8 `else` branch must therefore NOT be replaced with `NotImplementedError`. Acceptance: `grep -c "raise NotImplementedError" federated-pfedrec/federated_pfedrec/server_app.py` returns 0 (the legacy fallback is preserved, not replaced); `grep -c "legacy_dir = repo_root() / .results. / .federated. / .pfedrec." federated-pfedrec/federated_pfedrec/server_app.py` returns 1 (legacy write location preserved); `grep -c "sibling_kwarg = {}" federated-pfedrec/federated_pfedrec/server_app.py` returns 1 (legacy default `<run_id>-manifest.json` sibling naming preserved — byte-identical to pre-Phase-6 cross-silo writes per D-03 + PROJECT.md backwards-compat constraint)
+    - **MAJOR (np.float64 JSON-serialization, plan-checker iteration 1):** `grep -c 'float(v) if isinstance(v, (int, float))' federated-pfedrec/federated_pfedrec/server_app.py` returns at least 1 (path-(b) coercion at best_round_metrics assignment site)
+    - **MINOR (legacy json.dump removal, plan-checker iteration 1):** `grep -c "json.dump(results_data" federated-pfedrec/federated_pfedrec/server_app.py` returns 0
+    - **MINOR (edit-order ambiguity, plan-checker iteration 1):** `python -c "src=open('federated-pfedrec/federated_pfedrec/server_app.py').read(); idx_final=src.find('final_metrics = {'); idx_replace=src.find('dataclass_replace(manifest'); assert idx_final >= 0 and idx_replace > idx_final, f'final_metrics block must appear before dataclass_replace, got idx_final={idx_final} idx_replace={idx_replace}'"` exits 0
   </acceptance_criteria>
   <done>
     - server_app.py: extra-eval-round inserted after best-arrays restore (line 901); flat final_metrics restructured to nested schema; D-14 PFR-08 hook input REWIRED from `final_metrics` to `final_metrics["best"]` (Pitfall 1 closure) — HOOK ORDER preserved (after embed_manifest_in_result + Phase-6 dataclasses.replace, before W&B summary); manifest mutated via dataclasses.replace BEFORE embed_manifest_in_result; existing pfr08_verification post-embed mutation preserved verbatim; W&B summary final/* -> best/* + last/* (thesis metrics); final/pfr08* -> top-level pfr08* (PFR-08 audit surface); results path resolves via module_run_results_dir for cross-device/paper_compat; cross-silo legacy preserved (D-03); atomic_write_json replaces json.dump
     - test_server_integration.py: 5 NEW tests pinning EVL-01/02/03/04/06 + the headline Pitfall-1 PFR-08-hook-consumes-nested-best regression guard
     - test_pfedrec_subprocess_determinism.py: _RESULTS_DIR glob updated to per-run-dir layout; existing pfr08_verification byte-identity invariant preserved
+    - **MAJOR closure (cross_silo_legacy fallback preservation, plan-checker iteration 1):** verified via mode.py:159-182 that pfedrec has a registered `cross_silo_legacy` mode; Edit 8 preserves the legacy `<repo>/results/federated/pfedrec/<run_id>_results.json` write path with the default `<run_id>-manifest.json` sibling. NOT replaced with NotImplementedError.
+    - **MAJOR closure (np.float64 JSON-serialization, plan-checker iteration 1):** path (b) — Edit 3 coerces `best_round_metrics` numeric values to Python primitives at the assignment site
     - Existing pfedrec tests remain GREEN
   </done>
 </task>

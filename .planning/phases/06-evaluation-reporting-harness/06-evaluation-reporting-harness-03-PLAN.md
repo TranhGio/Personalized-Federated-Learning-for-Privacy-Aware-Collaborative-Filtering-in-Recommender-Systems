@@ -218,7 +218,15 @@ _MODULE: str = "baseline"   # cross-references: build_run_manifest, module_run_r
             _agg_loss, thesis = strategy.aggregate_evaluate(
                 final_eval_round_index, extra_results, []
             )
-            best_round_metrics = dict(thesis) if thesis else {}
+            # MAJOR fix (plan-checker iteration 1): coerce np.float64 values to
+            # Python floats at the assignment site so downstream dataclass_replace
+            # (Edit 6) + atomic_write_json (Edit 7) never see np.float64. Without
+            # this, json.dumps raises TypeError: Object of type float64 is not
+            # JSON serializable on the manifest's metrics field.
+            best_round_metrics = {
+                k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in (thesis or {}).items()
+            }
             print(
                 f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
                 f"{best_round_metrics.get('sampled_ndcg@10')}"
@@ -345,6 +353,36 @@ The test MUST contain:
 
 **Edit 9: Extend test_server_integration.py with 4 NEW tests** (Test 1-4 from the behavior block above). Read the existing test_server_integration.py to identify its test fixture style (likely uses `unittest.mock.patch` or builds fake `Grid`/`Message` objects). Reuse that style verbatim — do NOT introduce new mocking infrastructure.
 
+**Edit 10 (BLOCKER fix from plan-checker iteration 1): Migrate the in-tree slow test in `federated-baseline-cf/tests/test_server_integration.py`.**
+
+The existing slow test `test_selected_partitions_byte_identical_across_subprocess_reruns` (lines 205-276) was authored against the pre-Phase-6 schema/path conventions and silently breaks once Plans 02+03 land. Two surfaces must change:
+
+1. **Path probe (line 227 + 256)**: `results_dir.glob("*_results.json")` finds files at the legacy flat layout `<repo>/results/federated/<run_id>_results.json`. Phase 6 cross-device runs land at `<repo>/results/federated/baseline/<run_id>/results.json`. Replace BOTH glob calls with `results_dir.glob("baseline/*/results.json")` (the new per-run-dir layout — no other glob pattern would catch only Phase-6 baseline writes).
+2. **Schema probe (lines 272-273)**: `a["final_metrics"].get("sampled_ndcg@10")` reads from the OLD flat schema. After Plan 03 Edit 4 lands, `sampled_ndcg@10` lives at `final_metrics["best"]["sampled_ndcg@10"]`. Replace BOTH lookups (`ndcg_a` and `ndcg_b`) with `a["final_metrics"]["best"].get("sampled_ndcg@10", 0.0)` and the same for `b`.
+
+Concrete edits to apply (find-and-replace):
+
+```python
+# Line 227 (current):
+    before = set(results_dir.glob("*_results.json"))
+# Replace with:
+    before = set(results_dir.glob("baseline/*/results.json"))
+
+# Line 256 (current):
+    after = sorted((results_dir.glob("*_results.json")), key=lambda p: p.stat().st_mtime)
+# Replace with:
+    after = sorted((results_dir.glob("baseline/*/results.json")), key=lambda p: p.stat().st_mtime)
+
+# Lines 272-273 (current):
+    ndcg_a = float(a["final_metrics"].get("sampled_ndcg@10", 0.0))
+    ndcg_b = float(b["final_metrics"].get("sampled_ndcg@10", 0.0))
+# Replace with:
+    ndcg_a = float(a["final_metrics"]["best"].get("sampled_ndcg@10", 0.0))
+    ndcg_b = float(b["final_metrics"]["best"].get("sampled_ndcg@10", 0.0))
+```
+
+The rest of the test body (subprocess invocation, byte-identity assertion on `selected_clients_per_round`) is preserved verbatim — those invariants survive Phase 6 unchanged. The `results_dir = repo_root / "results" / "federated"` line at 222 stays as the glob root; only the glob pattern changes (so the path stays anchored at `<repo>/results/federated/`, with the per-module subdir baked into the glob).
+
 **Verify by running:**
 
 ```bash
@@ -377,11 +415,20 @@ The integration tests MUST pass. The slow test will pass once the subprocess act
     - `grep -c "@pytest.mark.slow" scripts/foundation/tests/test_baseline_subprocess_determinism.py` returns at least 1
     - `cd federated-baseline-cf && pytest tests/test_server_integration.py -x -v -k "results_path or extra_eval or best_last_blocks or per_group_exposure"` exits 0 with all 4 NEW tests passing
     - `cd federated-baseline-cf && pytest tests/ -q -m "not slow"` exits 0 (no regressions in existing tests)
+    - **BLOCKER (in-tree slow test migration, plan-checker iteration 1):** `grep -c 'final_metrics\["best"\]' federated-baseline-cf/tests/test_server_integration.py` returns at least 1 (the two `ndcg_a`/`ndcg_b` lookups now read from the nested-best block)
+    - **BLOCKER (in-tree slow test migration, plan-checker iteration 1):** `grep -c 'glob("\*_results.json")' federated-baseline-cf/tests/test_server_integration.py` returns 0 (the two legacy flat-layout globs at lines 227+256 are removed)
+    - **BLOCKER (in-tree slow test migration, plan-checker iteration 1):** `grep -c 'glob("baseline/\*/results.json")' federated-baseline-cf/tests/test_server_integration.py` returns 2 (both globs migrated to the new per-run-dir layout)
+    - **MAJOR (np.float64 JSON-serialization, plan-checker iteration 1):** Plan adopts path (b): `final_metrics["best"]` and `final_metrics["last"]` blocks build their numeric values via explicit `float(...)` cast at the assignment site, so passing them through `dataclass_replace(manifest, metrics=results_data["final_metrics"])` followed by `atomic_write_json` cannot raise `TypeError: Object of type float64 is not JSON serializable`. Concretely: in Edit 3 (extra-eval-round block), wrap the `best_round_metrics = dict(thesis) if thesis else {}` line so that numeric values get coerced — change to `best_round_metrics = {k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v for k, v in (thesis or {}).items()}`. Acceptance: `grep -c 'float(v) if isinstance(v, (int, float))' federated-baseline-cf/federated_baseline_cf/server_app.py` returns at least 1
+    - **MINOR (legacy json.dump removal, plan-checker iteration 1):** `grep -c "json.dump(results_data" federated-baseline-cf/federated_baseline_cf/server_app.py` returns 0 (atomic_write_json fully replaces the legacy json.dump path)
+    - **MINOR (edit-order ambiguity, plan-checker iteration 1):** `python -c "src=open('federated-baseline-cf/federated_baseline_cf/server_app.py').read(); idx_final=src.find('final_metrics = {'); idx_replace=src.find('dataclass_replace(manifest'); assert idx_final >= 0 and idx_replace > idx_final, f'final_metrics block must appear before dataclass_replace, got idx_final={idx_final} idx_replace={idx_replace}'"` exits 0 (proves Edit 4 lands BEFORE Edit 6 in source order — guards against an executor swapping their order and silently producing empty `metrics` field on the manifest)
+    - **MINOR (print_evaluation_metrics call-site uniqueness, plan-checker iteration 1):** Verified via re-reading `federated-baseline-cf/federated_baseline_cf/server_app.py:632-700`: the existing centralized eval block does NOT call `print_evaluation_metrics` (the only legacy call lives at line 711 inside the flat-final_metrics block being REPLACED by Edit 4). After Edit 4, exactly one `print_evaluation_metrics(actual_rounds, final_metrics["best"], context)` call remains. Acceptance: `grep -c "print_evaluation_metrics(" federated-baseline-cf/federated_baseline_cf/server_app.py` returns 1 (single call site after edits — no double-print)
   </acceptance_criteria>
   <done>
     - server_app.py: extra-eval-round block inserted between best-arrays restore (line 626) and centralized eval (line 632); flat final_metrics restructured to nested {best, last, best_round, last_round, final_eval_round_index}; W&B summary keys migrated final/* -> best/* + last/*; manifest mutated via dataclasses.replace; results path resolves via module_run_results_dir for cross-device; cross-silo legacy path preserved (D-03 + Pitfall 8); atomic_write_json replaces json.dump
     - test_server_integration.py: 4 NEW tests pin EVL-01/02/03/04/06 (results path, extra-eval-round wired, best/last block schema, per-group exposure history)
     - test_baseline_subprocess_determinism.py: NEW @pytest.mark.slow regression guard re-enables the folded phase2 path-bug todo (Pitfall 2 closure)
+    - **BLOCKER closure (plan-checker iteration 1):** in-tree slow test `test_selected_partitions_byte_identical_across_subprocess_reruns` (federated-baseline-cf/tests/test_server_integration.py:205-276) migrated to the new per-run-dir glob (`baseline/*/results.json`) and the nested-best schema lookup (`final_metrics["best"]["sampled_ndcg@10"]`). Test now finds Phase-6 outputs and reads the canonical thesis metric correctly.
+    - **MAJOR closure (np.float64 JSON-serialization, plan-checker iteration 1):** path (b) chosen — Edit 3 coerces `best_round_metrics` numeric values to Python primitives at the assignment site so downstream `dataclass_replace` + `atomic_write_json` never see `np.float64`. Documented in SUMMARY.
     - Existing baseline tests remain GREEN; no regressions
   </done>
 </task>

@@ -228,7 +228,14 @@ _MODULE: str = "adaptive"   # cross-references: build_run_manifest, module_run_r
             _agg_loss, thesis = strategy.aggregate_evaluate(
                 final_eval_round_index, extra_results, []
             )
-            best_round_metrics = dict(thesis) if thesis else {}
+            # MAJOR fix (plan-checker iteration 1, np.float64 JSON-serialization):
+            # coerce numeric values to Python floats at assignment so downstream
+            # dataclass_replace + atomic_write_json never raise TypeError on
+            # np.float64. Path (b) from checker spec.
+            best_round_metrics = {
+                k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in (thesis or {}).items()
+            }
             print(
                 f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
                 f"{best_round_metrics.get('sampled_ndcg@10')}"
@@ -363,11 +370,15 @@ cd scripts/foundation && pytest tests/test_adaptive_determinism.py -x -v -m slow
     - `grep -E "adaptive/\\*/results\\.json|.\\*/results\\.json" scripts/foundation/tests/test_adaptive_determinism.py` returns at least 1 line (path probe migrated)
     - `cd federated-adaptive-personalized-cf && pytest tests/test_server_integration.py -x -v -k "results_path or extra_eval or best_last_blocks or per_group_exposure or prototype_attached"` exits 0 with all 5 NEW tests passing
     - `cd federated-adaptive-personalized-cf && pytest tests/ -q -m "not slow"` exits 0 (no regressions)
+    - **MAJOR (np.float64 JSON-serialization, plan-checker iteration 1):** `grep -c 'float(v) if isinstance(v, (int, float))' federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/server_app.py` returns at least 1 (path-(b) coercion at best_round_metrics assignment site)
+    - **MINOR (legacy json.dump removal, plan-checker iteration 1):** `grep -c "json.dump(results_data" federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/server_app.py` returns 0
+    - **MINOR (edit-order ambiguity, plan-checker iteration 1):** `python -c "src=open('federated-adaptive-personalized-cf/federated_adaptive_personalized_cf/server_app.py').read(); idx_final=src.find('final_metrics = {'); idx_replace=src.find('dataclass_replace(manifest'); assert idx_final >= 0 and idx_replace > idx_final, f'final_metrics block must appear before dataclass_replace, got idx_final={idx_final} idx_replace={idx_replace}'"` exits 0
   </acceptance_criteria>
   <done>
     - server_app.py: extra-eval-round block inserted AFTER D-07 prototype restore (line 956); ConfigRecord ATTACHES restored prototype (Pitfall 4 closure); flat final_metrics restructured to nested {best, last, best_round, last_round, final_eval_round_index}; D-06 forbidden lookup at line 978 removed; W&B summary final/* -> best/* + last/* (alpha/* and prototype/* surfaces preserved); manifest mutated via dataclasses.replace BEFORE existing best_prototype post-embed mutation; results path resolves via module_run_results_dir for cross-device; cross-silo legacy preserved (D-03 + Pitfall 8); atomic_write_json replaces json.dump
     - test_server_integration.py: 5 NEW tests pinning EVL-01/02/03/04/06 + Pitfall 4 prototype-attached invariant
     - test_adaptive_determinism.py: _RESULTS_DIR glob updated to per-run-dir layout; existing best_prototype byte-identity invariant preserved
+    - **MAJOR closure (np.float64 JSON-serialization, plan-checker iteration 1):** path (b) — Edit 3 coerces `best_round_metrics` numeric values to Python primitives at the assignment site
     - Existing adaptive tests remain GREEN
   </done>
 </task>
