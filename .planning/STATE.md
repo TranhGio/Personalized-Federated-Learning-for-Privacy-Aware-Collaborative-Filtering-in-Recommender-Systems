@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 06-evaluation-reporting-harness-05-PLAN.md
-last_updated: "2026-04-29T08:10:36.478Z"
+stopped_at: Completed 06-evaluation-reporting-harness-06-PLAN.md
+last_updated: "2026-04-29T08:39:07.357Z"
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 34
-  completed_plans: 32
+  completed_plans: 33
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 06 (evaluation-reporting-harness) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 06-evaluation-reporting-harness P04 | 7min | 1 tasks | 3 files |
 | Phase 06-evaluation-reporting-harness P03 | 7min | 1 tasks | 3 files |
 | Phase 06-evaluation-reporting-harness P05 | 6min | 1 tasks | 3 files |
+| Phase 06 P06 | 30min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 06-evaluation-reporting-harness]: Plan 03 D-07 nested final_metrics: {best, last, best_round, last_round, final_eval_round_index}; Pitfall-9 last_round=max(eval_metrics_history.keys()); Pitfall-10 centralized eval feeds last diagnostics only; W&B summary migrated final/* -> best/* + last/*
 - [Phase 06-evaluation-reporting-harness]: Pitfall-4 closed: extra-eval ConfigRecord attaches strategy._global_prototype.tolist() mirroring in-loop eval-config site at lines 814-815
 - [Phase 06-evaluation-reporting-harness]: D-06 forbidden eval_metrics_history lookup removed; best_* block comes from extra-eval broadcast, not stale history
+- [Phase 06]: Pitfall-1 closure: _emit_pfr_08_verification receives final_metrics['best'] positionally; hook ORDER and signature unchanged
+- [Phase 06]: Per-group exposure keys: slash-delimiter (evaluated_users/sparse) matches PFedRecSplitFedAvg output; test assertions corrected to match
 
 ### Todos
 
@@ -199,7 +202,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed 06-evaluation-reporting-harness-05-PLAN.md
+**Stopped at:** Completed 06-evaluation-reporting-harness-06-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
