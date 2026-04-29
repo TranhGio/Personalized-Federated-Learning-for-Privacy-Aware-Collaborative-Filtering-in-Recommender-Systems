@@ -114,7 +114,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   3. Cross-device results are written under `results/federated/<module>/<run_id>/` with the full protocol fingerprint manifest, and the legacy cross-silo result locations under `results/federated/` are not touched or overwritten by any cross-device run.
   4. All four modules log their cross-device runs to a new, dedicated W&B project (separate from the existing cross-silo project), and the canonical reported field is `best_*` with `last_*` preserved only as a diagnostic.
 **Plans**: 7 plans
-  - [ ] 06-evaluation-reporting-harness-01-PLAN.md — Foundation paths helper module_run_results_dir + 3 unit tests (EVL-04 D-02 closure) — Wave 1 parallel
+  - [x] 06-evaluation-reporting-harness-01-PLAN.md — Foundation paths helper module_run_results_dir + 3 unit tests (EVL-04 D-02 closure) — Wave 1 parallel
   - [ ] 06-evaluation-reporting-harness-02-PLAN.md — Manifest schema v2 (final_eval_round_index + metrics fields, safe defaults) + write_manifest_sibling sibling_name kwarg + 5 unit tests (EVL-01, EVL-06) — Wave 1 parallel
   - [ ] 06-evaluation-reporting-harness-03-PLAN.md — Baseline server_app: extra-eval-round + per-run-dir + nested final_metrics + best/last W&B namespaces + re-enable phase2 path-bug regression guard (EVL-01..06) — Wave 2 parallel
   - [ ] 06-evaluation-reporting-harness-04-PLAN.md — Personalized server_app: extra-eval-round (replaces line-796 D-06-forbidden lookup) + per-run-dir + nested final_metrics + path probe migration (EVL-01..06) — Wave 2 parallel
