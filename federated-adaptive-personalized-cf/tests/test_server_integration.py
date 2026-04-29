@@ -421,3 +421,220 @@ def test_extract_sibling_records_no_siblings_no_op() -> None:
     assert metrics_dict == {"foo": 1}, (
         f"metrics_dict corrupted by no-op path: {metrics_dict}"
     )
+
+
+# =============================================================================
+# Phase 6 Plan 05: EVL-01/02/03/04/06 + Pitfall-4 regression guards
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Test 1 (6-05-01): results path is repo-root anchored via module_run_results_dir
+# -----------------------------------------------------------------------------
+def test_results_path_repo_root_anchored() -> None:
+    """EVL-04 D-02: module_run_results_dir resolves to <repo>/results/federated/adaptive/<run_id>/.
+
+    Verifies server_app.py imports module_run_results_dir (not a bare Path) and
+    that the source contains the module_run_results_dir call-site for cross-device modes.
+    """
+    src_path = _REPO_ROOT / "federated-adaptive-personalized-cf" / \
+        "federated_adaptive_personalized_cf" / "server_app.py"
+    src = src_path.read_text()
+
+    # D-02: old module-relative path must be gone
+    assert 'Path("../results/federated/adaptive")' not in src, (
+        "D-02 VIOLATED: old module-relative path still present in server_app.py; "
+        "must be replaced by module_run_results_dir(_MODULE, run_id)"
+    )
+    # Foundation helper must be imported
+    assert "from fedrec_foundation.paths import module_run_results_dir" in src, (
+        "EVL-04 VIOLATED: module_run_results_dir not imported in server_app.py"
+    )
+    # Call site must be present for cross-device mode
+    assert "module_run_results_dir(_MODULE, run_id)" in src, (
+        "EVL-04 D-02 VIOLATED: module_run_results_dir(_MODULE, run_id) call site missing"
+    )
+    # _MODULE local constant
+    assert '_MODULE: str = "adaptive"' in src, (
+        "EVL-04 VIOLATED: _MODULE constant missing from server_app.py"
+    )
+    # D-04 clean filename: sibling_name kwarg must be present
+    assert 'sibling_name="manifest.json"' in src, (
+        "D-04 VIOLATED: sibling_name='manifest.json' call missing from server_app.py"
+    )
+    # atomic_write_json must replace json.dump
+    assert "atomic_write_json" in src, (
+        "MINOR VIOLATED: atomic_write_json not imported/used in server_app.py"
+    )
+    assert "json.dump(results_data" not in src, (
+        "MINOR VIOLATED: legacy json.dump(results_data ...) still present; must use atomic_write_json"
+    )
+
+
+# -----------------------------------------------------------------------------
+# Test 2 (6-05-01): extra-eval-round block is present and replaces D-06 forbidden lookup
+# -----------------------------------------------------------------------------
+def test_extra_eval_round_replaces_forbidden_history_lookup() -> None:
+    """EVL-01 D-06: extra-eval-round block wired; D-06 forbidden lookup removed.
+
+    Checks source-level invariants without running a live Grid:
+    1. 'final_metrics = dict(eval_metrics_history.get(final_round_for_metrics' is absent.
+    2. 'final_eval_round_index' is present (the D-06 broadcast block token).
+    3. 'strategy.aggregate_evaluate(final_eval_round_index' appears (broadcast result feeds best).
+    4. nested final_metrics schema: 'best_round_metrics or last_block' pattern.
+    5. max(eval_metrics_history.keys()) present (Pitfall 9 last-round guard).
+    """
+    src_path = _REPO_ROOT / "federated-adaptive-personalized-cf" / \
+        "federated_adaptive_personalized_cf" / "server_app.py"
+    src = src_path.read_text()
+
+    # D-06 forbidden lookup must be absent
+    assert "final_metrics = dict(eval_metrics_history.get(final_round_for_metrics" not in src, (
+        "D-06 BUG: forbidden eval_metrics_history history lookup still present"
+    )
+    # D-06 broadcast block tokens
+    assert "final_eval_round_index" in src, (
+        "EVL-01 D-06 VIOLATED: final_eval_round_index token missing — extra-eval-round not wired"
+    )
+    # Nested schema: best block derives from broadcast result
+    assert '"best"' in src or "'best'" in src, (
+        "EVL-06 D-07 VIOLATED: nested best block missing from final_metrics construction"
+    )
+    assert '"last"' in src or "'last'" in src, (
+        "EVL-06 D-07 VIOLATED: nested last block missing from final_metrics construction"
+    )
+    # Pitfall 9 last-round guard
+    assert "max(eval_metrics_history.keys())" in src, (
+        "Pitfall 9 VIOLATED: max(eval_metrics_history.keys()) guard missing"
+    )
+    # dataclasses.replace import and call-site for manifest mutation
+    assert "from dataclasses import replace as dataclass_replace" in src, (
+        "VIOLATED: dataclass_replace import missing from server_app.py"
+    )
+    assert "dataclass_replace" in src, (
+        "VIOLATED: dataclass_replace call site missing from server_app.py"
+    )
+
+
+# -----------------------------------------------------------------------------
+# Test 3 (6-05-01): canonical artifact schema — best/last blocks + schema_version=2
+# -----------------------------------------------------------------------------
+def test_canonical_artifact_carries_best_and_last_blocks() -> None:
+    """EVL-01 EVL-06 D-07: source carries nested final_metrics + manifest dataclass_replace.
+
+    Also verifies Phase-4 D-06 best_prototype post-embed mutation is preserved verbatim
+    (results_data['_manifest']['best_prototype'] still present in source).
+    """
+    src_path = _REPO_ROOT / "federated-adaptive-personalized-cf" / \
+        "federated_adaptive_personalized_cf" / "server_app.py"
+    src = src_path.read_text()
+
+    # Manifest dataclass_replace must appear AFTER final_metrics block (edit-order invariant)
+    idx_final = src.find("final_metrics = {")
+    idx_replace = src.find("dataclass_replace(manifest")
+    assert idx_final >= 0, (
+        "final_metrics = { block missing — nested schema not implemented"
+    )
+    assert idx_replace > idx_final, (
+        "Edit-order invariant VIOLATED: dataclass_replace must appear AFTER final_metrics block"
+    )
+    # Phase-4 D-06 post-embed mutation preserved verbatim
+    assert "results_data[\"_manifest\"][\"best_prototype\"]" in src, (
+        "Phase-4 D-06 VIOLATED: best_prototype post-embed mutation removed from server_app.py"
+    )
+    # best/* and last/* W&B summary namespaces
+    assert 'wandb.run.summary[f"best/' in src, (
+        'EVL-06 VIOLATED: best/* W&B summary namespace missing from server_app.py'
+    )
+    assert 'wandb.run.summary[f"last/' in src, (
+        'EVL-06 VIOLATED: last/* W&B summary namespace missing from server_app.py'
+    )
+    # final/* must be gone (for thesis metrics; alpha/* and prototype/* are preserved)
+    assert 'wandb.run.summary[f"final/' not in src, (
+        'EVL-06 VIOLATED: legacy final/* W&B summary namespace still present'
+    )
+
+
+# -----------------------------------------------------------------------------
+# Test 4 (6-05-01): per-group exposure history present in strategy output
+# -----------------------------------------------------------------------------
+def test_round_metrics_history_carries_per_group_exposure() -> None:
+    """EVL-02 EVL-03 D-08 D-09: strategy.aggregate_evaluate emits evaluated_users per group.
+
+    Creates a minimal fixture with known per-group sufficient stats; asserts the
+    strategy emits evaluated_users_sparse / _medium / _dense alongside overall
+    evaluated_users. These are D-09 exposure counts Phase 6 surfaces in the canonical block.
+    """
+    from flwr.common import Code, EvaluateRes, Status
+
+    from federated_adaptive_personalized_cf.strategy import AdaptiveSplitFedAvg
+
+    strategy = AdaptiveSplitFedAvg(fraction_fit=0.1)
+    from unittest.mock import MagicMock
+    proxy = MagicMock()
+    proxy.cid = "test"
+
+    results = [
+        (proxy, EvaluateRes(Status(Code.OK, "ok"), 0.0, 5, {
+            "eval_loss": 0.0,
+            "hit_count_overall_at10": 2, "ndcg_sum_overall_at10": 1.5, "evaluated_users": 5,
+            "hit_count_sparse_at10": 1, "ndcg_sum_sparse_at10": 0.5, "evaluated_users_sparse": 2,
+            "hit_count_medium_at10": 1, "ndcg_sum_medium_at10": 0.7, "evaluated_users_medium": 2,
+            "hit_count_dense_at10": 0, "ndcg_sum_dense_at10": 0.3, "evaluated_users_dense": 1,
+        })),
+    ]
+    _loss, metrics = strategy.aggregate_evaluate(server_round=1, results=results, failures=[])
+    assert "evaluated_users" in metrics, "EVL-03 D-09: evaluated_users missing from strategy output"
+    assert "evaluated_users_sparse" in metrics, "EVL-02 D-08: evaluated_users_sparse missing"
+    assert "evaluated_users_medium" in metrics, "EVL-02 D-08: evaluated_users_medium missing"
+    assert "evaluated_users_dense" in metrics, "EVL-02 D-08: evaluated_users_dense missing"
+    assert int(metrics["evaluated_users"]) == 5
+    assert int(metrics["evaluated_users_sparse"]) == 2
+    assert int(metrics["evaluated_users_medium"]) == 2
+    assert int(metrics["evaluated_users_dense"]) == 1
+
+
+# -----------------------------------------------------------------------------
+# Test 5 (6-05-02): PITFALL 4 REGRESSION GUARD — extra-eval-round attaches best_prototype
+# -----------------------------------------------------------------------------
+def test_extra_eval_broadcasts_best_prototype() -> None:
+    """Pitfall-4: extra-eval ConfigRecord MUST carry strategy._global_prototype.tolist().
+
+    Source-level invariant: verifies that the extra-eval-round message construction
+    block attaches global_prototype to the eval ConfigRecord, mirroring the in-loop
+    eval-config build site at server_app.py lines 814-815.
+
+    Without this attachment, every client falls back to a zero or stale prototype
+    during the canonical eval, and the best_* block reports lower NDCG@10 than
+    the in-loop best_round_num round did (the warning sign in RESEARCH §Pitfall 4).
+    """
+    src_path = _REPO_ROOT / "federated-adaptive-personalized-cf" / \
+        "federated_adaptive_personalized_cf" / "server_app.py"
+    src = src_path.read_text()
+
+    # The attachment must be present in the extra-eval block
+    assert 'extra_eval_config_dict["global_prototype"]' in src, (
+        "Pitfall-4 VIOLATED: extra_eval_config_dict['global_prototype'] assignment missing. "
+        "The extra-eval-round ConfigRecord does NOT attach the restored best_prototype. "
+        "Every client will fall back to a zero/stale prototype during canonical eval, "
+        "causing best_* block NDCG@10 to be lower than the in-loop best_round did."
+    )
+    # The value must come from final_global_prototype (the restored prototype from D-07)
+    assert "final_global_prototype.tolist()" in src, (
+        "Pitfall-4 VIOLATED: final_global_prototype.tolist() not used in extra-eval ConfigRecord. "
+        "Must mirror in-loop eval-config build site at server_app.py:814-815."
+    )
+    # The prototype attachment must be inside a None-guard (same as in-loop site)
+    # Verify that 'if final_global_prototype is not None:' appears near the assignment
+    attach_idx = src.find('extra_eval_config_dict["global_prototype"]')
+    assert attach_idx >= 0, "Pitfall-4: attachment site not found (previous assertion should have caught this)"
+    # Look back 300 chars for the None-guard
+    nearby = src[max(0, attach_idx - 300):attach_idx + 200]
+    assert "final_global_prototype is not None" in nearby, (
+        "Pitfall-4: extra-eval ConfigRecord prototype attachment lacks None-guard. "
+        "Must mirror the in-loop None check at server_app.py:814."
+    )
+    # The comment explaining Pitfall-4 closure should be present (regression documentation)
+    assert "PITFALL 4" in src or "Pitfall 4" in src, (
+        "Pitfall-4: No Pitfall 4 comment found — future maintainers won't know why this matters"
+    )
