@@ -75,12 +75,12 @@ Migrate `federated-adaptive-personalized-cf` (thesis contribution) and fix the d
 
 Unified evaluation layer, best-round restore, per-group reporting.
 
-- [ ] **EVL-01**: Best-round restore: for every module, `best_*` metrics and the corresponding global + local parameter state are saved; after the last round, the best-round state is restored and ONE final evaluation is written as the canonical result artifact.
+- [x] **EVL-01**: Best-round restore: for every module, `best_*` metrics and the corresponding global + local parameter state are saved; after the last round, the best-round state is restored and ONE final evaluation is written as the canonical result artifact.
 - [ ] **EVL-02**: Per-user-group (sparse 0–30 / medium 30–100 / dense 100+) NDCG@10 and HR@10 are emitted as first-class fields (`ndcg@10/sparse`, `ndcg@10/medium`, `ndcg@10/dense`, plus HR@10 variants) by every module.
 - [ ] **EVL-03**: Per-user and per-group sampling-exposure counts are logged each round; reports surface support counts so per-group metrics can be read with the right variance lens.
 - [x] **EVL-04**: Results are written to `results/federated/<module>/<run_id>/` with the FND-07 manifest; legacy cross-silo result locations stay untouched.
 - [ ] **EVL-05**: All cross-device W&B runs log to a NEW W&B project (named `<ENTITY>/thesis-crossdevice-*` or similar), separate from the existing cross-silo project.
-- [ ] **EVL-06**: Canonical reporting uses `best_*` metrics; `last_*` is kept as a diagnostic field only; result filenames encode `best_round`.
+- [x] **EVL-06**: Canonical reporting uses `best_*` metrics; `last_*` is kept as a diagnostic field only; result filenames encode `best_round`.
 
 ### Thesis Evaluation Run (THS)
 
@@ -169,12 +169,12 @@ Deferred beyond this thesis cycle.
 | PFR-07 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-08 | Phase 5: PFedRec Migration & Reproduction | Complete |
 | PFR-09 | Phase 5: PFedRec Migration & Reproduction | Complete |
-| EVL-01 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-01 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-02 | Phase 6: Evaluation & Reporting Harness | Pending |
 | EVL-03 | Phase 6: Evaluation & Reporting Harness | Pending |
 | EVL-04 | Phase 6: Evaluation & Reporting Harness | Complete |
 | EVL-05 | Phase 6: Evaluation & Reporting Harness | Pending |
-| EVL-06 | Phase 6: Evaluation & Reporting Harness | Pending |
+| EVL-06 | Phase 6: Evaluation & Reporting Harness | Complete |
 | THS-01 | Phase 7: Thesis Evaluation Run | Pending |
 | THS-02 | Phase 7: Thesis Evaluation Run | Pending |
 | THS-03 | Phase 7: Thesis Evaluation Run | Pending |
