@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-pfedrec-migration-reproduction-04-PLAN.md
-last_updated: "2026-04-28T18:27:30.935Z"
+stopped_at: Phase 6 context gathered
+last_updated: "2026-04-29T00:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -173,21 +173,19 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 
 ## Session Continuity
 
-**Last session summary (2026-04-20):** Closed out Phase 03 Plan 01 (previously had code commits `858915d` strategy + `fabc7eb` models but no SUMMARY). Verified: `PersonalizedSplitFedAvg.aggregate_fit is BaseFedAvg.aggregate_fit` (D-23 identity check), strategy frozensets correct (GLOBAL = item_*; LOCAL = local_user_*), BPRMF/BasicMF single-row contract (local_user_row shape=(d,), 2-key get_local_parameters dict, no ghost table). All 12 tests GREEN (5 strategy + 7 single-row model). Wrote `03-personalized-migration-01-SUMMARY.md` + updated STATE.md.
+**Last session (2026-04-29):** Phase 6 context gathered via `/gsd:discuss-phase 6`. Nine decisions (D-01..D-09) locked across four gray areas (results path schema, W&B project routing, best-round final-eval semantics, per-user-group reporting depth). `phase2-baseline-determinism-path-bug.md` todo folded into Phase 6 scope and resolved by D-02 (repo-root-anchored results path). CONTEXT.md + DISCUSSION-LOG.md committed; ready for planning.
 
-**Next session entry point:** Phase 03 Wave 2 — `/gsd:execute-phase 3` picks up Plan 03 (client_app.py + task.py contract wire + D-04..D-10 manifest-sidecar cache; depends on Plans 01+02). Plan 04 is Wave 3 (server_app.py main loop + discovery round + partition-id sampling). Plan 05 is Wave 3 (scripts/clean_cache.py + subprocess determinism regression guard).
+**Next session entry point:** `/gsd:plan-phase 6` — feed CONTEXT.md decisions to gsd-planner for task breakdown. Wave-1 candidates: (a) foundation helper for repo-root results path resolution, (b) extra-eval-round wiring per module, (c) `last_*` block plumbing in artifact, (d) baseline path-bug regression test re-enable.
 
 **Key files to reread on session resume:**
 
-- `.planning/phases/03-personalized-migration/03-CONTEXT.md` — Phase 3 decisions D-01..D-23 (single-row models, run-namespaced cache, manifest-sidecar, discovery round, cold-start D-13)
-- `.planning/phases/03-personalized-migration/03-personalized-migration-01-SUMMARY.md` — strategy + model contract delivered
-- `.planning/phases/03-personalized-migration/03-personalized-migration-02-SUMMARY.md` — pyproject cross-device defaults + dataset.py foundation adapter delivered
-- `.planning/phases/03-personalized-migration/03-personalized-migration-03-PLAN.md` — next plan (client + task wire)
-- `federated-personalized-cf/federated_personalized_cf/strategy.py` — consumer of EvaluateMetricsContract keys for aggregate_evaluate
-- `federated-personalized-cf/federated_personalized_cf/models/bpr_mf.py` — the 2-key local-params contract Plan 03 caches to disk
-- `.planning/ROADMAP.md` — Phase 3 progress: 2/5 complete
+- `.planning/phases/06-evaluation-reporting-harness/06-CONTEXT.md` — Phase 6 decisions D-01..D-09 (per-run dir layout, repo-root anchoring, `federated-cf-cross-device` W&B project, re-run final eval, both `best_*`+`last_*` in artifact, HR/NDCG per group only, per-round + final exposure counts)
+- `.planning/REQUIREMENTS.md` §EVL-01..EVL-06 — Phase 6 delivers six requirements
+- `.planning/ROADMAP.md` §"Phase 6: Evaluation & Reporting Harness" — Goal + success criteria
+- `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
+- `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed 05-pfedrec-migration-reproduction-04-PLAN.md
+**Stopped at:** Phase 6 context gathered.
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
