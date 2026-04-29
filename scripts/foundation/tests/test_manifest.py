@@ -164,18 +164,18 @@ from dataclasses import replace as dataclass_replace
 from typing import Any, Dict
 
 
-def test_run_manifest_schema_version_2() -> None:
-    """Phase 6: schema_version constant bumped from 1 to 2."""
-    assert RUN_MANIFEST_SCHEMA_VERSION == 2, (
-        f"Expected RUN_MANIFEST_SCHEMA_VERSION=2, got {RUN_MANIFEST_SCHEMA_VERSION}"
+def test_run_manifest_schema_version_3() -> None:
+    """Phase 7 D-22: schema_version constant bumped from 2 to 3."""
+    assert RUN_MANIFEST_SCHEMA_VERSION == 3, (
+        f"Expected RUN_MANIFEST_SCHEMA_VERSION=3, got {RUN_MANIFEST_SCHEMA_VERSION}"
     )
     # Builder must propagate the bumped constant into the dataclass instance.
     m = _build()
-    assert m.schema_version == 2
+    assert m.schema_version == 3
     # Embedded dict surface must agree.
     result_dict: Dict[str, Any] = {}
     embed_manifest_in_result(m, result_dict)
-    assert result_dict["_manifest"]["schema_version"] == 2
+    assert result_dict["_manifest"]["schema_version"] == 3
 
 
 def test_run_manifest_backward_compat_v1() -> None:
@@ -185,9 +185,9 @@ def test_run_manifest_backward_compat_v1() -> None:
     so legacy callers never see a missing-kwarg TypeError.
     """
     # Construct directly using ONLY the v1 field set (no final_eval_round_index,
-    # no metrics). The point is: this MUST NOT raise TypeError under v2.
+    # no metrics). The point is: this MUST NOT raise TypeError under v3.
     manifest = RunManifest(
-        schema_version=2,
+        schema_version=3,
         run_id="20260429-104530-v1back",
         mode="benchmark_cross_device",
         num_supernodes=6040,
@@ -219,6 +219,77 @@ def test_run_manifest_backward_compat_v1() -> None:
     assert manifest.metrics == {}, (
         "Expected default_factory=dict for metrics field"
     )
+
+
+def test_run_manifest_backward_compat_v2() -> None:
+    """Phase 7 D-22 + Pitfall 7: pre-v3 callers (no thesis kwargs) must construct without TypeError.
+
+    All three new fields carry safe defaults: thesis_run_label="" (non-thesis sentinel),
+    ablation_dimension="none", ablation_value="".
+    """
+    # Construct with the v2 field set ONLY (no thesis_run_label / ablation_dimension / ablation_value).
+    manifest = RunManifest(
+        schema_version=3,
+        run_id="20260429-104530-v2back",
+        mode="benchmark_cross_device",
+        num_supernodes=6040,
+        partition_mode="natural",
+        fraction_train=0.05,
+        fraction_eval=1.0,
+        weight_policy="num_positives",
+        primary_evaluator="sampled_loo_99",
+        num_train_negatives=4,
+        num_eval_negatives=99,
+        run_seed=42,
+        checkpoint_rule="best_round_restore",
+        mapping_sha256="m" * 64,
+        split_hash="s" * 12,
+        exclusion_sha256="e" * 64,
+        foundation_contract_sha256="c" * 64,
+        raw_data_hash="r" * 64,
+        builder_version="1.0.0",
+        overrides={},
+        module="baseline",
+        flwr_version="1.22.0",
+        torch_version="2.7.1",
+        git_commit="abc1234",
+        # Phase 6 v2 fields populated explicitly (no thesis fields):
+        final_eval_round_index=0,
+        metrics={},
+    )
+    # Defaults must be the documented sentinels per D-22.
+    assert manifest.thesis_run_label == "", "Default thesis_run_label is empty string"
+    assert manifest.ablation_dimension == "none", "Default ablation_dimension is 'none'"
+    assert manifest.ablation_value == "", "Default ablation_value is empty string"
+
+
+def test_run_manifest_carries_thesis_fields() -> None:
+    """Phase 7 D-22: post-build mutation via dataclasses.replace populates the 3 thesis fields.
+
+    Mirrors the Phase 6 D-07 pattern: server_app builds a manifest, then replaces it
+    with the thesis-tagging fields read from context.run_config BEFORE embed_manifest_in_result.
+    """
+    m = _build()
+    # Roundtrip empty defaults first.
+    assert m.thesis_run_label == ""
+    assert m.ablation_dimension == "none"
+    assert m.ablation_value == ""
+    # Now mutate via dataclass_replace (the canonical pattern Plan 02 server_apps will use).
+    m2 = dataclass_replace(
+        m,
+        thesis_run_label="ablation_fusion_type=add",
+        ablation_dimension="fusion_type",
+        ablation_value="add",
+    )
+    assert m2.thesis_run_label == "ablation_fusion_type=add"
+    assert m2.ablation_dimension == "fusion_type"
+    assert m2.ablation_value == "add"
+    # Embedded surface must also carry the mutated values.
+    result_dict: Dict[str, Any] = {}
+    embed_manifest_in_result(m2, result_dict)
+    assert result_dict["_manifest"]["thesis_run_label"] == "ablation_fusion_type=add"
+    assert result_dict["_manifest"]["ablation_dimension"] == "fusion_type"
+    assert result_dict["_manifest"]["ablation_value"] == "add"
 
 
 def test_run_manifest_carries_final_eval_round_index() -> None:

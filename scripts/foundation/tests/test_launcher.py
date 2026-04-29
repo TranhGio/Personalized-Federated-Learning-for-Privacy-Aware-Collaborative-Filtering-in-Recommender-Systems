@@ -76,3 +76,13 @@ def test_launcher_malformed_run_config_rejected() -> None:
         "--run-config", "no_equals_sign",
     )
     assert r.returncode != 0
+
+
+def test_thesis_mode_dry_run() -> None:
+    """Phase 7 D-04: scripts/run.py accepts the new mode and emits TOML-quoted mode value."""
+    r = _run("--dry-run", "adaptive", "thesis_crossdevice_main")
+    assert r.returncode == 0, r.stderr
+    assert 'mode="thesis_crossdevice_main"' in r.stdout
+    assert "federated-adaptive-personalized-cf" in r.stdout
+    # Regression: num-supernodes is federation-level, must NOT appear in --run-config.
+    assert "num-supernodes" not in r.stdout

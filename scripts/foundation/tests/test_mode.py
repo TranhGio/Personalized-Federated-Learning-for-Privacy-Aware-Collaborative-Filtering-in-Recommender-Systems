@@ -13,9 +13,13 @@ from fedrec_foundation.mode import (
 )
 
 
-def test_all_three_modes_registered() -> None:
+def test_all_four_modes_registered() -> None:
+    """Phase 7 D-04: thesis_crossdevice_main joins the registry alongside the existing 3 modes."""
     assert set(MODE_NAMES) == {
-        "benchmark_cross_device", "paper_compat_pfedrec", "cross_silo_legacy",
+        "benchmark_cross_device",
+        "thesis_crossdevice_main",
+        "paper_compat_pfedrec",
+        "cross_silo_legacy",
     }
 
 
@@ -41,6 +45,33 @@ def test_paper_compat_profile() -> None:
     assert p.embedding_dim == 32
     assert p.optimizer == "sgd"
     assert p.lr == 0.1
+
+
+def test_thesis_crossdevice_main_profile() -> None:
+    """Phase 7 D-04: thesis_crossdevice_main clones benchmark_cross_device byte-for-byte except mode name."""
+    p = resolve_mode_defaults("thesis_crossdevice_main")
+    # Mode name is the provenance tag — the ONLY difference from benchmark_cross_device.
+    assert p.mode == "thesis_crossdevice_main"
+    # Every other field matches benchmark_cross_device verbatim (D-04).
+    assert p.num_supernodes == 6040
+    assert p.partition_mode == "natural"
+    assert p.weight_policy == "num_positives"
+    assert p.primary_evaluator == "sampled_loo_99"
+    assert p.fraction_train == 0.1
+    assert p.fraction_eval == 1.0
+    assert p.num_train_negatives == 4
+    assert p.num_eval_negatives == 99
+    assert p.embedding_dim == 64
+    assert p.optimizer == "adam"
+    assert p.lr == 0.001
+    assert p.local_epochs == 1
+    assert p.num_server_rounds == 100
+    assert p.checkpoint_rule == "best_round"
+    assert p.assert_one_user_per_client is True
+    # Sanity: byte-for-byte clone except mode name.
+    from fedrec_foundation.mode import _BENCHMARK_CROSS_DEVICE
+    from dataclasses import replace as _replace
+    assert p == _replace(_BENCHMARK_CROSS_DEVICE, mode="thesis_crossdevice_main")
 
 
 def test_unknown_mode_raises() -> None:
