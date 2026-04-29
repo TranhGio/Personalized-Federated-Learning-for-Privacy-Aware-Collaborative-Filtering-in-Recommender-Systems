@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: "Completed Phase 6 Plan 02 (Wave-1 parallel: RunManifest schema v2)"
-last_updated: "2026-04-29T06:47:04.834Z"
+stopped_at: Completed 06-evaluation-reporting-harness-04-PLAN.md
+last_updated: "2026-04-29T08:10:03.226Z"
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 34
-  completed_plans: 29
+  completed_plans: 31
 ---
 
 # STATE: Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation
@@ -27,7 +27,7 @@ progress:
 ## Current Position
 
 Phase: 06 (evaluation-reporting-harness) — EXECUTING
-Plan: 2 of 7
+Plan: 4 of 7
 
 ## Performance Metrics
 
@@ -66,6 +66,8 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 | Phase 05-pfedrec-migration-reproduction P04 | 8min | 1 tasks | 2 files |
 | Phase 06-evaluation-reporting-harness P01 | 2min | 1 tasks | 2 files |
 | Phase 06-evaluation-reporting-harness P02 | 3min | 1 task tasks | 2 files files |
+| Phase 06-evaluation-reporting-harness P04 | 7min | 1 tasks | 3 files |
+| Phase 06-evaluation-reporting-harness P03 | 7min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -159,6 +161,9 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - [Phase 05-pfedrec-migration-reproduction]: Plan 04 server_app cross-device migration: 5 PFedRec-specific deltas (D-12 PFedRecSplitFedAvg, D-01 GLOBAL bias propagation in initial ArrayRecord, no prototype/alpha bookkeeping, no centralized eval, D-14 PFR-08 auto-verify hook) over Phase 4 Plan 5 template; G-03-01 discovery + ADP-06 partition-id-space sampler + Pitfall 5 Option B (FitRes.num_examples=1) for D-24 uniform; D-13 cold-start counter + D-13 best-round-restore via Phase-3-D-27 carry-forward in-memory snapshot pattern monitoring sampled_ndcg@10; D-15 manifest double-write with module=pfedrec + audit_doc=PFR-02-AUDIT.md SC-1 back-pointer threaded via post-build mutation; D-14 hook fires AFTER embed_manifest_in_result and BEFORE W&B summary write with triple surface (stdout + JSON + W&B); non-fatal — failed reproduction returns passed=False rather than raising. Open Question 1 resolved: line 2 of ml-1m.txt (HR=0.7286, NDCG=0.4407 — closest to paper round 89). Open Question 3 resolved: triple surface placement. 8 GREEN integration tests bundled with implementation in single tdd=true task; full module suite 36/36 GREEN.
 - [Phase 06-evaluation-reporting-harness]: Plan 01 EVL-04 D-02 closure at foundation layer: module_run_results_dir(module, run_id) -> repo-root-anchored Path; _ALLOWED_MODULES frozenset whitelist enforces Pitfall-6 typo guard at runtime; mkdir(parents=True, exist_ok=True) inside resolver so Wave-2/3 callers never see ENOENT; D-18 surgical scope held (only paths.py + test_paths.py touched). 13 GREEN test items pin D-01 layout, D-02 anchoring under chdir, Pitfall-6 whitelist.
 - [Phase 06-evaluation-reporting-harness]: Plan 02 RunManifest schema v2 — RUN_MANIFEST_SCHEMA_VERSION bumped 1->2 with two safe-default fields (final_eval_round_index: int = 0; metrics: Dict[str, Any] = field(default_factory=dict)) so v1 fixtures construct unchanged (Pitfall 3); write_manifest_sibling extended with sibling_name: Optional[str] = None kwarg (D-04 enabler — Wave-2/3 callers pass 'manifest.json'); 5 NEW tests pin schema bump, v1 backward-compat, post-build mutation, default filename preservation, sibling_name override; 11/11 manifest tests pass; full foundation suite 100 passed, 3 slow deselected.
+- [Phase 06-evaluation-reporting-harness]: Plan 04 D-06 extra-eval-round: broadcast all partition_to_node_id nodes after best-arrays restore; result populates final_metrics['best'] replacing forbidden eval_metrics_history[best_round_num] lookup
+- [Phase 06-evaluation-reporting-harness]: Plan 04 D-07 nested final_metrics schema: {best, last, best_round, last_round, final_eval_round_index}; Pitfall-9 last_round = max(eval_metrics_history.keys()); np.float64 coercion at best_round_metrics assignment; W&B summary migrated to best/* + last/*
+- [Phase 06-evaluation-reporting-harness]: Plan 03 D-02 path migration: module_run_results_dir(_MODULE, run_id) replaces Path('../results/federated') in baseline server_app; resolves folded phase2-baseline-determinism-path-bug.md todo; cross-silo legacy path preserved via mode branch
 
 ### Todos
 
@@ -189,7 +194,7 @@ Populated as phases complete. Primary thesis metric: `sampled_ndcg@10` (leave-on
 - `scripts/foundation/fedrec_foundation/manifest.py` — D-15 manifest double-write (Phase 6 extends path resolution without changing schema)
 - `federated-baseline-cf/federated_baseline_cf/server_app.py:786-800` — current `../results/federated/` write site (D-02 target)
 
-**Stopped at:** Completed Phase 6 Plan 02 (Wave-1 parallel: RunManifest schema v2)
+**Stopped at:** Completed 06-evaluation-reporting-harness-04-PLAN.md
 
 ---
 *State initialized: 2026-04-19 alongside roadmap creation.*
