@@ -135,7 +135,7 @@ Under a correct cross-device protocol (1 user = 1 client, N=6040), the adaptive/
   - [x] 07-thesis-evaluation-run-01-PLAN.md — Foundation extensions: _THESIS_CROSSDEVICE_MAIN ModeProfile + RunManifest schema v3 (thesis_run_label/ablation_dimension/ablation_value) + atomic_write_text + scripts/run.py mode dict (THS-01) — Wave 1
   - [x] 07-thesis-evaluation-run-02-PLAN.md — All 4 server_app.py files: thesis_crossdevice_main mode tuples + manifest mutation patch + pyproject thesis-run-label/ablation-dimension/ablation-value keys + 4 integration tests (THS-01, THS-02) — Wave 2
   - [x] 07-thesis-evaluation-run-03-PLAN.md — Orchestrator scripts/thesis/run_thesis_sweep.py + tests: matrix builders, skip-on-existing, --dry-run, --retry-failed, failed_cells log (THS-02, THS-05) — Wave 3 parallel
-  - [ ] 07-thesis-evaluation-run-04-PLAN.md — Aggregator scripts/thesis/aggregate_results.py + tests: D-20 hard-fail, D-11 win criterion, mean+/-std rendering, 6-file emission, atomic write (THS-03, THS-04, THS-05, THS-06, THS-07) — Wave 3 parallel
+  - [x] 07-thesis-evaluation-run-04-PLAN.md — Aggregator scripts/thesis/aggregate_results.py + tests: D-20 hard-fail, D-11 win criterion, mean+/-std rendering, 6-file emission, atomic write (THS-03, THS-04, THS-05, THS-06, THS-07) — Wave 3 parallel
   - [ ] 07-thesis-evaluation-run-05-PLAN.md — Operational runbook + UAT (Gates A-E): smoke run + main matrix (~19.5hr) + ablation matrix (~31.5hr) + aggregator + thesis-claim verification (THS-02..THS-07) — Wave 4
 
 ## Progress

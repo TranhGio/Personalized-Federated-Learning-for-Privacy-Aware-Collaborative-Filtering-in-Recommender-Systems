@@ -88,11 +88,11 @@ Run the standardized cross-device comparison under one shared config and produce
 
 - [x] **THS-01**: Define ONE standardized cross-device comparison config shared by all four modules (dim, optimizer, training negatives, local epochs, rounds, eval protocol, weight policy); document deviations from per-module historical configs.
 - [x] **THS-02**: Run all four modules under the standardized config, multiple seeds (≥3); produce one comparison table with mean ± std on HR@10, NDCG@10 overall and per user group (sparse/medium/dense).
-- [ ] **THS-03**: Adaptive module (`model-type=dual alpha-method=hierarchical_conditional`) beats all three baselines on OVERALL NDCG@10 under the standardized config.
-- [ ] **THS-04**: Adaptive module beats all three baselines on SPARSE-user NDCG@10 (thesis claim is strongest here).
+- [x] **THS-03**: Adaptive module (`model-type=dual alpha-method=hierarchical_conditional`) beats all three baselines on OVERALL NDCG@10 under the standardized config.
+- [x] **THS-04**: Adaptive module beats all three baselines on SPARSE-user NDCG@10 (thesis claim is strongest here).
 - [x] **THS-05**: Ablations: hierarchical-conditional vs multi-factor vs data-quantity alpha; per-user learned alpha on/off; item perturbation on/off; contrastive λ ∈ {0, 0.1}; fusion ∈ {add, gate, concat}.
-- [ ] **THS-06**: Ablations also report per-user-group metrics so the "where does the win come from" question is answerable directly from the artifacts.
-- [ ] **THS-07**: Thesis comparison table + ablation tables + sparse-user slice are exported as markdown to `results/federated/_thesis/`.
+- [x] **THS-06**: Ablations also report per-user-group metrics so the "where does the win come from" question is answerable directly from the artifacts.
+- [x] **THS-07**: Thesis comparison table + ablation tables + sparse-user slice are exported as markdown to `results/federated/_thesis/`.
 
 ## v2 Requirements
 
@@ -177,11 +177,11 @@ Deferred beyond this thesis cycle.
 | EVL-06 | Phase 6: Evaluation & Reporting Harness | Complete |
 | THS-01 | Phase 7: Thesis Evaluation Run | Complete |
 | THS-02 | Phase 7: Thesis Evaluation Run | Complete |
-| THS-03 | Phase 7: Thesis Evaluation Run | Pending |
-| THS-04 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-03 | Phase 7: Thesis Evaluation Run | Complete |
+| THS-04 | Phase 7: Thesis Evaluation Run | Complete |
 | THS-05 | Phase 7: Thesis Evaluation Run | Complete |
-| THS-06 | Phase 7: Thesis Evaluation Run | Pending |
-| THS-07 | Phase 7: Thesis Evaluation Run | Pending |
+| THS-06 | Phase 7: Thesis Evaluation Run | Complete |
+| THS-07 | Phase 7: Thesis Evaluation Run | Complete |
 
 **Coverage:**
 - v1 requirements: 52 total
