@@ -67,6 +67,7 @@ MODULE_DIR = {
 
 MODE_NUM_SUPERNODES = {
     "benchmark_cross_device": 6040,
+    "thesis_crossdevice_main": 6040,  # Phase 7 D-04
     "paper_compat_pfedrec": 6040,
     "cross_silo_legacy": 5,
 }

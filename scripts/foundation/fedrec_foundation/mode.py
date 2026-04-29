@@ -134,6 +134,37 @@ _BENCHMARK_CROSS_DEVICE = ModeProfile(
     assert_one_user_per_client=True,
 )
 
+
+# Phase 7 D-04: thesis_crossdevice_main is a byte-for-byte clone of
+# _BENCHMARK_CROSS_DEVICE with only the ``mode`` string differing. The mode
+# name itself IS the provenance tag — it is the discriminant the manifest
+# carries forward and the aggregator filters on (THS-01).
+#
+# Warning 4 closure: ``checkpoint_rule="best_round"`` is inherited verbatim;
+# Phase 2 Plan 04 established that all 4 server_app.py files accept BOTH
+# ``"best_round"`` (ModeProfile) and ``"best_round_restore"`` (pyproject)
+# spellings in the same checkpoint-rule branch — see STATE.md Phase 2:
+# "checkpoint_rule branch accepts both 'best_round_restore' (pyproject) and
+# 'best_round' (ModeProfile) spellings to avoid bikeshed."
+_THESIS_CROSSDEVICE_MAIN = ModeProfile(
+    mode="thesis_crossdevice_main",
+    num_supernodes=6040,
+    partition_mode="natural",
+    weight_policy="num_positives",
+    primary_evaluator="sampled_loo_99",
+    fraction_train=0.1,       # sweep-tunable default
+    fraction_eval=1.0,
+    num_train_negatives=4,
+    num_eval_negatives=99,
+    embedding_dim=64,
+    optimizer="adam",
+    lr=0.001,
+    local_epochs=1,
+    num_server_rounds=100,
+    checkpoint_rule="best_round",
+    assert_one_user_per_client=True,
+)
+
 _PAPER_COMPAT_PFEDREC = ModeProfile(
     mode="paper_compat_pfedrec",
     num_supernodes=6040,
@@ -178,6 +209,7 @@ _CROSS_SILO_LEGACY = ModeProfile(
 
 _REGISTRY: Dict[str, ModeProfile] = {
     "benchmark_cross_device": _BENCHMARK_CROSS_DEVICE,
+    "thesis_crossdevice_main": _THESIS_CROSSDEVICE_MAIN,  # Phase 7 D-04
     "paper_compat_pfedrec": _PAPER_COMPAT_PFEDREC,
     "cross_silo_legacy": _CROSS_SILO_LEGACY,
 }

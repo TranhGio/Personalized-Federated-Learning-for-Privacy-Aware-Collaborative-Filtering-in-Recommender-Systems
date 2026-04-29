@@ -26,7 +26,7 @@ from typing import Any, Dict, Optional
 from fedrec_foundation.atomic import atomic_write_json
 
 # Bump when the manifest schema gains/loses a field or changes semantics.
-RUN_MANIFEST_SCHEMA_VERSION: int = 2  # Phase 6: adds final_eval_round_index + metrics fields
+RUN_MANIFEST_SCHEMA_VERSION: int = 3  # Phase 7 D-22: adds thesis_run_label + ablation_dimension + ablation_value
 
 
 @dataclass
@@ -100,6 +100,29 @@ class RunManifest:
     variants (``sampled_hr@10/sparse``, ``sampled_ndcg@10/sparse``,
     ``evaluated_users_sparse``, ...). Defaults to ``{}`` on a fresh manifest;
     server_app overwrites via ``dataclasses.replace`` post-build mutation.
+    """
+    # Phase 7 additions (D-22) — all with safe defaults so v1/v2 fixtures
+    # construct without TypeError (Pitfall 7 backward-compat invariant).
+    # ``build_run_manifest`` is NOT touched: server_app populates these via
+    # ``dataclasses.replace`` post-build mutation (mirrors Phase 6 D-07).
+    thesis_run_label: str = ""
+    """Phase 7 D-22: thesis run provenance tag.
+
+    Sentinel ``""`` (empty string) = non-thesis run (Phase 1-6 backward compat).
+    ``"main"`` = main-comparison run.
+    ``"ablation_<knob>=<value>"`` = ablation run (e.g., ``"ablation_fusion_type=add"``).
+    """
+    ablation_dimension: str = "none"
+    """Phase 7 D-22: which knob is being ablated.
+
+    One of ``{"none", "alpha_method", "per_user_alpha", "item_perturbation",
+    "contrastive_lambda", "fusion_type"}``. ``"none"`` for main runs.
+    """
+    ablation_value: str = ""
+    """Phase 7 D-22: specific value of the ablated knob.
+
+    Empty for main runs. Examples: ``"add"`` when ``ablation_dimension="fusion_type"``;
+    ``"true"`` when ``ablation_dimension="per_user_alpha"``.
     """
 
 

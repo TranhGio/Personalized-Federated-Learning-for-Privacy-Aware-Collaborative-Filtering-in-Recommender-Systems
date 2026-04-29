@@ -48,6 +48,40 @@ def atomic_write_json(path: str, data: object) -> None:
         raise
 
 
+def atomic_write_text(path: str, content: str) -> None:
+    """Write a UTF-8 text string atomically via tempfile + ``os.replace``.
+
+    Companion to :func:`atomic_write_json` for plain-text payloads
+    (markdown, CSV, etc.). Phase 7 aggregator uses this for
+    ``main_comparison.md`` / ``main_comparison.csv`` writes.
+
+    Parameters
+    ----------
+    path : str
+        Destination path. Parent directories are created if absent.
+    content : str
+        UTF-8 text payload.
+
+    Returns
+    -------
+    None
+    """
+    parent = Path(path).parent
+    parent.mkdir(parents=True, exist_ok=True)
+    # Same filesystem required for atomic replace.
+    fd, tmp = tempfile.mkstemp(dir=str(parent), prefix=".tmp-", suffix=".txt")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _json_default(obj: Any) -> Any:
     """Handle numpy scalars and Path objects that ``json.dumps`` rejects."""
     import numpy as np
