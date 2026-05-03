@@ -90,7 +90,7 @@ wandb-entity = ""                 # wandb team/entity (optional, uses default if
 wandb-run-name = ""               # Custom run name (optional, auto-generated if empty)
 
 # Phase 2 cross-device / foundation-contract keys (BSL-01..08)
-mode = "cross_silo_legacy"  # D-25: fallback when scripts/run.py not used; launcher sets "benchmark_cross_device" at federation level. Values: benchmark_cross_device | paper_compat_pfedrec | cross_silo_legacy.
+mode = "benchmark_cross_device"  # Default matches the locked federation `num-supernodes=6040`. Opt into cross-silo via: --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy". Values: benchmark_cross_device | thesis_crossdevice_main | paper_compat_pfedrec | cross_silo_legacy.
 run-seed = 42  # FND-06: single root seed for py_rng/np_rng/torch_gen/server_rng.
 weight-policy = "num_positives"  # FND-05: aggregation weight policy. Values: uniform | num_positives | num_training_examples.
 eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out positive (sampled_loo_99).
