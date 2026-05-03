@@ -1,9 +1,9 @@
 ---
 phase: 5
 slug: pfedrec-migration-reproduction
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-28
 ---
 
@@ -83,7 +83,7 @@ created: 2026-04-28
 - [ ] `federated-pfedrec/tests/test_task.py` — exclusion threading (PFR-04), per-round neg resampling (PFR-07/D-02), eval BCE scope (D-04), FND-06 RNG wiring
 - [ ] `federated-pfedrec/tests/test_cache.py` — partition_{pid}.pt layout (D-16), manifest_v3 fields (D-17), bias_classification sentinel (D-17)
 - [ ] `federated-pfedrec/tests/test_client_app.py` — one-user assertion (PFR-05), cold-round probe (D-22)
-- [ ] `federated-pfedrec/tests/test_server_integration.py` — discovery round + partition-id sampling (PFR-06/G-03-01), seeded sampling (PFR-06), D-14 PFR-08 auto-verify (3 tests: parse, pass, fail), D-15 manifest double-write (PFR-09), D-13 cold-start counter, D-27 best-round restore
+- [ ] `federated-pfedrec/tests/test_server_integration.py` — discovery round + partition-id sampling (PFR-06/G-03-01), seeded sampling (PFR-06), D-14 PFR-08 auto-verify (3 tests: parse, pass, fail), D-15 manifest double-write (PFR-09), D-13 cold-start counter, D-13 best-round-restore via Phase-3-D-27 carry-forward idiom
 - [ ] `federated-pfedrec/tests/conftest.py` — shared fixtures (foundation bundle, run_seed=42, tmp_path-redirected `_CACHE_BASE_DIR`)
 - [ ] `scripts/foundation/tests/test_mode.py` — extend with `test_paper_compat_pfedrec_weight_policy_uniform` (D-25 regression guard)
 - [ ] `scripts/foundation/tests/test_pfedrec_subprocess_determinism.py` — new file; mirrors Phase 3/4 subprocess byte-identity guard adapted for schema_v3 cache + selected_clients_per_round
@@ -104,11 +104,13 @@ created: 2026-04-28
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s (quick) / 90s (full + slow gate)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s (quick) / 90s (full + slow gate)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved
+
+Approved 2026-04-28 — TDD-within-task pattern matches Phase 2/3/4 precedent; test stubs are authored as the first action of each `tdd=true` task before the implementation task fires.

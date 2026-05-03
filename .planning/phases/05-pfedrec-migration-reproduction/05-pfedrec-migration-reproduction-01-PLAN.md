@@ -9,6 +9,7 @@ files_modified:
   - federated-pfedrec/federated_pfedrec/models/pfedrec_mlp.py
   - federated-pfedrec/tests/test_strategy.py
   - federated-pfedrec/tests/test_pfedrec_mlp.py
+  - .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md
 autonomous: true
 requirements: [PFR-02, PFR-03]
 must_haves:
@@ -19,6 +20,7 @@ must_haves:
     - "set_local_parameters(strict=True) raises RuntimeError on shape mismatch with rm -rf hint (D-21)"
     - "PFedRecSplitFedAvg.aggregate_evaluate sums sufficient stats and divides once (BSL-06 / D-26)"
     - "set(GLOBAL_PARAM_KEYS) == set(_GLOBAL_PARAMS); set(LOCAL_PARAM_KEYS) == set(_LOCAL_PARAMS) (Pitfall 1 guard)"
+    - "PFR-02-AUDIT.md exists at .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md with the verbatim 9-row table from RESEARCH §Pattern 1, every row decision in {align-to-reference, keep-flower, already-aligned, strictly-better-than-reference}, and CONTEXT D-XX pin column populated (closes ROADMAP §Phase 5 SC-1)"
   artifacts:
     - path: "federated-pfedrec/federated_pfedrec/strategy.py"
       provides: "PFedRecSplitFedAvg class + GLOBAL_PARAM_KEYS / LOCAL_PARAM_KEYS frozensets per D-01"
@@ -30,6 +32,9 @@ must_haves:
       provides: "Strategy + frozenset symmetry tests (Pitfall 1 guard)"
     - path: "federated-pfedrec/tests/test_pfedrec_mlp.py"
       provides: "Model param tuple + strict-load + Kaiming init regression tests"
+    - path: ".planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md"
+      provides: "9-row PFR-02 reference audit cross-walk closing ROADMAP §Phase 5 SC-1; references engine.py:143 (D-01), engine.py:81 (D-24), engine.py:195-196 (D-04)"
+      contains: "align-to-reference"
   key_links:
     - from: "federated_pfedrec.strategy.GLOBAL_PARAM_KEYS"
       to: "federated_pfedrec.models.pfedrec_mlp.PFedRecMLP._GLOBAL_PARAMS"
@@ -39,10 +44,14 @@ must_haves:
       to: "fedrec_foundation.fit_metrics.EvaluateMetricsContract sufficient stats"
       via: "_sum_sufficient_stats + _sufficient_stats_to_thesis_metrics module helpers"
       pattern: "hit_count_overall_at10|ndcg_sum_overall_at10|evaluated_users"
+    - from: ".planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md"
+      to: "ROADMAP §Phase 5 SC-1 (audit-table-with-decision-and-rationale-per-row)"
+      via: "9 rows from RESEARCH §Pattern 1 each carrying Reference (engine.py:LINE) + Flower (file:LINE) + Decision + Rationale + CONTEXT D-XX columns"
+      pattern: "engine.py:143|engine.py:81|engine.py:195-196"
 ---
 
 <objective>
-Strategy + model parameter classification flip per PFR-02 D-01 (the highest-impact divergence audit decision).
+Strategy + model parameter classification flip per PFR-02 D-01 (the highest-impact divergence audit decision), AND ship the canonical PFR-02-AUDIT.md cross-walk required by ROADMAP §Phase 5 SC-1.
 
 Purpose:
   - Close PFR-02 row 1 (`affine_output.bias` GLOBAL not LOCAL) — the headline `IJCAI-23-PFedRec/engine.py:143` divergence and the strongest single lever for landing PFR-08 within ±2 points.
@@ -50,11 +59,13 @@ Purpose:
   - Close PFR-02 audit row 2 (uniform weight policy via sufficient-stat aggregate_evaluate clone of Phase 3).
   - Drop FedProx (D-07) — reference uses FedAvg only; cross-module ablation surface unchanged.
   - Rename `SplitFedAvg` to `PFedRecSplitFedAvg` (D-12) for cross-module module-prefixed naming.
+  - Materialize the PFR-02 reference audit table at `.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` so ROADMAP §Phase 5 SC-1 has a concrete artifact to point at (Task 3).
 
 Output:
   - `federated-pfedrec/federated_pfedrec/strategy.py`: rewritten with `PFedRecSplitFedAvg` (no FedProx variant), `GLOBAL_PARAM_KEYS = frozenset({'embedding_item.weight', 'affine_output.bias'})`, `LOCAL_PARAM_KEYS = frozenset({'affine_output.weight'})`, plus Phase-3-style `aggregate_evaluate` override using `_sum_sufficient_stats` / `_sufficient_stats_to_thesis_metrics` module-level helpers.
   - `federated-pfedrec/federated_pfedrec/models/pfedrec_mlp.py`: `_GLOBAL_PARAMS = ('embedding_item.weight', 'affine_output.bias')`, `_LOCAL_PARAMS = ('affine_output.weight',)`, `set_local_parameters(strict=True)` default with RuntimeError + per-field delta + literal `rm -rf .embedding_cache/{run_id}/` hint.
   - 2 new test files (~6 GREEN tests covering D-01 symmetry, D-12 rename, D-07 removal, D-21 strict, D-19 Kaiming init, sum-not-mean aggregate_evaluate).
+  - `.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md`: the 9-row reference cross-walk required by ROADMAP §Phase 5 SC-1, with explicit anchors at `engine.py:143` (D-01), `engine.py:81` (D-24), `engine.py:195-196` (D-04).
 </objective>
 
 <execution_context>
@@ -450,6 +461,86 @@ Verify: `cd federated-pfedrec && pytest tests/test_pfedrec_mlp.py -x -v` — 3 t
   </done>
 </task>
 
+<task type="auto">
+  <name>Task 3: Write the PFR-02 reference audit table at .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md (closes ROADMAP §Phase 5 SC-1)</name>
+  <files>.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md</files>
+  <read_first>
+    - .planning/phases/05-pfedrec-migration-reproduction/05-CONTEXT.md §decisions D-01, D-04, D-07, D-19, D-24 (decision IDs cited verbatim in the table's CONTEXT D-XX column)
+    - .planning/phases/05-pfedrec-migration-reproduction/05-RESEARCH.md §Pattern 1 (the 9-row table — copy verbatim with structural extension to columns Topic | Reference Behavior (engine.py:LINE) | Flower Current (file:LINE) | Decision | Rationale | CONTEXT D-XX)
+    - IJCAI-23-PFedRec/engine.py — verify the cited line anchors (66-81 aggregate_clients_params, 81 weight-policy len(round_user_params), 87-91 random.sample participation, 114-119 dual-LR, 143 del round_participant_params[user]['affine_output.weight'], 195-196 ratings_pred = torch.cat((test_score, negative_score)))
+    - federated-pfedrec/federated_pfedrec/strategy.py — current Flower row anchors (LOCAL_PARAM_KEYS line range, etc.)
+    - federated-pfedrec/federated_pfedrec/task.py — current Flower behavior anchors (line 130 random.Random(seed), line 432 evaluate_pfedrec_sampled BCE-on-positives-only, line 137-142 prepare_user_train_data trainloader-only)
+    - .planning/ROADMAP.md §Phase 5 SC-1 (the success criterion this artifact closes)
+  </read_first>
+  <action>
+Create `.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` with the structure below. This artifact is the human-readable cross-walk that closes ROADMAP §Phase 5 SC-1; it does NOT supersede CONTEXT.md (which holds the locked decisions). RESEARCH §Pattern 1 is the source of every row.
+
+```markdown
+# PFR-02 Reference Audit — federated-pfedrec vs IJCAI-23-PFedRec
+
+> Closes ROADMAP §Phase 5 SC-1. CONTEXT.md §decisions ARE the locked outcomes;
+> this file is the human-readable cross-walk traced row-by-row to a specific
+> reference line and a specific Flower line.
+
+**Phase:** 05-pfedrec-migration-reproduction
+**Authored:** 2026-04-28
+**Status:** Closed (every row carries a Decision + Rationale + CONTEXT D-XX pin)
+
+## Anchors
+
+The three reference lines that drive the highest-impact decisions:
+
+- `IJCAI-23-PFedRec/engine.py:143` — `del round_participant_params[user]['affine_output.weight']` (D-01: bias travels and is aggregated server-side).
+- `IJCAI-23-PFedRec/engine.py:81` — `self.server_model_param[key].data / len(round_user_params)` (D-24: uniform weight = 1 per participating client).
+- `IJCAI-23-PFedRec/engine.py:195-196` — `ratings_pred = torch.cat((test_score, negative_score))` followed by BCE over the 100-item pool (D-04: eval BCE includes positives + 99 negs).
+
+## Audit Table
+
+| Topic | Reference Behavior (engine.py:LINE) | Flower Current (file:LINE) | Decision | Rationale | CONTEXT D-XX |
+|-------|--------------------------------------|----------------------------|----------|-----------|---------------|
+| 1. `affine_output.bias` classification | GLOBAL — `engine.py:143` deletes only `affine_output.weight` from `round_participant_params`; bias is aggregated server-side via `aggregate_clients_params` (`engine.py:66-81`) | LOCAL — `federated-pfedrec/federated_pfedrec/strategy.py:19-22` lists both weight + bias in `LOCAL_PARAM_KEYS` | align-to-reference | Closes CONCERNS divergence #9; the headline lever for landing PFR-08 within ±2 points; without it the bias never aggregates and the per-user score functions cannot recover the reference HR/NDCG. | D-01 |
+| 2. Aggregation weight policy | uniform — `engine.py:81` divides by `len(round_user_params)`; every contributing user weight=1 | num_examples-weighted (inherited from FedAvg) — sparse users contribute less | align-to-reference | `weight_policy="uniform"` in `_PAPER_COMPAT_PFEDREC` profile + sufficient-stat `aggregate_evaluate` override; on the FIT side, `FitRes.num_examples = 1` per client (Pitfall 5 Option B) makes existing FedAvg num_examples-weighted aggregation mathematically uniform without overriding `aggregate_fit`. | D-24, D-25 |
+| 3. Per-round client participation | full — `engine.py:87-91` + `train.py:14` `clients_sample_ratio=1.0` | `fraction_train` config-driven; cross-silo defaults previously diverged | align-to-reference | `fraction_train=1.0` locked in profile; required for PFR-08 ±2 reproduction; partial participation injects sampling variance the reference does not have. | D-06 |
+| 4. Eval BCE loss scope | computed over (positive + 99 negatives) — `engine.py:195-196` `ratings_pred = torch.cat((test_score, negative_score))` | computed on positives only — `federated-pfedrec/federated_pfedrec/task.py:432` | align-to-reference | Diagnostic alignment so eval BCE is directly comparable to reference logs; HR@10 / NDCG@10 (the thesis numbers) are unaffected. | D-04 |
+| 5. Training-negative resampling | per-round — reference's `store_all_train_data` (called inside `train.py`'s round loop) re-samples via `random.sample` each round | static — `federated-pfedrec/federated_pfedrec/task.py:130` `rng = random.Random(seed)` re-seeded per call → frozen across rounds | align-to-reference | Closes CONCERNS bug #5; replaces stdlib `random.Random(seed)` with `np_rng(run_seed, user_idx, round_num, "train_neg")` per FND-06; gives byte-identical reruns under fixed seed. | D-02, PFR-07 |
+| 6. Held-out test positive in training-negative pool | leak — reference's `_sample_negative` (data.py:75-81) operates on `interacted_items` which DOES include the held-out test item | leak — `federated-pfedrec/federated_pfedrec/task.py:137-142` builds from trainloader only | align-to-reference (BUT strictly stricter — FND-03 fixes the leak that BOTH codebases share) | Reference's behavior is wrong per modern FedRec literature; FND-03 `ExclusionTable.for_user(user_idx)` mandates removing the held-out test positive from the training-negative pool. PFR-04 enforces this. | PFR-04, FND-03 |
+| 7. Server-side client-sampling RNG | unseeded — `engine.py:89-91` uses unseeded `random.sample` | unseeded — `federated-pfedrec/federated_pfedrec/server_app.py:250` uses unseeded `random.sample` | strictly-better-than-reference | Replace with `_server_sampler = server_rng(run_seed)` (FND-06) and partition-id-space sampling (G-03-01); enables byte-identical reruns under fixed seed (PFR-06). | PFR-06 |
+| 8. Best-round checkpoint / metric reported | best validation HR@10 — `train.py:123-125` `if val_hit_ratio >= best_val_hr: final_test_round = round` | last-round metrics; early-stopping records `best_round` but does not restore arrays (CONCERNS bug #7) | align-to-reference (with adaptation) | Reference uses val split; we don't (D-08). Carry forward Phase 2/3/4 D-27 in-memory best-round-restore against `sampled_ndcg@10` on the test set. Documented information leak accepted in this thesis cycle; val-split deferred to v2. | D-08, D-13 |
+| 9. `affine_output` init scheme | Kaiming default — `mlp.py` uses `nn.Linear` defaults (no Xavier) | Kaiming default — `pfedrec_mlp.py` uses `nn.Linear` defaults (no Xavier reset) | already-aligned | PFR-08 reproduction is sensitive to init scale (RecSys 2024 reports ~50% variance with poor init). The cross-module Xavier reset used by BPR-MF / BasicMF / DualPersonalizedBPRMF is intentionally NOT mirrored here per D-19 — paper-faithfulness wins. | D-19 |
+
+## Closure Note
+
+- ROADMAP §Phase 5 SC-1 reads: *"A diff table comparing Flower PFedRec to `IJCAI-23-PFedRec/` … exists in the repository with a keep-flower or align-to-reference decision and rationale for every row."* Every row above carries one of {`align-to-reference`, `align-to-reference (with adaptation)`, `align-to-reference (BUT strictly stricter — FND-03 fixes the leak that BOTH codebases share)`, `strictly-better-than-reference`, `already-aligned`} as its Decision column. SC-1 is closed.
+- ROADMAP §Phase 5 SC-2 reads: *"each user's `(affine_output.weight, affine_output.bias)` is persisted/restored as one atomic per-user artifact keyed by stable `user_idx`."* Reconciliation with D-01 (bias is GLOBAL): the atomicity contract is preserved (per-round, per-user) but the bias channel moves from per-user disk to server-side aggregation per `engine.py:143`. Plan 03 carries the explicit reconciliation note in the cache-layout task; Plan 04 server_app surfaces it in the `_manifest` block. The verifier must accept this reconciliation when evaluating SC-2.
+- For each row, the CONTEXT D-XX column points at the canonical decision in `.planning/phases/05-pfedrec-migration-reproduction/05-CONTEXT.md`. Locked decisions are NON-NEGOTIABLE; this audit document does not introduce new decisions, it only cross-walks them to specific reference + Flower lines.
+```
+
+After creating, verify the file:
+
+- `test -f .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` exits 0.
+- The file contains the literal substrings `engine.py:143`, `engine.py:81`, AND `engine.py:195-196` (the three D-01 / D-24 / D-04 anchors required by the closure note).
+- The file contains at least 9 occurrences of `align-to-reference` OR `keep-flower` OR `already-aligned` OR `strictly-better-than-reference` (one Decision string per row).
+  </action>
+  <verify>
+    <automated>test -f /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md && grep -c "engine.py:143" /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md | grep -q "[1-9]" && grep -c "engine.py:81" /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md | grep -q "[1-9]" && grep -c "engine.py:195-196" /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/.planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md | grep -q "[1-9]"</automated>
+  </verify>
+  <acceptance_criteria>
+    - `test -f .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` exits 0
+    - `grep -c "engine.py:143" .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` returns at least 1 (D-01 anchor)
+    - `grep -c "engine.py:81" .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` returns at least 1 (D-24 anchor)
+    - `grep -c "engine.py:195-196" .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` returns at least 1 (D-04 anchor)
+    - `grep -cE "align-to-reference|keep-flower|already-aligned|strictly-better-than-reference" .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md` returns at least 9 (one Decision string per row)
+    - File header references "ROADMAP §Phase 5 SC-1" (the closure target) and "CONTEXT.md" (the source of locked decisions)
+    - File contains explicit reconciliation prose for SC-2 vs D-01 (the bias-disk-vs-server-aggregation cross-walk surfaced under "Closure Note")
+  </acceptance_criteria>
+  <done>
+    - .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md exists with the 9-row table from RESEARCH §Pattern 1, decision + rationale + CONTEXT D-XX columns populated
+    - All three primary reference anchors (engine.py:143 / engine.py:81 / engine.py:195-196) are cited verbatim
+    - ROADMAP §Phase 5 SC-1 closure target stated explicitly in the file header + closure note
+    - SC-2 reconciliation against D-01 surfaced explicitly so the gsd-verifier accepts the bias-GLOBAL reading at SC-2 evaluation time
+  </done>
+</task>
+
 </tasks>
 
 <verification>
@@ -457,7 +548,8 @@ Verify: `cd federated-pfedrec && pytest tests/test_pfedrec_mlp.py -x -v` — 3 t
 - Model.py imports cleanly: `python -c "from federated_pfedrec.models.pfedrec_mlp import PFedRecMLP; m = PFedRecMLP(num_items=100, latent_dim=32); assert tuple(m.get_local_parameters().keys()) == ('affine_output.weight',); print('ok')"` prints "ok"
 - Pitfall 1 symmetry guard: `python -c "from federated_pfedrec.strategy import GLOBAL_PARAM_KEYS, LOCAL_PARAM_KEYS; from federated_pfedrec.models.pfedrec_mlp import PFedRecMLP; assert set(GLOBAL_PARAM_KEYS) == set(PFedRecMLP._GLOBAL_PARAMS); assert set(LOCAL_PARAM_KEYS) == set(PFedRecMLP._LOCAL_PARAMS); print('ok')"`
 - Total tests added: 4 (test_strategy.py) + 3 (test_pfedrec_mlp.py) = 7 GREEN
-- D-18 surgical scope: `git diff --stat` shows ONLY changes to strategy.py + pfedrec_mlp.py + 2 new test files; pyproject.toml / dataset.py / client_app.py / server_app.py / task.py UNTOUCHED (those are owned by Plans 02-04)
+- D-18 surgical scope: `git diff --stat` shows ONLY changes to strategy.py + pfedrec_mlp.py + 2 new test files + the new PFR-02-AUDIT.md; pyproject.toml / dataset.py / client_app.py / server_app.py / task.py UNTOUCHED (those are owned by Plans 02-04)
+- ROADMAP §Phase 5 SC-1 artifact materialized: `test -f .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md`
 </verification>
 
 <success_criteria>
@@ -465,6 +557,7 @@ Verify: `cd federated-pfedrec && pytest tests/test_pfedrec_mlp.py -x -v` — 3 t
 - pfedrec_mlp.py: _GLOBAL_PARAMS = ('embedding_item.weight', 'affine_output.bias'); _LOCAL_PARAMS = ('affine_output.weight',); set_local_parameters defaults strict=True with RuntimeError + rm -rf hint; no Xavier init reset (D-19)
 - 7 GREEN tests across 2 new test files
 - Pitfall 1 symmetry preserved: strategy frozensets and model param tuples agree element-wise
+- PFR-02-AUDIT.md committed at .planning/phases/05-pfedrec-migration-reproduction/PFR-02-AUDIT.md, satisfying ROADMAP §Phase 5 SC-1, with all three primary reference anchors (engine.py:143 / engine.py:81 / engine.py:195-196) and an explicit SC-2 vs D-01 reconciliation note
 - Files outside the listed `files_modified` list remain byte-identical to pre-Plan-01 state (D-18 surgical)
 </success_criteria>
 
@@ -473,4 +566,6 @@ After completion, create `.planning/phases/05-pfedrec-migration-reproduction/05-
 - D-01 bias-GLOBAL flip + D-12 rename + D-07 FedProx drop + D-21 strict default
 - Test counts and which decisions each test pins
 - Confirmation Pitfall 1 (strategy/model frozenset symmetry) is mechanically enforced by test_strategy.py
+- PFR-02-AUDIT.md materialization (closes ROADMAP §Phase 5 SC-1; SC-2 reconciliation against D-01 stated explicitly)
+</output>
 </output>

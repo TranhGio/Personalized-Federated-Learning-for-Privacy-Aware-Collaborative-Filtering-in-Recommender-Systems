@@ -180,6 +180,7 @@ all_loss[user] = loss.item()
   <files>federated-pfedrec/federated_pfedrec/task.py, federated-pfedrec/tests/test_task.py, federated-pfedrec/tests/conftest.py</files>
   <read_first>
     - federated-pfedrec/federated_pfedrec/task.py — current state (line 130 `rng = random.Random(seed)`; line 134-166 prepare_user_train_data; line 195-220 train_pfedrec_single_user; line 432 evaluate_pfedrec_sampled / test_pfedrec)
+    - federated-pfedrec/federated_pfedrec/dataset.py — post-Plan-02 placeholder state. Plan 02 leaves `load_partition_data` and `load_full_data` as the D-09 NotImplementedError guard plus a trailing `raise NotImplementedError("Plan 03 implements the foundation-adapter body")` placeholder. Plan 03 fills these bodies (build (trainloader, testloader, num_users, num_items) for the natural cross-device path from `bundle.split_manifest` + `bundle.exclusion`). DO NOT re-introduce the Plan-02 D-09 guard prose here; preserve it verbatim.
     - federated-personalized-cf/federated_personalized_cf/task.py — Phase 3 task.py reference (FND-06 + FND-03 wiring + _sample_negatives_seeded helper pattern)
     - IJCAI-23-PFedRec/engine.py — lines 84-146 (per-user round update + dual-LR), lines 149-212 (fed_evaluate with BCE over 99 negs at 195-196)
     - .planning/phases/05-pfedrec-migration-reproduction/05-CONTEXT.md §decisions D-02, D-03, D-04, D-19, D-22
@@ -525,6 +526,10 @@ Verify: `cd federated-pfedrec && pytest tests/test_task.py -x -v` → 4 GREEN.
   </behavior>
   <action>
 
+NOTE — SC-2 RECONCILIATION (the cache-layout task surfaces this explicitly):
+
+ROADMAP §Phase 5 SC-2 phrase *"each user's `(affine_output.weight, affine_output.bias)` is persisted/restored as one atomic per-user artifact keyed by stable `user_idx`"* is reconciled with CONTEXT.md D-01 as: weight is the per-user disk cache payload (single key `affine_output.weight` shape `(1, latent_dim)` written atomically to `partition_{pid}.pt`); bias is the per-user state aggregated atomically server-side per `IJCAI-23-PFedRec/engine.py:143` (server pulls every user's `affine_output.bias` into `aggregate_clients_params` once per round and broadcasts the aggregated value back). The atomicity contract is preserved (per-round, per-user) but the bias channel moves from disk to server-side aggregation per the IJCAI-23 reference. The gsd-verifier MUST accept this reconciliation when evaluating SC-2; PFR-02-AUDIT.md (Plan 01 Task 3) carries the human-readable cross-walk and the explicit closure note.
+
 Rip-and-replace `federated-pfedrec/federated_pfedrec/client_app.py` cloning Phase 3 client_app.py shape with Phase-5-specific deltas:
 
 **Top-of-file imports:**
@@ -585,6 +590,12 @@ def _signature_fields(
 ) -> Dict:
     """D-17 schema_v3 signature for PFedRec cache. 10 fields including
     schema_version and the bias_classification='global' D-01 sentinel.
+
+    SC-2/D-01 reconciliation note: per-user disk payload carries only
+    `affine_output.weight`; the SC-2 phrase about (.weight, .bias)
+    per-user atomicity is preserved end-to-end because the bias channel
+    is aggregated atomically server-side per engine.py:143. See
+    PFR-02-AUDIT.md (Plan 01 Task 3) for the human-readable cross-walk.
     """
     return {
         "schema_version": 3,
@@ -621,7 +632,10 @@ def _save_local_user_state(
     """Atomic per-user save with D-21 shape guard BEFORE disk write.
 
     Payload shape: exactly 1 key (`affine_output.weight`) with shape
-    `(1, signature['latent_dim'])` (D-20 native PyTorch shape).
+    `(1, signature['latent_dim'])` (D-20 native PyTorch shape). The
+    SC-2/D-01 reconciliation: bias is aggregated atomically server-side
+    (engine.py:143), not persisted to per-user disk; D-15 result-JSON +
+    sibling manifest carry the atomicity end-to-end across runs.
     """
     cache_dir = _cache_dir_for_run(run_id=run_id, reuse_cache=reuse_cache, signature=signature)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -929,10 +943,10 @@ Verify: `cd federated-pfedrec && pytest tests/test_cache.py tests/test_client_ap
 
 <success_criteria>
 - task.py: FND-06 RNG factories wired (D-02 / PFR-07); FND-03 exclusion threaded (PFR-04); D-04 eval BCE over positives + 99 negs; dual LR preserved; stdlib random eradicated
-- client_app.py: PFR-05 single-user collapse; D-22 probe-then-load; D-21 strict; D-16 / D-17 manifest-sidecar with bias_classification='global' sentinel; G-03-01 discover_only short-circuit; weights_only=True; Phase 3 Rule 1 prefix='partition_tmp_'
+- client_app.py: PFR-05 single-user collapse; D-22 probe-then-load; D-21 strict; D-16 / D-17 manifest-sidecar with bias_classification='global' sentinel; G-03-01 discover_only short-circuit; weights_only=True; Phase 3 Rule 1 prefix='partition_tmp_'; explicit SC-2/D-01 reconciliation note in the cache-layout signature_fields docstring
 - 4 new test files (conftest.py + test_task.py + test_cache.py + test_client_app.py)
 - ≥13 new GREEN tests in this plan; cumulative module suite ≥17 GREEN with Plans 01/02
-- Wave-2 single-plan ownership held: pyproject.toml, dataset.py, models/, strategy.py, server_app.py UNTOUCHED (those are owned by Plans 01/02/04)
+- Wave-2 single-plan ownership held: pyproject.toml, dataset.py (other than fills of the Plan-02 NotImplementedError placeholders), models/, strategy.py, server_app.py UNTOUCHED (those are owned by Plans 01/02/04)
 </success_criteria>
 
 <output>
@@ -941,4 +955,6 @@ After completion, create `.planning/phases/05-pfedrec-migration-reproduction/05-
 - Test counts mapped to VALIDATION.md per-task rows 5-03-01..5-03-10
 - Confirmation Wave-2 single-plan ownership held
 - Plan 04 readiness: server_app.py can now consume the EvaluateMetricsContract surface + discover_only short-circuit + the .embedding_cache/{run_id}/partition_{pid}.pt cache path
+- SC-2/D-01 reconciliation surfaced in the signature_fields docstring + the cache-layout task `<action>` block; PFR-02-AUDIT.md (Plan 01) carries the human-readable cross-walk
+</output>
 </output>
