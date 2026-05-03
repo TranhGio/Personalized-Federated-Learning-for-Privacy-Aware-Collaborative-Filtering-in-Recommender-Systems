@@ -128,8 +128,13 @@ options.num-supernodes = 6040
 [tool.flwr.federations.local-sim-gpu]
 options.num-supernodes = 6040
 # Cross-device default (BSL-01). Opt into cross-silo via: flwr run . --run-config "num-supernodes=5 partition-mode=dirichlet mode=cross_silo_legacy"
-options.backend.client-resources.num-cpus = 1
-options.backend.client-resources.num-gpus = 0.05
+# Resource budget aligned with adaptive (5 concurrent workers). The previous
+# (num-cpus=1, num-gpus=0.05) values let Ray spawn 20 concurrent workers,
+# producing a ~61 GB peak that OOM'd on a 62 GB machine when other GPU jobs
+# (e.g. shared inference services) are also resident. Slower per-round but
+# fits the shared-machine budget.
+options.backend.client-resources.num-cpus = 6
+options.backend.client-resources.num-gpus = 0.2
 
 # Remote federation example for use with SuperLink
 [tool.flwr.federations.remote-federation]
