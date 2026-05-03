@@ -286,8 +286,10 @@ def execute_cell(
 ) -> Tuple[bool, str]:
     """Fire scripts/run.py for one cell. Return (success, stderr_excerpt).
 
-    Captures stdout+stderr; on non-zero exit, returns (False, stderr_tail_2KB).
-    On dry_run, prints the would-be command and returns (True, "").
+    Streams stdout to the terminal (so per-round server_app prints are visible)
+    while capturing stderr for failure diagnostics. On non-zero exit, returns
+    (False, stderr_tail_2KB). On dry_run, prints the would-be command and
+    returns (True, "").
     """
     cmd: List[str] = [
         sys.executable,
@@ -305,12 +307,13 @@ def execute_cell(
     proc = subprocess.run(
         cmd,
         cwd=str(repo_root),
-        capture_output=True,
+        stdout=None,                # inherit parent stdout — stream live
+        stderr=subprocess.PIPE,     # still capture for failure log
         text=True,
         check=False,
     )
     if proc.returncode != 0:
-        return False, proc.stderr[-2000:]
+        return False, (proc.stderr or "")[-2000:]
     return True, ""
 
 
@@ -413,14 +416,20 @@ def run_sweep(
             skipped += 1
             print(f"[SKIP] cell {idx + 1}/{len(cells)}: {cell.identity} — already on disk")
             continue
-        print(f"[RUN]  cell {idx + 1}/{len(cells)}: {cell.identity}")
+        ts_start = time.strftime("%H:%M:%S")
+        print(f"[RUN]  cell {idx + 1}/{len(cells)}: {cell.identity} — started {ts_start}", flush=True)
+        cell_started = time.time()
         success, stderr_excerpt = execute_cell(cell, repo_root, dry_run=dry_run)
+        cell_secs = time.time() - cell_started
+        cell_mins = cell_secs / 60.0
         if success:
             completed += 1
+            print(f"[OK]   cell {idx + 1}/{len(cells)}: {cell.identity} — {cell_mins:.1f}m "
+                  f"(completed={completed} failed={failed} skipped={skipped} of {len(cells)})", flush=True)
         else:
             failed += 1
             _append_failure(results_root, cell, stderr_excerpt)
-            print(f"[FAIL] cell {cell.identity} — appended to failed_cells.json")
+            print(f"[FAIL] cell {cell.identity} — {cell_mins:.1f}m, appended to failed_cells.json", flush=True)
         if not dry_run:
             _write_progress(
                 results_root,

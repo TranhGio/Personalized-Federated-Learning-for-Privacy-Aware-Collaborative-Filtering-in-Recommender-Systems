@@ -42,6 +42,7 @@ class EvalProtocol(str, Enum):
 _KNOWN_MODES = frozenset(
     {
         "benchmark_cross_device",
+        "thesis_crossdevice_main",
         "paper_compat_pfedrec",
         "cross_silo_legacy",
     }

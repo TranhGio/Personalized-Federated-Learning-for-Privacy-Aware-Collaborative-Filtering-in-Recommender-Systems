@@ -43,9 +43,9 @@ clientapp = "federated_adaptive_personalized_cf.client_app:app"
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
 # Federated Learning parameters
-num-server-rounds = 50
-fraction-train = 1.0
-local-epochs = 10
+num-server-rounds = 100
+fraction-train = 0.1
+local-epochs = 1
 
 # Federated Learning Strategy
 strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"

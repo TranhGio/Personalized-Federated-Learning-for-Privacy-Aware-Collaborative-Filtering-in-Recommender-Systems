@@ -416,7 +416,14 @@ def train(msg: Message, context: Context):
     round_num = int(msg_config.get("round_num", 1))
     run_seed = int(context.run_config.get("run-seed", 42))
     reuse_cache = bool(context.run_config.get("reuse-cache", False))
-    run_id = str(context.run_config.get("run-id", context.run_config.get("run_id", "default")))
+    # Server stamps run_id into msg_config (server_app.py); fall back to
+    # run_config for backward compatibility, then "default" as last resort.
+    run_id = str(
+        msg_config.get(
+            "run_id",
+            context.run_config.get("run-id", context.run_config.get("run_id", "default")),
+        )
+    )
 
     # Model configuration.
     model_type = str(context.run_config.get("model-type", "bpr"))
@@ -634,7 +641,14 @@ def evaluate(msg: Message, context: Context):
     round_num = int(config.get("round_num", 1))
     run_seed = int(context.run_config.get("run-seed", 42))
     reuse_cache = bool(context.run_config.get("reuse-cache", False))
-    run_id = str(context.run_config.get("run-id", context.run_config.get("run_id", "default")))
+    # Server stamps run_id into msg config (server_app.py); fall back to
+    # run_config for backward compatibility, then "default" as last resort.
+    run_id = str(
+        config.get(
+            "run_id",
+            context.run_config.get("run-id", context.run_config.get("run_id", "default")),
+        )
+    )
 
     # Model configuration.
     model_type = str(context.run_config.get("model-type", "bpr"))
