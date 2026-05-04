@@ -1246,8 +1246,21 @@ def evaluate_ranking_sampled(
             user_tensor = torch.tensor([user_id] * len(candidate_items), dtype=torch.long).to(device)
             item_tensor = torch.tensor(candidate_items, dtype=torch.long).to(device)
 
-            # Use model.predict() which calls forward() with neg_item_ids=None
-            candidate_scores = model.predict(user_tensor, item_tensor)
+            # BSL-EVAL-LEAK FIX (debug session: baseline-eval-leakage):
+            # Use raw forward() scores for ranking — NOT model.predict().
+            # BasicMF.predict() clamps outputs to [1.0, 5.0] for rating-prediction
+            # (RMSE/MAE), which collapses every candidate to the same value when
+            # the model's pre-clamp scores fall below 1.0 (the typical regime
+            # under Xavier init or early training). Tied scores then sort by
+            # Python's stable list.sort, leaving the positive (always at input
+            # index 0) at rank 1 → degenerate HR@10 = NDCG@10 = MRR = 1.0.
+            # BPRMF.forward signature differs (takes neg_item_ids); BasicMF.forward
+            # takes only (user, item). Class name dispatch is the simplest
+            # signature-safe way to call forward() raw.
+            if type(model).__name__ == "BPRMF":
+                candidate_scores = model(user_tensor, item_tensor, neg_item_ids=None)
+            else:
+                candidate_scores = model(user_tensor, item_tensor)
 
             # Create (item_id, score) pairs
             scores = [(item_id, candidate_scores[i].item()) for i, item_id in enumerate(candidate_items)]
