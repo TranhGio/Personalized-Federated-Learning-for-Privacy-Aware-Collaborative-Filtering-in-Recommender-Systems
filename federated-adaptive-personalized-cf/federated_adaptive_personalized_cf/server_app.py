@@ -271,8 +271,15 @@ def _cold_start_cache_root(run_id: str, reuse_cache: bool) -> Path:
     Under D-09 reuse-cache=true the client-side cache path includes a sig_<hash>
     prefix that the server cannot construct without client-side signature fields.
     In that regime the counter is short-circuited to zero and the log line names
-    D-09 explicitly. For the standard run_id-scoped cache, the dir is simply
-    ``.embedding_cache/{run_id}``.
+    D-09 explicitly. For the standard run_id-scoped cache, the dir is the
+    module-anchored ``federated-adaptive-personalized-cf/.embedding_cache/{run_id}``.
+
+    The probe path MUST be resolved the same way the client resolves it
+    (``client_app._CACHE_BASE_DIR = Path(__file__).resolve().parent.parent /
+    ".embedding_cache"``); using a relative ``Path(".embedding_cache")`` here
+    silently misses the cache because the server CWD is the repo root, not the
+    module dir, so the probe always reports cold_start_rate=1.0 even when
+    every client is reading from the cache successfully.
 
     Parameters
     ----------
@@ -284,9 +291,9 @@ def _cold_start_cache_root(run_id: str, reuse_cache: bool) -> Path:
     Returns
     -------
     Path
-        ``.embedding_cache/{run_id}`` for the standard case.
+        ``<module_dir>/../.embedding_cache/{run_id}`` for the standard case.
     """
-    return Path(".embedding_cache") / run_id
+    return Path(__file__).resolve().parent.parent / ".embedding_cache" / run_id
 
 
 def _extract_sibling_records(
