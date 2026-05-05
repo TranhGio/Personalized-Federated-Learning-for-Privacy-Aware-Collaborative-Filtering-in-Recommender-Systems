@@ -42,6 +42,11 @@ clientapp = "federated_adaptive_personalized_cf.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
+# Reproducibility / run identity. Empty string falls through to the server's
+# generate_run_id() at server_app.py:430. Override via --run-config "run-id=..."
+# to pin a specific run_id (needed for cache warm-start workflows).
+run-id = ""
+
 # Federated Learning parameters
 num-server-rounds = 100
 fraction-train = 0.1
