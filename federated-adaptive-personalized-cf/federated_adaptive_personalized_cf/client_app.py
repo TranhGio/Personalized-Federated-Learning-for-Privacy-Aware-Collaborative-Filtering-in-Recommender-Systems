@@ -713,9 +713,20 @@ def train(msg: Message, context: Context):
     )
 
     # --- Step 9c: user prototype + GLOBAL params out ---
+    # Cross-device protocol: 1 partition = 1 user_id, so partition_id IS the
+    # user index in the user_embeddings table. Pass it explicitly so the
+    # prototype is the trained row, not mean-over-all-rows (which collapses
+    # to ~zero-mean Xavier noise under cross-device — see debug session
+    # adaptive-cache-prototype-collapse.md, Bug #2).
     user_prototype: Optional[List[float]] = None
     if hasattr(model, "compute_user_prototype"):
-        user_prototype = model.compute_user_prototype().detach().cpu().numpy().tolist()
+        user_prototype = (
+            model.compute_user_prototype(user_id=partition_id)
+            .detach()
+            .cpu()
+            .numpy()
+            .tolist()
+        )
 
     global_params_out = model.get_global_parameters()
     model_record = ArrayRecord(global_params_out)

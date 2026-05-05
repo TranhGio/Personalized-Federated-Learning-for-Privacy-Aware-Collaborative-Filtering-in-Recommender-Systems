@@ -524,15 +524,31 @@ class BPRMF(nn.Module):
         global_expanded = self._global_prototype.expand_as(local_emb)
         return self._alpha * local_emb + (1 - self._alpha) * global_expanded
 
-    def compute_user_prototype(self) -> torch.Tensor:
+    def compute_user_prototype(self, user_id: Optional[int] = None) -> torch.Tensor:
         """
-        Compute the average user embedding for this client.
+        Compute the user prototype this client contributes to the server EMA.
 
-        This is sent to the server for global prototype aggregation.
+        Cross-device protocol (1 user per partition): pass ``user_id`` so this
+        method returns the trained row directly. Under cross-device,
+        ``user_embeddings.weight`` is shape (N, embedding_dim) where exactly 1
+        row is trained and N-1 rows remain Xavier-initialized noise; averaging
+        them in collapses the prototype to ~zero-mean noise and renders the
+        server-side EMA mechanism inert.
+
+        Cross-silo protocol (no ``user_id``): legacy mean-over-all-rows
+        semantics — every row is a real trained user, so the mean is a valid
+        population prototype.
+
+        Args:
+            user_id: Optional partition/user index. When provided, return the
+                trained row only (cross-device). When None, return the mean
+                across all rows (cross-silo legacy behavior).
 
         Returns:
-            Mean of all user embeddings, shape (embedding_dim,)
+            User prototype, shape (embedding_dim,)
         """
+        if user_id is not None:
+            return self.user_embeddings.weight[int(user_id)].detach().clone()
         return self.user_embeddings.weight.mean(dim=0)
 
     # =========================================================================
