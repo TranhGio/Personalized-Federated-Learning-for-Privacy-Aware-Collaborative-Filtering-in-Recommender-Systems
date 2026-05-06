@@ -69,6 +69,11 @@ from federated_adaptive_personalized_cf.strategy import (
     AdaptiveSplitFedProx,
     USER_PROTOTYPE_KEY,
 )
+from federated_adaptive_personalized_cf.cache_snapshot import (
+    cleanup_snapshots,
+    restore_cache,
+    snapshot_cache,
+)
 from federated_adaptive_personalized_cf.evaluation import AlphaAnalyzer
 from federated_adaptive_personalized_cf.early_stopping import EarlyStopping
 
@@ -912,6 +917,17 @@ def main(grid: Grid, context: Context) -> None:
                     # D-05: snapshot prototype at the same moment as best_arrays
                     strategy.snapshot_best_prototype(round_num=round_num, embedding_dim=embedding_dim)
                     print(f"  [CHECKPOINT] New best sampled_ndcg@10={best_metric:.4f} at round {best_round_num}")
+                    # =================================================================
+                    # D-06.5 (Bug 3 / Path B): snapshot every client's local-state cache
+                    # alongside the GLOBAL params. ONLY under best_round_restore — for
+                    # best_round and last_round the snapshot is unused and would just
+                    # burn ~24 GB of disk per ML-1M run. Hook timing: train + eval
+                    # send_and_receive have BOTH returned and aggregate_evaluate ran,
+                    # so every client has finished writing its round-N partition_*.pt
+                    # file. No race with in-flight client writes.
+                    # =================================================================
+                    if checkpoint_rule == "best_round_restore":
+                        snapshot_cache(cache_root, round_num=best_round_num)
 
         # Log to wandb
         if wandb_enabled and wandb_run is not None:
@@ -968,6 +984,25 @@ def main(grid: Grid, context: Context) -> None:
         if strategy.best_prototype is not None:
             strategy._global_prototype = strategy.best_prototype
             print(f"  [D-07] Restored best_prototype (norm={float(np.linalg.norm(strategy.best_prototype)):.4f})")
+        # =====================================================================
+        # D-06.5 (Bug 3 / Path B): restore the per-client local-state cache to
+        # match the round of best_arrays. Without this, each client's cache is
+        # at whatever round it was last sampled (median ~best_round/k under
+        # cross-device with N=6040 / fraction_train=0.1) — user/item embeddings
+        # then come from incompatible generations of training, producing the
+        # 3.02× full-pop / in-sample NDCG@10 gap observed in the 100-round cold
+        # thesis run (20260505-141804-c3bc5d). Restoring the cache here, BEFORE
+        # the D-06 extra-eval-round broadcasts, gives every client a coherent
+        # (global, local) state pair to evaluate on.
+        # =====================================================================
+        if checkpoint_rule == "best_round_restore":
+            restored = restore_cache(cache_root, round_num=best_round_num)
+            if not restored:
+                print(
+                    f"  [D-06.5] WARNING: no client cache snapshot found for round "
+                    f"{best_round_num}; D-06 full-pop eval will use de-synchronized "
+                    f"local state (Bug 3 unfixed for this run)."
+                )
     else:
         print(f"\n[CHECKPOINT] checkpoint_rule={checkpoint_rule!r}: keeping last-round params")
 
@@ -1343,3 +1378,12 @@ def main(grid: Grid, context: Context) -> None:
     if wandb_enabled and wandb_run is not None:
         wandb.finish()
         print("  Weights & Biases run completed")
+
+    # =========================================================================
+    # D-06.5 (Bug 3 / Path B) cleanup: drop the snapshot dir under the live
+    # cache_root to free ~24 GB. The live partition_*.pt files (post-restore
+    # under best_round_restore) are LEFT INTACT so future warm-start workflows
+    # can clone them via reflink. No-op when checkpoint_rule != best_round_restore.
+    # =========================================================================
+    if checkpoint_rule == "best_round_restore":
+        cleanup_snapshots(cache_root)
