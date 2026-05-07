@@ -1,5 +1,5 @@
 ---
-status: investigating
+status: awaiting_human_verify
 trigger: "Path B fix for Bug 3 — snapshot all client cache files at every best-round update so end-of-run best_round_restore restores both global params AND matching local-state cache"
 created: 2026-05-06
 updated: 2026-05-07
