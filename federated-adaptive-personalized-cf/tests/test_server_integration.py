@@ -651,6 +651,56 @@ def _server_app_src() -> str:
     return src_path.read_text(encoding="utf-8")
 
 
+def test_final_calibration_pass_wired_between_restore_and_d06_eval() -> None:
+    """D-06.7 / Bug 3 Alt-A: end-of-training calibration pass source-order guards.
+
+    Confirms the calibration block sits between the Path B restore (D-06.5) and
+    the D-06 extra-eval-round broadcast, is gated by ``final-calibration-enabled``,
+    and uses ``message_type='train'`` with ``local_epochs_override`` so the client
+    honors the per-message epoch budget.
+    """
+    src = _server_app_src()
+
+    # Run-config reads must exist with the documented names.
+    assert 'context.run_config.get("final-calibration-enabled"' in src, (
+        "Alt-A VIOLATED: final-calibration-enabled run-config read missing from server_app.py"
+    )
+    assert 'context.run_config.get("final-calibration-epochs"' in src, (
+        "Alt-A VIOLATED: final-calibration-epochs run-config read missing from server_app.py"
+    )
+
+    # Calibration broadcast must be a TRAIN message addressed to all partitions.
+    assert "[D-06.7]" in src, (
+        "Alt-A VIOLATED: [D-06.7] telemetry banner missing — calibration block not wired"
+    )
+    assert "calibration_round_" in src, (
+        "Alt-A VIOLATED: calibration message group_id token missing"
+    )
+    assert '"local_epochs_override"' in src, (
+        "Alt-A VIOLATED: local_epochs_override key missing from calibration ConfigRecord"
+    )
+
+    # Source order: calibration must run AFTER restore_cache call AND BEFORE the
+    # D-06 extra-eval block. We anchor on stable tokens unique to each region.
+    restore_idx = src.find("restore_cache(cache_root, round_num=best_round_num)")
+    calib_idx = src.find("[D-06.7]")
+    d06_broadcast_idx = src.find("[D-06] Broadcasting extra eval round")
+    assert restore_idx != -1, "[D-06.5] restore_cache call missing"
+    assert calib_idx != -1, "[D-06.7] calibration block missing"
+    assert d06_broadcast_idx != -1, "[D-06] extra-eval broadcast missing"
+    assert restore_idx < calib_idx < d06_broadcast_idx, (
+        "Alt-A source-order VIOLATED: calibration block must sit BETWEEN "
+        "restore_cache (D-06.5) and the D-06 extra-eval broadcast — got order "
+        f"restore={restore_idx} calib={calib_idx} d06={d06_broadcast_idx}"
+    )
+
+    # Gating: calibration must be guarded by final_calibration_enabled.
+    nearby = src[calib_idx - 600:calib_idx + 200]
+    assert "final_calibration_enabled" in nearby, (
+        "Alt-A VIOLATED: calibration block lacks the final_calibration_enabled gate"
+    )
+
+
 def test_thesis_label_in_manifest() -> None:
     """Phase 7 D-22 + Pitfall 2: server_app reads thesis-run-label / ablation-dimension /
     ablation-value from context.run_config and mutates the manifest via dataclass_replace

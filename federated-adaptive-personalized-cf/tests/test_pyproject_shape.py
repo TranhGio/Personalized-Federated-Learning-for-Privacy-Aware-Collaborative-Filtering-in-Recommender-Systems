@@ -64,3 +64,15 @@ def test_fedrec_foundation_dep_preserved():
     deps = d["project"]["dependencies"]
     assert any("fedrec-foundation" in dep for dep in deps), \
         "Phase 1 Plan 06 dep must be preserved"
+
+
+def test_final_calibration_keys_default_off():
+    """D-06.7 / Bug 3 Alt-A: end-of-training calibration pass is opt-in.
+
+    Defaults must be off so existing thesis runs are unchanged. Users opt in
+    via ``flwr run . --run-config "final-calibration-enabled=true"``.
+    """
+    d = _load()
+    cfg = d["tool"]["flwr"]["app"]["config"]
+    assert cfg["final-calibration-enabled"] is False
+    assert cfg["final-calibration-epochs"] == 1

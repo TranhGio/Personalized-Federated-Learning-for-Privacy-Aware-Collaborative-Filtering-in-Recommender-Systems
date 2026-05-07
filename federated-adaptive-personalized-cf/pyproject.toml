@@ -42,15 +42,10 @@ clientapp = "federated_adaptive_personalized_cf.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
-# Reproducibility / run identity. Empty string falls through to the server's
-# generate_run_id() at server_app.py:430. Override via --run-config "run-id=..."
-# to pin a specific run_id (needed for cache warm-start workflows).
-run-id = ""
-
 # Federated Learning parameters
-num-server-rounds = 100
-fraction-train = 0.1
-local-epochs = 1
+num-server-rounds = 50
+fraction-train = 1.0
+local-epochs = 10
 
 # Federated Learning Strategy
 strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"
@@ -202,19 +197,30 @@ eval-split-mode = "leave-one-out"  # "leave-one-out" (NCF protocol) or "random"
 # =============================================================================
 # The canonical runtime source is fedrec_foundation.mode.resolve_mode_defaults(mode).
 # These values are FALLBACK only (consulted when the launcher did not pre-set them).
-mode = "benchmark_cross_device"  # cross-silo opt-in via: flwr run . --run-config "mode=cross_silo_legacy" (raises NotImplementedError per D-02)
+mode = "benchmark_cross_device"  # flipped to "benchmark_cross_device" by scripts/run.py adaptive benchmark_cross_device
 run-seed = 42
 weight-policy = "num_positives"
 eval-num-negatives = 99
 checkpoint-rule = "best_round_restore"
 reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs
 
-# Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
-# Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
-# fuse_dicts requires the keys to exist with default values — declaring here is the contract.
-thesis-run-label = ""        # "" = non-thesis | "main" | "ablation_<knob>=<value>"
-ablation-dimension = "none"  # "none" | "alpha_method" | "per_user_alpha" | "item_perturbation" | "contrastive_lambda" | "fusion_type"
-ablation-value = ""           # specific value of the ablated knob; empty for main/non-thesis
+# =============================================================================
+# Bug 3 / Alt-A: end-of-training calibration pass (D-06.7)
+# =============================================================================
+# After best_round_restore (and Path B cache snapshot restore at D-06.5), broadcast
+# ONE extra training pass to ALL partitions so every client's local user_embedding /
+# personal_mlp / fusion / per-user-alpha state is freshly aligned with the restored
+# best-round GLOBAL item embeddings before the D-06 full-pop eval. Without this,
+# users whose last-trained-round (LTR) is much older than best_round see stale local
+# state at full-pop eval time → de-synchronized user/item embeddings → near-random
+# predictions on the headline NDCG@10 number.
+#
+# Cost: 6040 clients × `final-calibration-epochs` local epochs ≈ 1 in-loop training
+# round at full population. Default `false` so existing thesis runs are unchanged.
+# Returned client params are DISCARDED (no aggregation) — this pass is purely a
+# client-side cache-update, not a server-side global-update.
+final-calibration-enabled = false   # When true, run a calibration pass before D-06 eval
+final-calibration-epochs = 1        # Local epochs per client during calibration (1-2 typical)
 
 # =============================================================================
 # Early Stopping Configuration

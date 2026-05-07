@@ -125,6 +125,37 @@ def test_fit_metrics_contract_payload_with_partition_id_and_alpha_diagnostics() 
         assert isinstance(alpha_diag[key], float)
 
 
+def test_client_train_honors_local_epochs_override() -> None:
+    """D-06.7 / Bug 3 Alt-A: client @app.train() honors `local_epochs_override`.
+
+    Source-level guard: client_app.py reads `local_epochs_override` from the
+    msg_config (per-message) and falls back to context.run_config['local-epochs']
+    when absent, so the calibration broadcast can shorten the local-epoch budget
+    without disturbing normal training rounds.
+    """
+    src_path = Path(__file__).resolve().parents[1] / \
+        "federated_adaptive_personalized_cf" / "client_app.py"
+    src = src_path.read_text(encoding="utf-8")
+
+    assert "local_epochs_override" in src, (
+        "Alt-A VIOLATED: client_app.py does not read `local_epochs_override` "
+        "from msg_config — calibration broadcast cannot shorten epoch budget"
+    )
+    # The override read must use msg_config and have the documented fallback chain.
+    assert 'msg_config.get(\n            "local_epochs_override"' in src or (
+        'msg_config.get("local_epochs_override"' in src
+    ), (
+        "Alt-A VIOLATED: client_app.py must read local_epochs_override via "
+        "msg_config.get(...) for per-message override semantics"
+    )
+    # Fallback to context.run_config['local-epochs'] must remain present so
+    # normal rounds are unaffected.
+    assert 'context.run_config.get("local-epochs"' in src, (
+        "Alt-A VIOLATED: normal-round fallback context.run_config['local-epochs'] "
+        "missing — would break non-calibration training rounds"
+    )
+
+
 def test_evaluate_metrics_contract_payload_shape_with_partition_id() -> None:
     """D-21 + G-03-01: EvaluateMetricsContract carries partition_id + rejects free-form extras."""
     from fedrec_foundation.fit_metrics import (

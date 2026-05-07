@@ -416,6 +416,18 @@ def main(grid: Grid, context: Context) -> None:
     )
     reuse_cache_flag: bool = bool(context.run_config.get("reuse-cache", False))  # D-09
 
+    # Bug 3 / Alt-A: end-of-training calibration pass (D-06.7).
+    # Runs ONE extra training pass to ALL partitions after best_round_restore
+    # (and Path B cache snapshot restore) so every client's local state aligns
+    # with the restored best-round GLOBAL params before D-06 full-pop eval.
+    # Default off — opt in for full thesis runs.
+    final_calibration_enabled: bool = bool(
+        context.run_config.get("final-calibration-enabled", False)
+    )
+    final_calibration_epochs: int = int(
+        context.run_config.get("final-calibration-epochs", 1)
+    )
+
     # Get adaptive alpha configuration
     alpha_min = float(context.run_config.get("alpha-min", 0.1))
     alpha_max = float(context.run_config.get("alpha-max", 0.95))
@@ -1005,6 +1017,80 @@ def main(grid: Grid, context: Context) -> None:
                 )
     else:
         print(f"\n[CHECKPOINT] checkpoint_rule={checkpoint_rule!r}: keeping last-round params")
+
+    # =========================================================================
+    # D-06.7 (Bug 3 / Alt-A): end-of-training calibration pass.
+    #
+    # Even after Path B's cache snapshot/restore, ~19% of users with LTR > best_round
+    # (those sampled in rounds AFTER the best round, before training stopped) get
+    # rolled BACK by Path B — their local state regresses to an older vintage.
+    # Path B alone produced WORSE full-pop NDCG@10 than no fix in run
+    # 20260506-074753-bc134c (0.0563 vs 0.0831 prior). Diagnosis: the snapshot
+    # mechanically captured R{best_round} cache state as designed, but for users
+    # sampled after best_round their LIVE cache had been MORE RECENTLY trained;
+    # restoring the snapshot is a regression for them.
+    #
+    # Alt-A fixes this by training every partition for ONE local epoch against
+    # the restored best-round GLOBAL params. This brings every user's local state
+    # into proper alignment with the rolled-back globals BEFORE the D-06 full-pop
+    # eval, eliminating the user/item-embedding desynchronization that drove the
+    # original 3.02x full-pop / in-sample gap and Path B's 4.33x regression.
+    #
+    # Returned client params are intentionally DISCARDED — we are NOT updating
+    # the server's restored globals (that would defeat best_round_restore). This
+    # pass is purely a client-side cache-update.
+    # =========================================================================
+    if (
+        final_calibration_enabled
+        and checkpoint_rule in ("best_round_restore", "best_round")
+        and best_round_num > 0
+    ):
+        calib_round_index = actual_rounds + 1
+        calib_global_prototype = strategy.get_global_prototype()
+        print(
+            f"\n[D-06.7] Broadcasting end-of-training calibration pass to all "
+            f"{len(partition_to_node_id)} partitions "
+            f"(epochs={final_calibration_epochs}, "
+            f"prototype_attached={calib_global_prototype is not None})..."
+        )
+
+        calib_node_ids = sorted(partition_to_node_id.values())
+        calib_messages = []
+        for nid in calib_node_ids:
+            calib_config_dict: Dict[str, Any] = {
+                "lr": lr,
+                # No proximal term — we are NOT trying to constrain to the
+                # current globals; we are aligning local state to them.
+                "proximal_mu": 0.0,
+                "round_num": int(calib_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+                # Override client-side `local-epochs` for this calibration pass.
+                # Client reads `local_epochs_override` from msg_config in
+                # @app.train(); falls back to context.run_config["local-epochs"]
+                # when absent so normal training rounds are unaffected.
+                "local_epochs_override": int(final_calibration_epochs),
+            }
+            if calib_global_prototype is not None:
+                calib_config_dict["global_prototype"] = calib_global_prototype.tolist()
+            calib_config = ConfigRecord(calib_config_dict)
+            content = RecordDict({"arrays": arrays, "config": calib_config})
+            calib_messages.append(grid.create_message(
+                content=content,
+                message_type="train",
+                dst_node_id=nid,
+                group_id=f"calibration_round_{calib_round_index}",
+            ))
+        calib_responses = list(grid.send_and_receive(calib_messages))
+
+        # Count successes; do NOT aggregate or update server-side params.
+        calib_success = sum(1 for r in calib_responses if not r.has_error())
+        calib_failed = len(calib_responses) - calib_success
+        print(
+            f"[D-06.7] Calibration pass complete: {calib_success}/{len(calib_messages)} "
+            f"clients succeeded ({calib_failed} errors). "
+            f"Server-side globals UNCHANGED — calibration is client-cache-only."
+        )
 
     # =========================================================================
     # D-06: extra eval round on the restored best-round state.

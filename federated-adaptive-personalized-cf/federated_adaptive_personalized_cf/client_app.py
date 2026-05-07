@@ -673,7 +673,17 @@ def train(msg: Message, context: Context):
     exclude_items = bundle["exclusion"].for_user(partition_id)
     train_rng = np_rng(run_seed, partition_id, round_num, "train_neg")
 
-    local_epochs = int(context.run_config.get("local-epochs", 10))
+    # Honor per-message local_epochs_override (D-06.7 / Bug 3 Alt-A calibration
+    # pass). Server can shorten the local-epochs budget for the end-of-training
+    # calibration broadcast without changing the global `local-epochs` config.
+    # Falls back to context.run_config when absent so normal training rounds
+    # are unaffected.
+    local_epochs = int(
+        msg_config.get(
+            "local_epochs_override",
+            context.run_config.get("local-epochs", 10),
+        )
+    )
     lr = float(msg_config.get("lr", 0.001))
     num_train_negatives = int(context.run_config.get("num-negatives", 1))
 
