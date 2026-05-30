@@ -193,7 +193,7 @@ def main(argv: List[str]) -> int:
 
     cmd = ["flwr", "run", f"./{module_dir}"]
     if args.federation is not None:
-        cmd.extend(["--federation", args.federation])
+        cmd.append(args.federation)
     cmd.extend(["--run-config", run_config])
     print(
         f"[launcher] invoking: "

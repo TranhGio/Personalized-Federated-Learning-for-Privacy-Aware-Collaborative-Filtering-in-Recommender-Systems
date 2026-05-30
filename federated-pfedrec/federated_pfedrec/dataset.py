@@ -270,15 +270,16 @@ def _load_foundation_bundle(data_dir: Optional[str] = None) -> _FoundationBundle
     if contract_key in _foundation_cache:
         return _foundation_cache[contract_key]
 
+    split_manifest = load_split_manifest(derived / "split_manifest.json")
     bundle = _FoundationBundle(
         mapping=load_mapping(str(derived / "mapping.json")),
-        split_manifest=load_split_manifest(derived / "split_manifest.json"),
+        split_manifest=split_manifest,
         exclusion=load_exclusion(derived / "exclusion_items.npz"),
         foundation_contract_sha256=contract_key,
         mapping_sha256=idx.mapping_sha256,
         split_hash=idx.split_hash,
         exclusion_sha256=idx.exclusion_sha256,
-        raw_data_hash=idx.raw_data_hash,
+        raw_data_hash=split_manifest.raw_data_hash,
     )
     _foundation_cache[contract_key] = bundle
     return bundle

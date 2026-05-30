@@ -1118,7 +1118,19 @@ def evaluate_ranking_sampled(
             user_tensor = torch.tensor([user_id] * len(candidate_items), dtype=torch.long).to(device)
             item_tensor = torch.tensor(candidate_items, dtype=torch.long).to(device)
 
-            candidate_scores = model.predict(user_tensor, item_tensor)
+            # BSL-EVAL-LEAK FIX (mirrored from baseline commit fd4450b):
+            # BasicMF.predict() clamps to [1.0, 5.0] which collapses every
+            # candidate to the same value under Xavier init / early training,
+            # giving degenerate HR@10 = NDCG@10 = 1.0. Bypass via raw forward()
+            # with class-name dispatch. DualPersonalizedBPRMF.predict() does
+            # not clamp so it stays on the predict() path.
+            _model_cls = type(model).__name__
+            if _model_cls == "BPRMF":
+                candidate_scores = model(user_tensor, item_tensor, neg_item_ids=None)
+            elif _model_cls == "BasicMF":
+                candidate_scores = model(user_tensor, item_tensor)
+            else:
+                candidate_scores = model.predict(user_tensor, item_tensor)
 
             scores = [
                 (item_id, candidate_scores[i].item())
