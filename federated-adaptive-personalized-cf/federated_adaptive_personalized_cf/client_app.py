@@ -536,7 +536,9 @@ def train(msg: Message, context: Context):
     mode = str(context.run_config.get("mode", "cross_silo_legacy"))
     profile = resolve_mode_defaults(mode)
     overrides = log_mode_and_overrides(mode, profile, dict(context.run_config))
-    is_benchmark_mode = (mode == "benchmark_cross_device")
+    # thesis_crossdevice_main is a byte-for-byte clone of benchmark_cross_device
+    # (mode.py D-04); it must resolve next-gen flags the same way.
+    is_benchmark_mode = mode in ("benchmark_cross_device", "thesis_crossdevice_main")
 
     # Per-round metadata from the message config + run config.
     msg_config = msg.content.get("config") or ConfigRecord()
@@ -829,7 +831,9 @@ def evaluate(msg: Message, context: Context):
     mode = str(context.run_config.get("mode", "cross_silo_legacy"))
     profile = resolve_mode_defaults(mode)
     overrides = log_mode_and_overrides(mode, profile, dict(context.run_config))
-    is_benchmark_mode = (mode == "benchmark_cross_device")
+    # thesis_crossdevice_main is a byte-for-byte clone of benchmark_cross_device
+    # (mode.py D-04); it must resolve next-gen flags the same way.
+    is_benchmark_mode = mode in ("benchmark_cross_device", "thesis_crossdevice_main")
 
     num_partitions = int(context.node_config["num-partitions"])
     round_num = int(config.get("round_num", 1))

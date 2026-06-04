@@ -50,7 +50,9 @@ def test_phase4_signature_keys_at_thesis_defaults():
     assert cfg["alpha-method"] == "hierarchical_conditional"
     assert cfg["fusion-type"] == "concat"
     assert cfg["enable-per-user-alpha"] is True
-    assert cfg["enable-item-perturbation"] is True
+    # BUG 1 FIX (2026-06-01): item-perturbation defaults OFF for cross-device
+    # (collapses in-loop training). Enabled only as an explicit ablation override.
+    assert cfg["enable-item-perturbation"] is False
     assert abs(cfg["contrastive-lambda"] - 0.1) < 1e-9
 
 

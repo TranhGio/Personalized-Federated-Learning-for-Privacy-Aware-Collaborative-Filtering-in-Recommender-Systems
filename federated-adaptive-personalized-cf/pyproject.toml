@@ -45,7 +45,15 @@ clientapp = "federated_adaptive_personalized_cf.client_app:app"
 # Federated Learning parameters
 num-server-rounds = 50
 fraction-train = 1.0
+# Bug 4 (2026-06-01): override-only. Sentinel -1.0 => mirror fraction-train at runtime
+# so existing best_round semantics + per-round cost are unchanged. Set a real value in
+# [0,1] only to override (e.g. fraction-eval=1.0 for a diagnostic).
+fraction-eval = -1.0
 local-epochs = 10
+# Diagnostic: when true, additionally evaluate users trained >=1 time but NOT this round
+# and emit age-bucketed full-pop NDCG telemetry (staleness-vs-structural probe). Default
+# off => zero effect on normal/canonical runs and on best_round selection.
+diagnostic-fullpop-eval = false
 
 # Federated Learning Strategy
 strategy = "fedprox"         # Options: "fedavg" (default) or "fedprox"
@@ -164,8 +172,12 @@ enable-per-user-alpha = true       # When true, each user gets own learnable alp
 
 # Dual-Side Item Perturbation: local adjustments to global item embeddings
 # q_effective[i] = q_global[i] + perturbation[i], perturbation is LOCAL
-# Phase 4 benchmark default (CONTEXT D-03 + D-12): unconditionally ON in benchmark_cross_device mode.
-enable-item-perturbation = true    # When true, adds learnable local offset to item embeddings
+# BUG 1 FIX (2026-06-01): default OFF. The (num_items, dim) zero-init perturbation is
+# LOCAL (never aggregated); under cross-device each client rates ~1-2% of items, so most
+# rows stay zero and the mixed zero/trained rows become noise that collapses in-loop
+# training (NDCG@10 ~0.07 vs ~0.24). Reproduce the failure for the ablation table via
+# --run-config "enable-item-perturbation=true".
+enable-item-perturbation = false   # When true, adds learnable local offset to item embeddings
 item-perturbation-reg = 0.01      # L2 regularization on perturbation magnitudes
 
 # Contrastive Local-Global Alignment: InfoNCE auxiliary loss

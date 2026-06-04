@@ -398,6 +398,14 @@ def main(grid: Grid, context: Context) -> None:
     # =========================================================================
     num_rounds: int = int(context.run_config.get("num-server-rounds", profile.num_server_rounds))
     fraction_train: float = float(context.run_config.get("fraction-train", profile.fraction_train))
+    # BUG 4 NOTE (2026-06-01): ModeProfile.fraction_eval (=1.0) is advisory-only and was
+    # silently ignored — the strategy's evaluate fraction was hardwired to fraction_train.
+    # Expose it as an OVERRIDE-ONLY knob defaulting to fraction_train so existing runs (and
+    # best_round selection, which keys off the per-round trained-subset metric) are unchanged.
+    # The diagnostic discriminator uses `diagnostic-fullpop-eval`, NOT this knob.
+    # Sentinel -1.0 (pyproject default) => mirror fraction_train (no behavior change).
+    _fe_raw: float = float(context.run_config.get("fraction-eval", -1.0))
+    fraction_eval: float = fraction_train if _fe_raw < 0 else _fe_raw
     lr: float = float(context.run_config.get("lr", profile.lr))
     model_type: str = str(context.run_config.get("model-type", "bpr"))
     embedding_dim: int = int(context.run_config.get("embedding-dim", profile.embedding_dim))
@@ -558,7 +566,7 @@ def main(grid: Grid, context: Context) -> None:
     if strategy_name == "fedprox":
         strategy = AdaptiveSplitFedProx(
             fraction_fit=fraction_train,
-            fraction_evaluate=fraction_train,
+            fraction_evaluate=fraction_eval,
             prototype_momentum=prototype_momentum,
             proximal_mu=proximal_mu,
         )
@@ -566,7 +574,7 @@ def main(grid: Grid, context: Context) -> None:
     else:
         strategy = AdaptiveSplitFedAvg(
             fraction_fit=fraction_train,
-            fraction_evaluate=fraction_train,
+            fraction_evaluate=fraction_eval,
             prototype_momentum=prototype_momentum,
         )
         print(f"  Strategy: AdaptiveSplitFedAvg (prototype_momentum={prototype_momentum})")
