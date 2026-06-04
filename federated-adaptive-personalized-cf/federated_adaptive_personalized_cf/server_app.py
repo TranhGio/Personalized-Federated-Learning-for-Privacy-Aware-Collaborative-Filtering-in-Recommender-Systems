@@ -653,6 +653,17 @@ def main(grid: Grid, context: Context) -> None:
     # D-16 alpha diagnostics history (populated when enable-per-user-alpha=true).
     alpha_diagnostics_history: Dict[int, Dict[str, float]] = {}
 
+    # Bug 2 discriminator (gated by diagnostic-fullpop-eval). Each round, after the
+    # normal trained-subset eval, ALSO evaluate users trained >=1 time but NOT this
+    # round, bucketed by rounds-since-last-trained, to separate fixable staleness
+    # (NDCG decays with age) from structural failure (NDCG flat-low even at age 1-2).
+    # Never-trained (cold-init) users are excluded so the cold-init confound is gone.
+    # This emits diag/* telemetry ONLY; it does not affect best_round selection.
+    diagnostic_fullpop_eval: bool = bool(context.run_config.get("diagnostic-fullpop-eval", False))
+    last_trained_round: Dict[int, int] = {}  # pid -> last round it was in the train set
+    node_to_pid: Dict[int, int] = {v: k for k, v in partition_to_node_id.items()}
+    _DIAG_AGE_BUCKETS = (("1_2", 1, 2), ("3_10", 3, 10), ("11_30", 11, 30), ("31plus", 31, 10**9))
+
     # Track the last executed round so post-loop bookkeeping (early stop) can
     # report the correct final round.
     round_num = 0
@@ -689,6 +700,12 @@ def main(grid: Grid, context: Context) -> None:
         selected_node_ids = [partition_to_node_id[pid] for pid in selected_pids]
 
         selected_clients_per_round.append([int(pid) for pid in selected_pids])
+
+        # Bug 2 discriminator bookkeeping: record this round as each selected
+        # user's most-recent training round (age = round_num - last_trained_round).
+        if diagnostic_fullpop_eval:
+            for pid in selected_pids:
+                last_trained_round[int(pid)] = round_num
 
         # =====================================================================
         # D-13 cold-start counter. Probe the cache BEFORE the train message
@@ -948,6 +965,77 @@ def main(grid: Grid, context: Context) -> None:
                     # =================================================================
                     if checkpoint_rule == "best_round_restore":
                         snapshot_cache(cache_root, round_num=best_round_num)
+
+        # =====================================================================
+        # Bug 2 discriminator (gated): full-pop eval over users trained >=1 time
+        # but NOT this round, bucketed by staleness age. Emits diag/* telemetry
+        # only — does NOT feed best_round. Strided (rounds 1-3 + every 5th) to
+        # bound cost; aggregate_evaluate is side-effect-free so per-bucket calls
+        # are safe. Read: NDCG decaying with age => fixable staleness; NDCG flat-
+        # low even at age 1-2 => structural/co-adaptation.
+        # =====================================================================
+        if diagnostic_fullpop_eval and (round_num <= 3 or round_num % 5 == 0):
+            selected_set = set(int(p) for p in selected_pids)
+            diag_pids = [pid for pid in last_trained_round if pid not in selected_set]
+            if diag_pids:
+                _gp = strategy.get_global_prototype()
+                _diag_cfg_base: Dict[str, Any] = {
+                    "lr": lr, "round_num": int(round_num), "run_id": str(run_id),
+                    "reuse_cache": bool(reuse_cache_flag),
+                }
+                if _gp is not None:
+                    _diag_cfg_base["global_prototype"] = _gp.tolist()
+                diag_msgs = []
+                for pid in diag_pids:
+                    nid = partition_to_node_id.get(int(pid))
+                    if nid is None:
+                        continue
+                    diag_msgs.append(grid.create_message(
+                        content=RecordDict({"arrays": arrays, "config": ConfigRecord(dict(_diag_cfg_base))}),
+                        message_type="evaluate", dst_node_id=nid,
+                        group_id=f"diag_eval_round_{round_num}",
+                    ))
+                diag_responses = list(grid.send_and_receive(diag_msgs))
+                bucket_results: Dict[str, List[Tuple[ClientProxy, EvaluateRes]]] = {
+                    b[0]: [] for b in _DIAG_AGE_BUCKETS
+                }
+                all_diag_results: List[Tuple[ClientProxy, EvaluateRes]] = []
+                for response in diag_responses:
+                    if response.has_error():
+                        continue
+                    _rm = response.content.get("metrics", MetricRecord())
+                    _md = dict(_rm) if _rm else {}
+                    _nx = int(_md.get("evaluated_users", _md.get("num_training_examples", 1)))
+                    _er = EvaluateRes(
+                        status=Status(code=Code.OK, message="ok"),
+                        loss=float(_md.get("eval_loss", 0.0)), num_examples=_nx, metrics=_md,
+                    )
+                    _proxy = DummyClientProxy(str(response.metadata.src_node_id))
+                    all_diag_results.append((_proxy, _er))
+                    _pid = node_to_pid.get(int(response.metadata.src_node_id))
+                    if _pid is not None and _pid in last_trained_round:
+                        _age = round_num - last_trained_round[_pid]
+                        for _bn, _lo, _hi in _DIAG_AGE_BUCKETS:
+                            if _lo <= _age <= _hi:
+                                bucket_results[_bn].append((_proxy, _er))
+                                break
+                if all_diag_results:
+                    _l, diag_metrics = strategy.aggregate_evaluate(round_num, all_diag_results, [])
+                    eval_metrics_history.setdefault(round_num, {})
+                    fp_ndcg = float(diag_metrics.get("sampled_ndcg@10", 0.0))
+                    eval_metrics_history[round_num]["diag/fullpop_ndcg@10"] = fp_ndcg
+                    eval_metrics_history[round_num]["diag/fullpop_hr@10"] = float(diag_metrics.get("sampled_hr@10", 0.0))
+                    eval_metrics_history[round_num]["diag/fullpop_n"] = len(all_diag_results)
+                    _parts = [f"fullpop(n={len(all_diag_results)}) ndcg={fp_ndcg:.4f}"]
+                    for _bn, _lo, _hi in _DIAG_AGE_BUCKETS:
+                        _br = bucket_results[_bn]
+                        if _br:
+                            _bl, _bm = strategy.aggregate_evaluate(round_num, _br, [])
+                            _bndcg = float(_bm.get("sampled_ndcg@10", 0.0))
+                            eval_metrics_history[round_num][f"diag/age_{_bn}_ndcg@10"] = _bndcg
+                            eval_metrics_history[round_num][f"diag/age_{_bn}_n"] = len(_br)
+                            _parts.append(f"age{_bn}(n={len(_br)})={_bndcg:.4f}")
+                    print(f"  [DIAG] " + "  ".join(_parts))
 
         # Log to wandb
         if wandb_enabled and wandb_run is not None:
