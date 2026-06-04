@@ -1,0 +1,15 @@
+{
+  "alpha_method": "hierarchical_conditional",
+  "contrastive_lambda": 0.0,
+  "dim": 128,
+  "fusion_type": "concat",
+  "item_perturbation_enabled": false,
+  "method": "dual",
+  "mlp_hidden_dims": "512,256,128",
+  "num_items": 3706,
+  "num_users": 6040,
+  "per_user_alpha_enabled": false,
+  "run_id": "20260513-080102-c6baab",
+  "schema_version": 2,
+  "split_hash": "5685bed7e4b650807e58a49e25ea611cdef82444a034bdf105e46aa3755284d6"
+}

@@ -438,21 +438,34 @@ def _resolve_enable_flags(
 ) -> Tuple[bool, bool]:
     """Resolve effective enable flags honoring D-03 (unconditional in benchmark mode).
 
-    Under benchmark mode, per-user alpha + item perturbation default ON
-    regardless of their absence in ``run_config``. Run-config values are
-    consulted as **ablation-only overrides** — an explicit
-    ``enable-per-user-alpha=false`` in ``--run-config`` DOES disable the
-    feature for a specific sweep cell. Outside benchmark mode, the
-    run-config value is honored verbatim with the pre-Phase-4 default of
-    ``False``.
+    Under benchmark mode, per-user alpha defaults ON regardless of its absence
+    in ``run_config``. Run-config values are consulted as **ablation-only
+    overrides** — an explicit ``enable-per-user-alpha=false`` in
+    ``--run-config`` DOES disable the feature for a specific sweep cell.
+    Outside benchmark mode, the run-config value is honored verbatim with the
+    pre-Phase-4 default of ``False``.
+
+    BUG 1 FIX (2026-06-01): ``item-perturbation`` now defaults OFF even in
+    benchmark mode. Empirically (factorial decomposition 2026-05-29..06-01)
+    every cross-device run with item-perturbation ON collapses in-loop NDCG@10
+    to ~0.07 while every IP-off run learns to ~0.24. Root cause: the
+    ``(num_items, dim)`` zero-init perturbation is LOCAL (never aggregated);
+    under cross-device each client rates ~1-2% of items, so the vast majority
+    of perturbation rows stay zero and the mixed zero/trained rows become
+    incoherent noise that overwhelms the global item signal. The technique is
+    fundamentally mismatched to cross-device. It remains available as an
+    explicit ablation via ``--run-config "enable-item-perturbation=true"`` so
+    the failure mode can still be reproduced for the thesis ablation table.
     """
     raw_per_user = context.run_config.get("enable-per-user-alpha")
     raw_item_perturb = context.run_config.get("enable-item-perturbation")
 
     if is_benchmark_mode:
-        # D-03: unconditionally ON unless ablation explicitly flips OFF.
+        # D-03: per-user-alpha unconditionally ON unless ablation flips OFF.
         effective_per_user_alpha = True if raw_per_user is None else bool(raw_per_user)
-        effective_item_perturbation = True if raw_item_perturb is None else bool(raw_item_perturb)
+        # BUG 1 FIX: item-perturbation defaults OFF (was ON). Only an explicit
+        # enable-item-perturbation=true turns it on (ablation reproduction).
+        effective_item_perturbation = bool(raw_item_perturb) if raw_item_perturb is not None else False
     else:
         effective_per_user_alpha = bool(raw_per_user) if raw_per_user is not None else False
         effective_item_perturbation = bool(raw_item_perturb) if raw_item_perturb is not None else False

@@ -121,7 +121,6 @@ How to decide: If the paper proposes ONE new method → `/digest-paper`. If it r
 - Experiments reproducible via seed + config file
 - Log all metrics to CSV + console per round
 
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Federated Movie Recommendation — Cross-Device Migration & Thesis Evaluation**
@@ -143,9 +142,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 - **Hardware**: Single-machine Flower simulation with 6,040 virtual clients — Blocks any design that assumes real distributed edge devices.
 - **Backwards compatibility**: Cross-silo configs must continue to run (as an explicit opt-in) so existing W&B runs remain reproducible and appendix results can be regenerated if needed — We override defaults, we do not delete the code paths.
 - **Tracking**: A new W&B project is used for cross-device runs to keep the run list clean and to avoid accidentally mixing cross-silo and cross-device numbers in comparison plots.
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:codebase/STACK.md -->
 ## Technology Stack
 
 ## Languages
@@ -219,9 +216,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 | `alpha-method` | `hierarchical_conditional` | n/a | Personalization heuristic |
 | `wandb-enabled` | true | true | W&B logging toggle |
 | `early-stopping-enabled` | true | false | Per-round metric early stop |
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 ## Python Target
@@ -323,9 +318,7 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 - No `setup.cfg`.
 - Existing code is nonetheless consistent with 4-space indents, ~100 column line length, and PEP 8 naming — match that by eye when editing.
 - The only CI workflow is `.github/workflows/claude.yml` (Claude Code PR assistant); no test/lint CI pipeline.
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 ## Pattern Overview
@@ -433,24 +426,3 @@ If the adaptive method does not win under the corrected protocol, the thesis con
 - Secondary: `hit_rate@{5,10,20}`, `mrr`, `coverage@K`, `novelty@K`.
 - Rating prediction (`rmse`, `mae`) reported but not optimized under BPR.
 - Results JSON structure: `{model_name, dataset, federated_config, early_stopping, timestamp, final_metrics, training_rounds}`.
-<!-- GSD:architecture-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->

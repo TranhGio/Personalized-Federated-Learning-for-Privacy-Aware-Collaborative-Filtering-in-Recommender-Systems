@@ -10,7 +10,7 @@
 
 ## 1. Tổng Quan Dự Án
 
-Đây là dự án luận văn thạc sĩ của **Đặng Vinh** (`vinh.nguyen@zozo.com`) nghiên cứu về **học liên kết cá nhân hóa (personalized federated learning)** cho hệ thống gợi ý phim, sử dụng dataset MovieLens 1M (6,040 người dùng / 3,706 phim / ~1 triệu rating).
+Đây là dự án luận văn thạc sĩ của **Đăng Vĩnh** (`vinh.nguyen@zozo.com`) nghiên cứu về **học liên kết cá nhân hóa (personalized federated learning)** cho hệ thống gợi ý phim, sử dụng dataset MovieLens 1M (6,040 người dùng / 3,706 phim / ~1 triệu rating).
 
 ### Bốn module được so sánh trong luận văn
 

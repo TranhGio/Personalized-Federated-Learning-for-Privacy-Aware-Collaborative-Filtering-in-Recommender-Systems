@@ -44,9 +44,9 @@ clientapp = "federated_baseline_cf.client_app:app"
 [tool.flwr.app.config]
 # Phase 2 (BSL-01..08): cross-device defaults. fedrec_foundation.mode.resolve_mode_defaults(mode) (Phase 1 Plan 05) is the canonical source for hyperparameters at runtime; these pyproject values are only consulted when mode is unset. Overrides are visible per D-19.
 # Federated Learning parameters
-num-server-rounds = 10
-fraction-train = 1.0
-local-epochs = 5
+num-server-rounds = 100
+fraction-train = 0.1
+local-epochs = 1
 
 # Federated Learning Strategy
 strategy = "fedavg"         # Options: "fedavg" (default) or "fedprox"
