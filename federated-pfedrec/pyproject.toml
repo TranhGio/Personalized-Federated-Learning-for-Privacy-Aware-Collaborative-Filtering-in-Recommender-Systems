@@ -52,6 +52,16 @@ reuse-cache = false               # D-18 default; --run-config "reuse-cache=true
 eval-num-negatives = 99           # NCF protocol (FND-04)
 checkpoint-rule = "best_round_restore"  # D-13 best-round monitor against sampled_ndcg@10
 
+# C3 / D-06.7 (Alt-A mirror): end-of-training calibration pass. When enabled,
+# after best-round-restore and before D-06 full-pop eval, broadcast ONE local
+# epoch to ALL partitions to realign each user's local affine_output head with
+# the restored best-round globals (fixes the ~5.19x full-pop crater for users
+# not sampled in the best round). Default false → no effect on existing runs.
+# Cost: 6040 clients x final-calibration-epochs local epochs (~1 extra round).
+final-calibration-enabled = false   # When true, run a calibration pass before D-06 eval
+final-calibration-epochs = 1        # Local epochs per client during calibration (1-2 typical)
+final-calibration-freeze-items = true  # Affine-only calibration: freeze item-emb (lr_eta=0) so the head aligns to the exact restored globals D-06 evaluates. false = moving-item (adaptive Alt-A variant), for ablation.
+
 # Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
 # Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
 # fuse_dicts requires the keys to exist with default values — declaring here is the contract.

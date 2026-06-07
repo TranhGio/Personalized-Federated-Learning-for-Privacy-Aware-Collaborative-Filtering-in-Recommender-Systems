@@ -459,9 +459,21 @@ def train(msg: Message, context: Context):
         context.run_config.get("num-negatives", profile.num_train_negatives)
     )
     batch_size = int(context.run_config.get("batch-size", 256))
-    local_epochs = int(context.run_config.get("local-epochs", profile.local_epochs))
+    # C3 / D-06.7: the server's end-of-training calibration pass stamps
+    # `local_epochs_override` into msg_config to force a fixed number of local
+    # epochs for that pass. Normal training rounds never set it, so this falls
+    # back to the run-config / mode-profile default and is unaffected.
+    local_epochs = int(
+        msg_config.get(
+            "local_epochs_override",
+            context.run_config.get("local-epochs", profile.local_epochs),
+        )
+    )
     lr = float(msg_config.get("lr", profile.lr))
-    lr_eta = float(context.run_config.get("lr-eta", 80))
+    # C3 / D-06.7: read lr_eta from msg_config first so the calibration pass can
+    # set lr_eta=0 (freeze the global item embedding; affine-only calibration).
+    # Falls back to run-config for normal training rounds (which don't stamp it).
+    lr_eta = float(msg_config.get("lr_eta", context.run_config.get("lr-eta", 80)))
     l2_reg = float(context.run_config.get("l2-regularization", 0.0))
     proximal_mu = float(msg_config.get("proximal_mu", 0.0))
 

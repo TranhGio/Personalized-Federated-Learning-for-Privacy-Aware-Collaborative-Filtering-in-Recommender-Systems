@@ -445,6 +445,27 @@ def main(grid: Grid, context: Context) -> None:
     )
     reuse_cache_flag: bool = bool(context.run_config.get("reuse-cache", False))
 
+    # C3 / D-06.7 (Alt-A mirror): end-of-training calibration pass knobs.
+    # When enabled, after best-round-restore and before the D-06 full-pop eval,
+    # broadcast ONE local epoch to ALL partitions to realign every user's local
+    # `affine_output` head with the restored best-round globals. Default false →
+    # zero effect on existing runs. See the D-06.7 block below.
+    final_calibration_enabled: bool = bool(
+        context.run_config.get("final-calibration-enabled", False)
+    )
+    final_calibration_epochs: int = int(
+        context.run_config.get("final-calibration-epochs", 1)
+    )
+    # Codex review: calibrate the LOCAL affine_output head against the FROZEN
+    # restored globals. When true, the calibration pass sets the alternating
+    # optimizer's item-embedding LR to 0 (lr_eta=0 → item LR = lr*num_items*0 =
+    # 0), so affine_output is fitted to exactly the item embedding D-06 eval
+    # uses — no drift/misalignment. false = moving-item (mirrors the adaptive
+    # Alt-A full-train variant); kept for ablation.
+    final_calibration_freeze_items: bool = bool(
+        context.run_config.get("final-calibration-freeze-items", True)
+    )
+
     # 2. run_id materialized EARLY (Phase 3 idiom) — server cold-start probe
     #    and client cache path coincide on .embedding_cache/{run_id}/.
     run_id = str(context.run_config.get("run-id", "")) or generate_run_id()
@@ -911,6 +932,73 @@ def main(grid: Grid, context: Context) -> None:
         )
 
     # =========================================================================
+    # D-06.7 (C3 / Alt-A mirror): end-of-training calibration pass.
+    #
+    # PFedRec's per-user `affine_output` head is LOCAL and cached per partition.
+    # Under cross-device fraction-train<1.0, most users are NOT sampled in the
+    # best round, so at D-06 full-pop eval their cached affine_output is aligned
+    # to a STALE item-embedding vintage rather than the restored best-round
+    # globals → the observed ~5.19x in-loop/full-pop crater (full-pop 0.0711 vs
+    # in-loop 0.3478). Mirrors federated-adaptive-personalized-cf D-06.7.
+    #
+    # This pass broadcasts ONE local epoch of training to ALL partitions against
+    # the restored best-round item embeddings. The only durable effect is each
+    # client re-saving its calibrated `affine_output.weight` to cache
+    # (client_app.py D-16 save). Returned params are intentionally DISCARDED —
+    # the server's restored globals are NOT updated (best_round_restore
+    # preserved). PFedRec-specific: the train ConfigRecord carries `lr_eta` for
+    # the alternating dual-LR optimizer, mirroring the in-loop train_config.
+    # Gated on `final-calibration-enabled` (default false → no effect on
+    # existing runs).
+    # =========================================================================
+    if (
+        final_calibration_enabled
+        and checkpoint_rule in ("best_round_restore", "best_round")
+        and best_round_num > 0
+    ):
+        calib_round_index = actual_rounds + 1
+        print(
+            f"\n[D-06.7] Broadcasting end-of-training calibration pass to all "
+            f"{len(partition_to_node_id)} partitions "
+            f"(epochs={final_calibration_epochs})..."
+        )
+        calib_node_ids = sorted(partition_to_node_id.values())
+        calib_messages = []
+        for nid in calib_node_ids:
+            calib_config = ConfigRecord({
+                "lr": lr,
+                # Freeze the GLOBAL item embedding during calibration (lr_eta=0 →
+                # item LR = 0) so affine_output aligns to exactly the restored
+                # globals D-06 evaluates against (Codex review fix). false →
+                # moving-item variant (mirrors adaptive Alt-A), for ablation.
+                "lr_eta": 0.0 if final_calibration_freeze_items else float(lr_eta),
+                # No proximal term — we are aligning local state to the restored
+                # globals, not constraining the globals.
+                "proximal_mu": 0.0,
+                "round_num": int(calib_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+                # Force the calibration epoch count regardless of run-config
+                # `local-epochs` (client reads this from msg_config first).
+                "local_epochs_override": int(final_calibration_epochs),
+            })
+            content = RecordDict({"arrays": arrays, "config": calib_config})
+            calib_messages.append(grid.create_message(
+                content=content,
+                message_type="train",
+                dst_node_id=nid,
+                group_id=f"calibration_round_{calib_round_index}",
+            ))
+        calib_responses = list(grid.send_and_receive(calib_messages))
+        calib_success = sum(1 for r in calib_responses if not r.has_error())
+        calib_failed = len(calib_responses) - calib_success
+        print(
+            f"[D-06.7] Calibration pass complete: {calib_success}/{len(calib_messages)} "
+            f"clients succeeded ({calib_failed} errors). "
+            f"Server-side globals UNCHANGED — calibration is client-cache-only."
+        )
+
+    # =========================================================================
     # D-06: extra eval round on the restored best-round state. All nodes
     # broadcast (no sampling). Result becomes the canonical final_metrics["best"].
     # =========================================================================
@@ -928,7 +1016,20 @@ def main(grid: Grid, context: Context) -> None:
         eval_node_ids = sorted(partition_to_node_id.values())
         extra_eval_messages = []
         for nid in eval_node_ids:
-            eval_config = ConfigRecord({"lr": lr})
+            # BUG FIX (cache-path review): the D-06 full-pop eval MUST stamp
+            # `run_id`/`reuse_cache` so the client loads each user's cached
+            # affine_output from base/{run_id}/ — mirroring the in-loop eval
+            # config (server_app.py ~787). Without run_id the client fell back
+            # to run_id="default" → base/default/ (nonexistent) → every user
+            # evaluated with a COLD head → the spurious full-pop crater. This
+            # fix is independent of (and a prerequisite for) the D-06.7
+            # calibration pass.
+            eval_config = ConfigRecord({
+                "lr": lr,
+                "round_num": int(final_eval_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+            })
             content = RecordDict({"arrays": arrays, "config": eval_config})
             extra_eval_messages.append(grid.create_message(
                 content=content,
