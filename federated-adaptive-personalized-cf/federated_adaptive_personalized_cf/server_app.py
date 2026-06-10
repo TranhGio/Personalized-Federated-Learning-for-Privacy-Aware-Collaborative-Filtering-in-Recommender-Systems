@@ -481,6 +481,7 @@ def main(grid: Grid, context: Context) -> None:
     wandb_run = None
     if wandb_enabled:
         wandb_config = {
+            "run_id": run_id,
             "num_rounds": num_rounds,
             "fraction_train": fraction_train,
             "local_epochs": context.run_config.get("local-epochs", 12),

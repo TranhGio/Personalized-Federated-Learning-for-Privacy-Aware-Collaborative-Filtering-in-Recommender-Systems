@@ -261,10 +261,16 @@ def main(grid: Grid, context: Context) -> None:
         )
         print(f"  Early stopping: Enabled (patience={early_stopping_patience}, metric={early_stopping_metric})")
 
+    # run_id materialized EARLY so W&B config carries it (joinability with the
+    # results/manifest artifacts; run-id audit follow-up). The BSL-08 manifest
+    # block below reuses this same value.
+    run_id = generate_run_id()
+
     # Initialize Weights & Biases if enabled
     wandb_enabled = context.run_config.get("wandb-enabled", False)
     if wandb_enabled:
         wandb_config = {
+            "run_id": run_id,
             "num_rounds": num_rounds,
             "fraction_train": fraction_train,
             "local_epochs": context.run_config.get("local-epochs", 5),
@@ -855,8 +861,8 @@ def main(grid: Grid, context: Context) -> None:
 
     # =========================================================================
     # BSL-08: protocol fingerprint manifest (FND-07 + D-15 double-write).
+    # run_id was materialized early (before W&B init) — reuse it here.
     # =========================================================================
-    run_id = generate_run_id()
     # Verify the bundle ONCE; raises if tampered. Reads fingerprints from foundation_index.json.
     foundation_idx = verify_bundle(data_derived())
     # raw_data_hash + builder_version live on the SplitManifest (single source of truth per IMP-2).
