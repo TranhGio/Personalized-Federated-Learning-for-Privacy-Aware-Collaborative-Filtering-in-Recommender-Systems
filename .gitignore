@@ -57,3 +57,5 @@ htmlcov/
 !results/**/*.json
 .claude/
 pal-mcp-server/
+# W&B local run artifacts (repo-root) — multi-hundred-MB logs, blocked GitHub push 2026-06-10
+wandb/
