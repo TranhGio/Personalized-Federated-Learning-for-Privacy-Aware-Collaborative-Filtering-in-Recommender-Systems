@@ -1,0 +1,14 @@
+{
+  "schema": "eval_validity/1",
+  "module": "baseline",
+  "run_id": "TEST",
+  "fix_commit": null,
+  "poisoned_paths_if_invalid": [
+    "final_metrics.best",
+    "_manifest.metrics.best"
+  ],
+  "status": "diagnostics_only",
+  "reason": "no results.json (incomplete/aborted run)",
+  "generated_at": "2026-06-10T08:17:52+00:00",
+  "generator_head": "70a92bd"
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "eval_validity/1",
+  "module": "baseline",
+  "run_id": "20260429-144112-33c3e9",
+  "fix_commit": null,
+  "poisoned_paths_if_invalid": [
+    "final_metrics.best",
+    "_manifest.metrics.best"
+  ],
+  "effective_checkpoint_rule": "best_round_restore",
+  "git_commit": "663d3980f",
+  "status": "diagnostics_only",
+  "reason": "BasicMF clamp artifact (NDCG@10==1.0)",
+  "generated_at": "2026-06-10T08:17:52+00:00",
+  "generator_head": "70a92bd"
+}

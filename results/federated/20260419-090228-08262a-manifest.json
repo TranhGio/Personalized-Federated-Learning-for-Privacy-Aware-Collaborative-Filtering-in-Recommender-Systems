@@ -1,0 +1,32 @@
+{
+  "builder_version": "1.0.0",
+  "checkpoint_rule": "best_round",
+  "exclusion_sha256": "b5a670c8e8717705caaef5ceb0932604f16997353908d6082de000aaeafc6491",
+  "flwr_version": "1.24.0",
+  "foundation_contract_sha256": "fe181dafe6f791d6679b08fdf6a4ad88f17ea3a7cce98df7f491d1c96a14233a",
+  "fraction_eval": 1.0,
+  "fraction_train": 0.1,
+  "git_commit": "87b751d10c35a07259a07ddf47911bc56a14071b",
+  "mapping_sha256": "0cffcdde64c654736bb2585a3653515866c92522bf97fefdacd1a02fd021bb48",
+  "mode": "benchmark_cross_device",
+  "module": "baseline",
+  "num_eval_negatives": 99,
+  "num_supernodes": 6040,
+  "num_train_negatives": 4,
+  "overrides": {
+    "checkpoint_rule": "best_round_restore",
+    "embedding_dim": 128,
+    "fraction_train": 0.01,
+    "lr": 0.005,
+    "num_server_rounds": 2
+  },
+  "partition_mode": "natural",
+  "primary_evaluator": "sampled_loo_99",
+  "raw_data_hash": "12e070145249ff1634eb2d58a888ea480be1d419a784e3b264bba5421bdaa636",
+  "run_id": "20260419-090228-08262a",
+  "run_seed": 42,
+  "schema_version": 1,
+  "split_hash": "5685bed7e4b650807e58a49e25ea611cdef82444a034bdf105e46aa3755284d6",
+  "torch_version": "2.9.1+cu128",
+  "weight_policy": "num_positives"
+}

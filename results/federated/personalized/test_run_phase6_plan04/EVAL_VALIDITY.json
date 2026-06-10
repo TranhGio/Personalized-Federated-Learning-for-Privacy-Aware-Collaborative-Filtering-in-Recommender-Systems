@@ -1,0 +1,14 @@
+{
+  "schema": "eval_validity/1",
+  "module": "personalized",
+  "run_id": "test_run_phase6_plan04",
+  "fix_commit": "3a393fb",
+  "poisoned_paths_if_invalid": [
+    "final_metrics.best",
+    "_manifest.metrics.best"
+  ],
+  "status": "diagnostics_only",
+  "reason": "no results.json (incomplete/aborted run)",
+  "generated_at": "2026-06-10T08:17:52+00:00",
+  "generator_head": "70a92bd"
+}

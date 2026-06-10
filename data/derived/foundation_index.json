@@ -1,0 +1,9 @@
+{
+  "builder_version": "1.0.0",
+  "created_at": "2026-04-19T03:16:46Z",
+  "exclusion_sha256": "b5a670c8e8717705caaef5ceb0932604f16997353908d6082de000aaeafc6491",
+  "foundation_contract_sha256": "fe181dafe6f791d6679b08fdf6a4ad88f17ea3a7cce98df7f491d1c96a14233a",
+  "mapping_sha256": "0cffcdde64c654736bb2585a3653515866c92522bf97fefdacd1a02fd021bb48",
+  "schema_version": 1,
+  "split_hash": "5685bed7e4b650807e58a49e25ea611cdef82444a034bdf105e46aa3755284d6"
+}
