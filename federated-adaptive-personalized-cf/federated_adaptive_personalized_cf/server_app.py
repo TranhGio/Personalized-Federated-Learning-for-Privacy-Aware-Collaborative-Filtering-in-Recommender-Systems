@@ -1214,7 +1214,21 @@ def main(grid: Grid, context: Context) -> None:
         eval_node_ids = sorted(partition_to_node_id.values())
         extra_eval_messages = []
         for nid in eval_node_ids:
-            extra_eval_config_dict: Dict[str, Any] = {"lr": lr}
+            # BUG FIX (run-id audit, mirrors pfedrec 01d8b72): the D-06 full-pop
+            # eval MUST stamp run_id/reuse_cache so the client loads each user's
+            # cached LOCAL state (user_embeddings, PersonalMLP, fusion,
+            # logit_alpha) from .embedding_cache/{run_id}/ — matching the
+            # in-loop eval config above. Without run_id the client fell back to
+            # run_id="default" (nonexistent dir) and scored every user with
+            # COLD local state — for the dual model the deep local head is the
+            # whole scorer, so the D-06 best block cratered to ~0.05 even when
+            # the D-06.7 calibration had just written warm heads to {run_id}/.
+            extra_eval_config_dict: Dict[str, Any] = {
+                "lr": lr,
+                "round_num": int(final_eval_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+            }
             # PITFALL 4: attach the restored prototype, mirroring in-loop eval
             # ConfigRecord construction at server_app.py lines 814-815.
             if final_global_prototype is not None:
