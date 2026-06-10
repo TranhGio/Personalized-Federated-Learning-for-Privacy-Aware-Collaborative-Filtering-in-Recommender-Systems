@@ -479,3 +479,82 @@ def test_check_only_does_not_write_files(tmp_path: Path) -> None:
     # Output directory should NOT exist (or should be empty).
     if output_dir.exists():
         assert list(output_dir.iterdir()) == [], "--check-only must not write any files"
+
+
+# ============================================================================
+# Eval-validity guard + per-cell dedupe (run-id audit, 2026-06-10)
+# ============================================================================
+
+
+def _write_sidecar(results_root: Path, module: str, run_id: str, payload: Dict[str, Any]) -> None:
+    """Write an EVAL_VALIDITY.json AFTER results.json so it is mtime-fresh."""
+    run_dir = results_root / "federated" / module / run_id
+    (run_dir / "EVAL_VALIDITY.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_sidecar_invalid_status_skipped(tmp_path: Path) -> None:
+    """status != valid -> the record never enters the collection."""
+    _write_synthetic_run(
+        tmp_path, "adaptive", "20260506-074753-bc134c",
+        thesis_run_label="main", run_seed=42,
+        results_data=_make_results_data(ndcg_overall=0.0563, hr_overall=0.12),
+    )
+    _write_sidecar(tmp_path, "adaptive", "20260506-074753-bc134c",
+                   {"status": "invalid_cold_eval", "reason": "predates fix"})
+    assert collect_thesis_results(tmp_path) == []
+
+
+def test_backfill_superseded_by_real_run(tmp_path: Path) -> None:
+    """A real manifest-labeled run at the same (module,label,seed) supersedes a
+    backfilled provisional record — no double-count in aggregate_by_seed."""
+    # Backfilled provisional run: empty manifest label, sidecar provides it.
+    _write_synthetic_run(
+        tmp_path, "pfedrec", "20260608-071106-ef41ab",
+        thesis_run_label="", run_seed=42,
+        results_data=_make_results_data(ndcg_overall=0.3352, hr_overall=0.59),
+    )
+    _write_sidecar(tmp_path, "pfedrec", "20260608-071106-ef41ab",
+                   {"status": "valid", "thesis_run_label_backfill": "main",
+                    "run_seed_backfill": 42})
+    # Real sweep run, same cell.
+    _write_synthetic_run(
+        tmp_path, "pfedrec", "20260701-000000-real42",
+        thesis_run_label="main", run_seed=42,
+        results_data=_make_results_data(ndcg_overall=0.40, hr_overall=0.65),
+    )
+    _write_sidecar(tmp_path, "pfedrec", "20260701-000000-real42", {"status": "valid"})
+    records = collect_thesis_results(tmp_path)
+    assert len(records) == 1
+    assert records[0].results_path.parent.name == "20260701-000000-real42"
+    assert records[0].backfilled is False
+    agg = aggregate_by_seed(records, "sampled_ndcg@10")
+    mean, _std, n = agg[("pfedrec", "main")]
+    assert n == 1 and abs(mean - 0.40) < 1e-9  # not (0.3352+0.40)/2
+
+
+def test_backfill_used_when_no_real_run(tmp_path: Path) -> None:
+    """Without a real run, the backfilled provisional cell IS collected."""
+    _write_synthetic_run(
+        tmp_path, "pfedrec", "20260608-071106-ef41ab",
+        thesis_run_label="", run_seed=42,
+        results_data=_make_results_data(ndcg_overall=0.3352, hr_overall=0.59),
+    )
+    _write_sidecar(tmp_path, "pfedrec", "20260608-071106-ef41ab",
+                   {"status": "valid", "thesis_run_label_backfill": "main",
+                    "run_seed_backfill": 42})
+    records = collect_thesis_results(tmp_path)
+    assert len(records) == 1 and records[0].backfilled is True
+
+
+def test_strict_validity_fails_on_missing_sidecar(tmp_path: Path) -> None:
+    """strict_validity=True -> SystemExit when a thesis-labeled run has no sidecar."""
+    _write_synthetic_run(
+        tmp_path, "baseline", "20260701-000000-nosc42",
+        thesis_run_label="main", run_seed=42,
+        results_data=_make_results_data(ndcg_overall=0.20, hr_overall=0.36),
+    )
+    with pytest.raises(SystemExit):
+        collect_thesis_results(tmp_path, strict_validity=True)
+    # Non-strict: collected, but flagged on stderr (legacy passthrough).
+    records = collect_thesis_results(tmp_path, strict_validity=False)
+    assert len(records) == 1

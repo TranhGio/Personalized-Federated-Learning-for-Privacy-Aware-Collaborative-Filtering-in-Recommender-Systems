@@ -86,6 +86,11 @@ class ThesisResult:
     run_seed: int
     results_path: Path
     results_data: Dict[str, Any]
+    # True when the label or seed came from an EVAL_VALIDITY.json backfill
+    # (provisional pre-sweep cell) rather than the run's own manifest. Used by
+    # the per-cell dedupe: a real sweep run at the same (module, label, seed)
+    # supersedes a backfilled record.
+    backfilled: bool = False
 
 
 # ============================================================================
@@ -93,14 +98,35 @@ class ThesisResult:
 # ============================================================================
 
 
-def collect_thesis_results(results_root: Path) -> List[ThesisResult]:
+def collect_thesis_results(results_root: Path, strict_validity: bool = False) -> List[ThesisResult]:
     """Glob ``results_root/federated/<module>/*/results.json`` and filter to thesis runs.
 
     Filter: ``_manifest.thesis_run_label != ""`` AND ``_manifest.run_seed`` in canonical seed set.
     Pitfall 7 invariant: legacy Phase-6 manifests (schema_version <= 2) are filtered out
     naturally by the empty-string default of ``thesis_run_label``.
+
+    Eval-validity guard (run-id audit, 2026-06-10): if an ``EVAL_VALIDITY.json``
+    sidecar (written by ``scripts/thesis/eval_validity.py``) is present next to
+    results.json, runs whose ``status != "valid"`` are SKIPPED — their
+    ``final_metrics.best`` block was produced by a cold (run_id-less) D-06 eval
+    or under a non-matrix protocol. The sidecar may also carry
+    ``thesis_run_label_backfill`` / ``run_seed_backfill`` for provisional
+    pre-sweep cells; backfills never override a non-empty manifest label.
+
+    Missing/stale sidecars: a thesis-labeled record whose sidecar is absent or
+    older than its results.json is UNVALIDATED — the guard cannot vouch for it.
+    Unvalidated records are listed in a stderr WARN block; with
+    ``strict_validity=True`` their presence is a hard failure (use after every
+    sweep wave: regenerate sidecars first).
+
+    Per-cell dedupe: within one (module, thesis_run_label, run_seed) cell, a
+    record whose label+seed come from its own manifest supersedes a backfilled
+    record (provisional cells yield to real sweep runs); ties keep the
+    lexicographically-latest run dir with a WARN. Without this, backfills would
+    double-count into ``aggregate_by_seed``'s per-cell value list.
     """
     out: List[ThesisResult] = []
+    unvalidated: List[Path] = []
     seeds = set(THESIS_SEEDS)
     for module in ("baseline", "personalized", "adaptive", "pfedrec"):
         module_dir = results_root / "federated" / module
@@ -113,14 +139,47 @@ def collect_thesis_results(results_root: Path) -> List[ThesisResult]:
             except (OSError, json.JSONDecodeError) as e:
                 print(f"[WARN] Skipping unreadable results.json: {results_path} ({e})", file=sys.stderr)
                 continue
+            sidecar: Dict[str, Any] = {}
+            sidecar_missing_or_stale = False
+            sidecar_path = results_path.parent / "EVAL_VALIDITY.json"
+            if sidecar_path.exists():
+                try:
+                    with open(sidecar_path, "r", encoding="utf-8") as f:
+                        sidecar = json.load(f)
+                except (OSError, json.JSONDecodeError) as e:
+                    print(f"[WARN] Unreadable EVAL_VALIDITY.json (treating run as unvalidated): {sidecar_path} ({e})", file=sys.stderr)
+                    sidecar_missing_or_stale = True
+                else:
+                    try:
+                        if sidecar_path.stat().st_mtime < results_path.stat().st_mtime:
+                            # Sidecar predates the results it vouches for.
+                            sidecar_missing_or_stale = True
+                    except OSError:
+                        pass
+            else:
+                sidecar_missing_or_stale = True
+            if sidecar and not sidecar_missing_or_stale and sidecar.get("status") != "valid":
+                print(
+                    f"[INFO] Skipping {results_path.parent.name}: eval-validity status="
+                    f"{sidecar.get('status')} ({sidecar.get('reason', '')[:60]})",
+                    file=sys.stderr,
+                )
+                continue
             manifest = data.get("_manifest", {})
-            label = manifest.get("thesis_run_label", "")
+            manifest_label = manifest.get("thesis_run_label", "")
+            label = manifest_label or sidecar.get("thesis_run_label_backfill", "")
             seed = manifest.get("run_seed", -1)
             try:
                 seed_int = int(seed)
             except (TypeError, ValueError):
                 continue
+            seed_backfilled = False
+            if seed_int not in seeds and "run_seed_backfill" in sidecar:
+                seed_int = int(sidecar["run_seed_backfill"])
+                seed_backfilled = True
             if label and seed_int in seeds:
+                if sidecar_missing_or_stale:
+                    unvalidated.append(results_path.parent)
                 out.append(ThesisResult(
                     module=module,
                     thesis_run_label=str(label),
@@ -129,8 +188,57 @@ def collect_thesis_results(results_root: Path) -> List[ThesisResult]:
                     run_seed=seed_int,
                     results_path=results_path,
                     results_data=data,
+                    backfilled=(not manifest_label) or seed_backfilled,
                 ))
-    return out
+
+    if unvalidated:
+        print(
+            f"[WARN] {len(unvalidated)} thesis-labeled run(s) have NO (or stale) "
+            f"EVAL_VALIDITY.json — the cold-eval guard cannot vouch for them:",
+            file=sys.stderr,
+        )
+        for p in unvalidated:
+            print(f"  - {p}", file=sys.stderr)
+        print(
+            "  Regenerate sidecars: python scripts/thesis/eval_validity.py",
+            file=sys.stderr,
+        )
+        if strict_validity:
+            raise SystemExit(1)
+
+    # Per-cell dedupe (real-over-backfilled).
+    by_cell: Dict[Tuple[str, str, int], ThesisResult] = {}
+    for rec in out:
+        cell = (rec.module, rec.thesis_run_label, rec.run_seed)
+        prev = by_cell.get(cell)
+        if prev is None:
+            by_cell[cell] = rec
+        elif prev.backfilled and not rec.backfilled:
+            print(
+                f"[INFO] {cell}: real run {rec.results_path.parent.name} supersedes "
+                f"backfilled {prev.results_path.parent.name}",
+                file=sys.stderr,
+            )
+            by_cell[cell] = rec
+        elif rec.backfilled and not prev.backfilled:
+            print(
+                f"[INFO] {cell}: real run {prev.results_path.parent.name} supersedes "
+                f"backfilled {rec.results_path.parent.name}",
+                file=sys.stderr,
+            )
+        else:
+            keep, drop = (
+                (rec, prev)
+                if rec.results_path.parent.name > prev.results_path.parent.name
+                else (prev, rec)
+            )
+            print(
+                f"[WARN] {cell}: duplicate records with equal provenance; keeping "
+                f"{keep.results_path.parent.name}, dropping {drop.results_path.parent.name}",
+                file=sys.stderr,
+            )
+            by_cell[cell] = keep
+    return list(by_cell.values())
 
 
 # ============================================================================
@@ -649,10 +757,11 @@ def run_aggregator(
     results_root: Path,
     output_dir: Path,
     check_only: bool = False,
+    strict_validity: bool = False,
 ) -> int:
     """Top-level orchestration. Returns process exit code."""
     print(f"[INFO] Aggregator: results_root={results_root} output_dir={output_dir}")
-    records = collect_thesis_results(results_root)
+    records = collect_thesis_results(results_root, strict_validity=strict_validity)
     print(f"[INFO] Collected {len(records)} thesis-tagged result records.")
 
     # D-20 missing-cell check.
@@ -712,6 +821,15 @@ def main(argv: Sequence[str]) -> int:
         action="store_true",
         help="Verify expected-cell-set match WITHOUT writing files (pre-aggregation gate).",
     )
+    parser.add_argument(
+        "--strict-validity",
+        action="store_true",
+        help=(
+            "Hard-fail if any thesis-labeled run lacks a fresh EVAL_VALIDITY.json "
+            "sidecar (run scripts/thesis/eval_validity.py first). Use after every "
+            "sweep wave so cold-eval runs can never slip into the claim tables."
+        ),
+    )
     args = parser.parse_args(list(argv))
     results_root = args.results_root if args.results_root is not None else (_REPO_ROOT / "results")
     output_dir = args.output_dir if args.output_dir is not None else (results_root / "federated" / "_thesis")
@@ -719,6 +837,7 @@ def main(argv: Sequence[str]) -> int:
         results_root=results_root,
         output_dir=output_dir,
         check_only=args.check_only,
+        strict_validity=args.strict_validity,
     )
 
 
