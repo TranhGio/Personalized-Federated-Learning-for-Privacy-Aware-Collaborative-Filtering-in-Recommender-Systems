@@ -516,7 +516,16 @@ def train(msg: Message, context: Context):
     # Step 4: Train the model — thread run_seed / user_idx / round_num /
     # exclude_items / rng into task.train so every stochastic step routes
     # through the seeded RNG (FND-06) and excludes the held-out positive.
-    local_epochs = int(context.run_config.get("local-epochs", profile.local_epochs))
+    # D-06.7 (calibration port, mirrors pfedrec 01d8b72): the server's
+    # end-of-training calibration pass stamps `local_epochs_override` into
+    # msg_config to force its epoch count. Normal training rounds never set it,
+    # so this falls back to the run-config / mode-profile default.
+    local_epochs = int(
+        msg_config.get(
+            "local_epochs_override",
+            context.run_config.get("local-epochs", profile.local_epochs),
+        )
+    )
     lr = float(msg_config.get("lr", profile.lr))
     num_train_negatives = int(context.run_config.get("num-negatives", profile.num_train_negatives))
     train_loss = train_fn(

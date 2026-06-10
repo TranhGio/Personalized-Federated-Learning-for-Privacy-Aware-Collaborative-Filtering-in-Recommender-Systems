@@ -99,6 +99,19 @@ eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out posit
 checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; restore at final evaluation.
 reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs (default: per-run cache).
 
+# D-06.7 calibration (port from pfedrec 01d8b72, for final-matrix protocol
+# uniformity): when enabled, after best-round restore and before the D-06
+# full-pop eval, broadcast 1 local epoch to ALL partitions to realign each
+# user's local user_embeddings/user_bias with the restored best-round globals.
+# Default false → no effect on existing runs.
+# CAVEAT (moving-item, unlike pfedrec): the BPR-MF train path has a single
+# optimizer, so there is NO freeze-items variant — the client's item-embedding
+# copy drifts during the calibration epoch. That drifted copy is DISCARDED
+# (only user_embeddings/user_bias are cached); the shallow local state
+# realigns in 1 epoch regardless.
+final-calibration-enabled = false   # When true, run a calibration pass before D-06 eval
+final-calibration-epochs = 1        # Local epochs per client during calibration (1-2 typical)
+
 # Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
 # Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
 # fuse_dicts requires the keys to exist with default values — declaring here is the contract.

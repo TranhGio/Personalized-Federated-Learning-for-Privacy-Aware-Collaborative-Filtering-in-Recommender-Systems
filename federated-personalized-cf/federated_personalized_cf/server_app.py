@@ -323,6 +323,16 @@ def main(grid: Grid, context: Context) -> None:
     )
     reuse_cache_flag: bool = bool(context.run_config.get("reuse-cache", False))  # D-09
 
+    # D-06.7 calibration knobs (port from pfedrec 01d8b72) — parsed HERE so a
+    # malformed --run-config value fails at startup, not after a 30h run.
+    # Consumed by the D-06.7 block before the D-06 eval.
+    final_calibration_enabled: bool = bool(
+        context.run_config.get("final-calibration-enabled", False)
+    )
+    final_calibration_epochs: int = int(
+        context.run_config.get("final-calibration-epochs", 1)
+    )
+
     # Materialize the run_id early so the D-13 cold-start probe resolves to
     # the same cache dir the client will write into this round.
     run_id = str(context.run_config.get("run-id", "")) or generate_run_id()
@@ -780,6 +790,61 @@ def main(grid: Grid, context: Context) -> None:
         arrays = best_arrays
     else:
         print(f"\n[CHECKPOINT] checkpoint_rule={checkpoint_rule!r}: keeping last-round params")
+
+    # =========================================================================
+    # D-06.7 (calibration-uniformity port from pfedrec 01d8b72): optional
+    # end-of-training calibration pass. When `final-calibration-enabled=true`,
+    # after best-round restore and BEFORE the D-06 full-pop eval, broadcast
+    # `final-calibration-epochs` local epoch(s) of training to ALL partitions
+    # against the restored best-round globals, so each user re-saves LOCAL
+    # user_embeddings/user_bias aligned to the item embeddings D-06 evaluates
+    # with (users not sampled in the best round otherwise carry a stale
+    # vintage). Returned params are DISCARDED — server globals stay restored.
+    # proximal_mu=0: we are aligning locals to the restored globals, not
+    # constraining the globals. NOTE: unlike pfedrec there is no freeze-items
+    # variant — the BPR-MF train path has a single optimizer, and the client's
+    # locally-drifted global copy is discarded; the shallow user-embedding
+    # local state realigns in 1 epoch. Default false → zero effect on existing
+    # runs. Required so the final-matrix protocol can enable calibration
+    # uniformly across all four modules.
+    # =========================================================================
+    if (
+        final_calibration_enabled
+        and checkpoint_rule in ("best_round_restore", "best_round")
+        and best_round_num > 0
+    ):
+        calib_round_index = actual_rounds + 1
+        print(
+            f"\n[D-06.7] Broadcasting end-of-training calibration pass to all "
+            f"{len(partition_to_node_id)} partitions "
+            f"(epochs={final_calibration_epochs})..."
+        )
+        calib_node_ids = sorted(partition_to_node_id.values())
+        calib_messages = []
+        for nid in calib_node_ids:
+            calib_config = ConfigRecord({
+                "lr": lr,
+                "proximal_mu": 0.0,
+                "round_num": int(calib_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+                "local_epochs_override": int(final_calibration_epochs),
+            })
+            content = RecordDict({"arrays": arrays, "config": calib_config})
+            calib_messages.append(grid.create_message(
+                content=content,
+                message_type="train",
+                dst_node_id=nid,
+                group_id=f"calibration_round_{calib_round_index}",
+            ))
+        calib_responses = list(grid.send_and_receive(calib_messages))
+        calib_success = sum(1 for r in calib_responses if not r.has_error())
+        calib_failed = len(calib_responses) - calib_success
+        print(
+            f"[D-06.7] Calibration pass complete: {calib_success}/{len(calib_messages)} "
+            f"clients succeeded ({calib_failed} errors). "
+            f"Server-side globals UNCHANGED — calibration is client-cache-only."
+        )
 
     # =========================================================================
     # D-06: extra eval round on the restored best-round state. All nodes
