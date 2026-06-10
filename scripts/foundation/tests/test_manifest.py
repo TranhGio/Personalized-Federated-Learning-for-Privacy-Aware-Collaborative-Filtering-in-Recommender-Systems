@@ -414,3 +414,38 @@ def test_write_manifest_sibling_custom_name(tmp_path: Path) -> None:
     assert sibling.exists()
     payload = json.loads(sibling.read_text())
     assert payload["schema_version"] == 2
+
+
+def test_effective_values_overrides_first() -> None:
+    """Run-id audit 2026-06-10: top-level protocol fields record EFFECTIVE values.
+
+    - snake_case override keys matching a manifest field take precedence over
+      the ModeProfile default;
+    - kebab-case keys do NOT match (recorded in ``overrides`` verbatim only);
+    - override keys that are not manifest fields (e.g. ``lr``) never create or
+      change a top-level field.
+    """
+    overrides = {
+        "checkpoint_rule": "last_round",     # snake_case -> effective
+        "fraction_eval": -1.0,                # sentinel recorded as configured
+        "num-supernodes": 100,                # kebab-case -> ignored by _eff
+        "lr": 0.005,                          # non-manifest key -> overrides only
+    }
+    m = build_run_manifest(
+        run_id=generate_run_id(),
+        mode_profile=_StubProfile(),
+        run_seed=42,
+        mapping_sha256="m" * 64,
+        split_hash="s" * 64,
+        exclusion_sha256="e" * 64,
+        foundation_contract_sha256="c" * 64,
+        raw_data_hash="r" * 64,
+        builder_version="1.0.0",
+        overrides=overrides,
+        module="baseline",
+    )
+    assert m.checkpoint_rule == "last_round"          # effective, not "best_round"
+    assert m.fraction_eval == -1.0                    # configured sentinel
+    assert m.num_supernodes == 6040                   # kebab key ignored
+    assert not hasattr(m, "lr")                       # no field invented
+    assert m.overrides == overrides                   # verbatim audit copy

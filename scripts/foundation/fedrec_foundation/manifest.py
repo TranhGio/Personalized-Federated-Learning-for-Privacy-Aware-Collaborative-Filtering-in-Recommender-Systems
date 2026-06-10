@@ -26,6 +26,15 @@ from typing import Any, Dict, Optional
 from fedrec_foundation.atomic import atomic_write_json
 
 # Bump when the manifest schema gains/loses a field or changes semantics.
+# NOTE: v3 manifests exist in TWO flavors. Manifests written before 2026-06-10
+# record ModeProfile DEFAULTS in the top-level protocol fields (overrides only
+# in ``overrides``); manifests written after record EFFECTIVE values
+# (overrides-first, see ``build_run_manifest``). Consumers reading old
+# manifests must resolve overrides-first themselves (as
+# scripts/thesis/eval_validity.py does). Also: all four module pyprojects set
+# checkpoint-rule="best_round_restore" while the mode profiles say
+# "best_round", so every new effective-value manifest carries the
+# "best_round_restore" spelling — consumers must match BOTH spellings.
 RUN_MANIFEST_SCHEMA_VERSION: int = 3  # Phase 7 D-22: adds thesis_run_label + ablation_dimension + ablation_value
 
 
@@ -36,11 +45,17 @@ class RunManifest:
     Field groupings
     ---------------
     - Bookkeeping: ``schema_version``, ``run_id``.
-    - Mode + locked config (13 fields from the ModeProfile, per D-16):
+    - Mode + locked config (13 fields, EFFECTIVE values — overrides take
+      precedence over the ModeProfile defaults since 2026-06-10; see
+      :func:`build_run_manifest`):
       ``mode``, ``num_supernodes``, ``partition_mode``, ``fraction_train``,
       ``fraction_eval``, ``weight_policy``, ``primary_evaluator``,
       ``num_train_negatives``, ``num_eval_negatives``, ``run_seed``,
       ``checkpoint_rule``.
+      CAVEAT: ``fraction_eval`` is the CONFIGURED value, not the resolved
+      runtime fraction — the adaptive module uses the sentinel ``-1.0`` to
+      mean "mirror fraction_train" (resolved in its server_app at startup),
+      so adaptive manifests legitimately record ``-1.0``.
     - Foundation fingerprints (IMP-2 + D-16): ``mapping_sha256``,
       ``split_hash``, ``exclusion_sha256``, ``foundation_contract_sha256``,
       ``raw_data_hash``, ``builder_version``.
@@ -214,20 +229,29 @@ def build_run_manifest(
     import flwr
     import torch
 
+    # Effective-value fix (run-id audit 2026-06-10): top-level manifest fields
+    # must record the EFFECTIVE protocol, not the mode-profile default —
+    # consumers reading manifest["checkpoint_rule"] were misclassifying runs
+    # whose override changed it (e.g. last_round runs recorded as best_round).
+    # ``overrides`` is still stored verbatim below for audit; here it takes
+    # precedence over the profile for the overlapping snake_case keys.
+    def _eff(field: str, default: Any) -> Any:
+        return overrides.get(field, default)
+
     return RunManifest(
         schema_version=RUN_MANIFEST_SCHEMA_VERSION,
         run_id=run_id,
         mode=mode_profile.mode,
-        num_supernodes=mode_profile.num_supernodes,
-        partition_mode=mode_profile.partition_mode,
-        fraction_train=mode_profile.fraction_train,
-        fraction_eval=mode_profile.fraction_eval,
-        weight_policy=mode_profile.weight_policy,
-        primary_evaluator=mode_profile.primary_evaluator,
-        num_train_negatives=mode_profile.num_train_negatives,
-        num_eval_negatives=mode_profile.num_eval_negatives,
+        num_supernodes=_eff("num_supernodes", mode_profile.num_supernodes),
+        partition_mode=_eff("partition_mode", mode_profile.partition_mode),
+        fraction_train=_eff("fraction_train", mode_profile.fraction_train),
+        fraction_eval=_eff("fraction_eval", mode_profile.fraction_eval),
+        weight_policy=_eff("weight_policy", mode_profile.weight_policy),
+        primary_evaluator=_eff("primary_evaluator", mode_profile.primary_evaluator),
+        num_train_negatives=_eff("num_train_negatives", mode_profile.num_train_negatives),
+        num_eval_negatives=_eff("num_eval_negatives", mode_profile.num_eval_negatives),
         run_seed=run_seed,
-        checkpoint_rule=mode_profile.checkpoint_rule,
+        checkpoint_rule=_eff("checkpoint_rule", mode_profile.checkpoint_rule),
         mapping_sha256=mapping_sha256,
         split_hash=split_hash,
         exclusion_sha256=exclusion_sha256,
