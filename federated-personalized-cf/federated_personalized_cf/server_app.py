@@ -801,7 +801,19 @@ def main(grid: Grid, context: Context) -> None:
         eval_node_ids = sorted(partition_to_node_id.values())
         extra_eval_messages = []
         for nid in eval_node_ids:
-            eval_config = ConfigRecord({"lr": lr})
+            # BUG FIX (run-id audit, mirrors pfedrec 01d8b72): the D-06 full-pop
+            # eval MUST stamp run_id/reuse_cache so the client loads each user's
+            # cached LOCAL state (user_embeddings/user_bias) from
+            # .embedding_cache/{run_id}/ — matching the in-loop eval config
+            # above. Without run_id the client fell back to run_id="default"
+            # (nonexistent dir) and scored every user with COLD Xavier-init
+            # local rows, understating the canonical best block.
+            eval_config = ConfigRecord({
+                "lr": lr,
+                "round_num": int(final_eval_round_index),
+                "run_id": str(run_id),
+                "reuse_cache": bool(reuse_cache_flag),
+            })
             content = RecordDict({"arrays": arrays, "config": eval_config})
             extra_eval_messages.append(grid.create_message(
                 content=content,
