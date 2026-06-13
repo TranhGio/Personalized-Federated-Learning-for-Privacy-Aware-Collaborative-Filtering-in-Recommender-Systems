@@ -629,6 +629,9 @@ def main(grid: Grid, context: Context) -> None:
     # D-27: Restore best-round global params before running the final centralized eval.
     # Canonical reported metric is best_* per STATE.md; last-round is not comparable.
     # =========================================================================
+    # Persistence (re-eval enablement, 2026-06-12): keep the LAST-round globals
+    # before the restore overwrites `arrays`; both vintages saved at results write.
+    last_arrays = arrays
     if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
         print(
             f"\n[CHECKPOINT] Restoring global params from best round {best_round_num} "
@@ -917,6 +920,14 @@ def main(grid: Grid, context: Context) -> None:
         results_filename = run_dir / "results.json"  # D-04 clean filename
         atomic_write_json(str(results_filename), results_data)
         sibling_path = write_manifest_sibling(manifest, results_filename, sibling_name="manifest.json")
+        # Persistence (re-eval enablement, 2026-06-12): save restored-BEST +
+        # LAST-round GLOBAL params so finished runs stay re-evaluable offline.
+        try:
+            torch.save(arrays.to_torch_state_dict(), run_dir / "global_state_best.pt")
+            torch.save(last_arrays.to_torch_state_dict(), run_dir / "global_state_last.pt")
+            print(f"  Global state saved: {run_dir}/global_state_{{best,last}}.pt")
+        except Exception as _pe:  # noqa: BLE001
+            print(f"[WARN] global-state persistence failed (non-fatal): {_pe}")
     else:  # cross_silo_legacy — preserved per D-03
         legacy_dir = repo_root() / "results" / "federated"
         legacy_dir.mkdir(parents=True, exist_ok=True)

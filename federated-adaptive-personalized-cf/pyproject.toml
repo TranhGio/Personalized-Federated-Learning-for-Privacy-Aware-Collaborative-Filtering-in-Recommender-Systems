@@ -215,6 +215,7 @@ weight-policy = "num_positives"
 eval-num-negatives = 99
 checkpoint-rule = "best_round_restore"
 reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs
+strict-d06-cache = false  # fail-closed D-06 eval guard (claim runs set true via sweep)
 
 # =============================================================================
 # Bug 3 / Alt-A: end-of-training calibration pass (D-06.7)

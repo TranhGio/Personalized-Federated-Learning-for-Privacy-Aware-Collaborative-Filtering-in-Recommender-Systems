@@ -51,6 +51,7 @@ weight-policy = "uniform"         # D-24 — matches engine.py:81 (uniform mean 
 reuse-cache = false               # D-18 default; --run-config "reuse-cache=true" opt-in
 eval-num-negatives = 99           # NCF protocol (FND-04)
 checkpoint-rule = "best_round_restore"  # D-13 best-round monitor against sampled_ndcg@10
+strict-d06-cache = false          # fail-closed D-06 eval guard (claim runs set true via sweep)
 
 # C3 / D-06.7 (Alt-A mirror): end-of-training calibration pass. When enabled,
 # after best-round-restore and before D-06 full-pop eval, broadcast ONE local

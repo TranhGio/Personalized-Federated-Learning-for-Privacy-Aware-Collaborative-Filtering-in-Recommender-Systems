@@ -1082,6 +1082,9 @@ def main(grid: Grid, context: Context) -> None:
     # BEFORE the final broadcast so clients receiving the final global_prototype
     # see the RESTORED prototype, not last-round drift.
     # =========================================================================
+    # Persistence (re-eval enablement, 2026-06-12): keep the LAST-round globals
+    # before the restore overwrites `arrays`; both vintages saved at results write.
+    last_arrays = arrays
     if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
         print(
             f"\n[CHECKPOINT] Restoring global params snapshot from best round {best_round_num} "
@@ -1212,6 +1215,36 @@ def main(grid: Grid, context: Context) -> None:
             f"prototype_attached={final_global_prototype is not None})..."
         )
 
+        # Fail-closed D-06 guard (post-Job-1 review, 2026-06-12): probe every
+        # partition's cached local state (user emb + PersonalMLP/fusion heads)
+        # BEFORE broadcasting — a missing file means that user would be scored
+        # COLD (the 0.0554-crater bug class; the dual's deep local head is the
+        # whole scorer). Count stamped into the best block; strict-d06-cache=true
+        # aborts. _cold_start_cache_root is already module-anchored here.
+        d06_cache_misses = -1
+        if not reuse_cache_flag:
+            _probe_root = _cold_start_cache_root(run_id, reuse_cache_flag)
+            _missing_pids = [
+                pid for pid in sorted(partition_to_node_id.keys())
+                if not (_probe_root / f"partition_{pid}.pt").exists()
+            ]
+            d06_cache_misses = len(_missing_pids)
+            if d06_cache_misses:
+                print(
+                    f"  [D-06 GUARD] {d06_cache_misses}/{len(partition_to_node_id)} partitions "
+                    f"have NO cached local state under {_probe_root} "
+                    f"(first missing: {_missing_pids[:5]}) — these users would evaluate COLD."
+                )
+                if bool(context.run_config.get("strict-d06-cache", False)):
+                    raise RuntimeError(
+                        f"strict-d06-cache: aborting D-06 eval — "
+                        f"{d06_cache_misses} partitions lack warm local state"
+                    )
+            else:
+                print(f"  [D-06 GUARD] cache probe OK: all {len(partition_to_node_id)} partitions warm")
+        else:
+            print("  [D-06 GUARD] skipped (reuse-cache=true: sig-hash dir not resolvable server-side)")
+
         eval_node_ids = sorted(partition_to_node_id.values())
         extra_eval_messages = []
         for nid in eval_node_ids:
@@ -1272,6 +1305,9 @@ def main(grid: Grid, context: Context) -> None:
                 k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
                 for k, v in (thesis or {}).items()
             }
+            # D-06 guard provenance: -1 = not probed (reuse-cache); 0 = all warm;
+            # >0 = that many users evaluated with cold local state (suspect run).
+            best_round_metrics["d06_cache_misses"] = int(d06_cache_misses)
             print(
                 f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
                 f"{best_round_metrics.get('sampled_ndcg@10')}"
@@ -1540,6 +1576,18 @@ def main(grid: Grid, context: Context) -> None:
         atomic_write_json(str(results_filename), results_data)
         # D-04: clean per-run-dir filename via sibling_name="manifest.json".
         sibling_path = write_manifest_sibling(manifest, results_filename, sibling_name="manifest.json")
+        # Persistence (re-eval enablement, 2026-06-12): save restored-BEST +
+        # LAST-round GLOBAL params (+ the restored prototype) so finished runs
+        # stay re-evaluable offline (p_u/PersonalMLP variant tests).
+        try:
+            torch.save(arrays.to_torch_state_dict(), run_dir / "global_state_best.pt")
+            torch.save(last_arrays.to_torch_state_dict(), run_dir / "global_state_last.pt")
+            _proto = strategy.get_global_prototype()
+            if _proto is not None:
+                np.save(str(run_dir / "best_prototype.npy"), _proto)
+            print(f"  Global state saved: {run_dir}/global_state_{{best,last}}.pt")
+        except Exception as _pe:  # noqa: BLE001
+            print(f"[WARN] global-state persistence failed (non-fatal): {_pe}")
     else:
         # Fallback for any non-cross-device mode that does NOT raise at D-02 guard.
         # Uses repo_root() anchor not module-relative path. D-03 coexistence preserved.

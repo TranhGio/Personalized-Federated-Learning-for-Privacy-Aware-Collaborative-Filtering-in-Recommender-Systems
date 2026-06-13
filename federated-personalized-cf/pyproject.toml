@@ -98,6 +98,7 @@ weight-policy = "num_positives"  # FND-05: aggregation weight policy. Values: un
 eval-num-negatives = 99  # NCF protocol: 99 sampled negatives + 1 held-out positive (sampled_loo_99).
 checkpoint-rule = "best_round_restore"  # D-27: track best sampled_ndcg@10; restore at final evaluation.
 reuse-cache = false  # D-09: set to true to opt into content-hash cache reuse across runs (default: per-run cache).
+strict-d06-cache = false  # fail-closed D-06 eval guard (claim runs set true via sweep)
 
 # D-06.7 calibration (port from pfedrec 01d8b72, for final-matrix protocol
 # uniformity): when enabled, after best-round restore and before the D-06

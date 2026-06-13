@@ -256,7 +256,12 @@ def _cold_start_cache_root(run_id: str, reuse_cache: bool) -> Path:
     Path
         ``Path(".embedding_cache") / run_id`` (for default D-08 behaviour).
     """
-    return Path(".embedding_cache") / run_id
+    # CWD fix (post-Job-1 review, 2026-06-12): the server process CWD is the
+    # repo root (scripts/run.py), but clients write the cache MODULE-LOCAL
+    # (Ray actors run in the app dir) — a bare relative path made the D-13
+    # probe miss every file and report cold_start_rate=1.0 spuriously.
+    # Anchor to the module root: <repo>/federated-personalized-cf/.
+    return Path(__file__).resolve().parents[1] / ".embedding_cache" / run_id
 
 
 @app.main()
@@ -783,6 +788,10 @@ def main(grid: Grid, context: Context) -> None:
     # needs the best-round item embeddings. Final reported headline metrics
     # come from eval_metrics_history[best_round_num] (federated aggregation).
     # =========================================================================
+    # Persistence (re-eval enablement, 2026-06-12): keep a handle on the
+    # LAST-round globals before the best-round restore overwrites `arrays`,
+    # so both vintages can be saved into the run dir at the results write.
+    last_arrays = arrays
     if checkpoint_rule in ("best_round_restore", "best_round") and best_round_num > 0:
         print(
             f"\n[CHECKPOINT] Restoring global params snapshot from best round {best_round_num} "
@@ -864,6 +873,38 @@ def main(grid: Grid, context: Context) -> None:
             f"target nodes={len(partition_to_node_id)})..."
         )
 
+        # Fail-closed D-06 guard (post-Job-1 review, 2026-06-12): probe every
+        # partition's cached local state BEFORE broadcasting. A missing file
+        # means that user would be scored with COLD local state — the silent
+        # bug class behind the 0.0711/0.0554 craters. The miss count is
+        # stamped into the best block (d06_cache_misses); claim runs set
+        # strict-d06-cache=true to ABORT instead of reporting a cold number.
+        # reuse-cache=true uses a sig-hash dir the server cannot resolve —
+        # guard skipped with a notice (probe count = -1).
+        d06_cache_misses = -1
+        if not reuse_cache_flag:
+            _probe_root = _cold_start_cache_root(run_id, reuse_cache_flag)
+            _missing_pids = [
+                pid for pid in sorted(partition_to_node_id.keys())
+                if not (_probe_root / f"partition_{pid}.pt").exists()
+            ]
+            d06_cache_misses = len(_missing_pids)
+            if d06_cache_misses:
+                print(
+                    f"  [D-06 GUARD] {d06_cache_misses}/{len(partition_to_node_id)} partitions "
+                    f"have NO cached local state under {_probe_root} "
+                    f"(first missing: {_missing_pids[:5]}) — these users would evaluate COLD."
+                )
+                if bool(context.run_config.get("strict-d06-cache", False)):
+                    raise RuntimeError(
+                        f"strict-d06-cache: aborting D-06 eval — "
+                        f"{d06_cache_misses} partitions lack warm local state"
+                    )
+            else:
+                print(f"  [D-06 GUARD] cache probe OK: all {len(partition_to_node_id)} partitions warm")
+        else:
+            print("  [D-06 GUARD] skipped (reuse-cache=true: sig-hash dir not resolvable server-side)")
+
         eval_node_ids = sorted(partition_to_node_id.values())
         extra_eval_messages = []
         for nid in eval_node_ids:
@@ -916,6 +957,9 @@ def main(grid: Grid, context: Context) -> None:
                 k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
                 for k, v in (thesis or {}).items()
             }
+            # D-06 guard provenance: -1 = not probed (reuse-cache); 0 = all warm;
+            # >0 = that many users evaluated with cold local state (suspect run).
+            best_round_metrics["d06_cache_misses"] = int(d06_cache_misses)
             print(
                 f"[D-06] Extra eval complete. Canonical best/sampled_ndcg@10="
                 f"{best_round_metrics.get('sampled_ndcg@10')}"
@@ -1074,6 +1118,17 @@ def main(grid: Grid, context: Context) -> None:
         results_filename = run_dir / "results.json"  # D-04 clean filename
         atomic_write_json(str(results_filename), results_data)
         sibling_path = write_manifest_sibling(manifest, results_filename, sibling_name="manifest.json")
+        # Persistence (re-eval enablement, 2026-06-12): save the restored-BEST
+        # and LAST-round GLOBAL params so finished runs stay re-evaluable
+        # offline (scripts/thesis/reeval.py p_u-variant tests) — previously the
+        # globals died with the process and no post-hoc analysis was possible.
+        # Must never kill a finished 30h run, hence the broad guard.
+        try:
+            torch.save(arrays.to_torch_state_dict(), run_dir / "global_state_best.pt")
+            torch.save(last_arrays.to_torch_state_dict(), run_dir / "global_state_last.pt")
+            print(f"  Global state saved: {run_dir}/global_state_{{best,last}}.pt")
+        except Exception as _pe:  # noqa: BLE001
+            print(f"[WARN] global-state persistence failed (non-fatal): {_pe}")
     else:  # cross_silo_legacy — preserved per D-03
         legacy_dir = repo_root() / "results" / "federated"
         legacy_dir.mkdir(parents=True, exist_ok=True)
