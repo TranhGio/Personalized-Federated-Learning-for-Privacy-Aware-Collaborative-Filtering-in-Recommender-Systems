@@ -235,6 +235,13 @@ strict-d06-cache = false  # fail-closed D-06 eval guard (claim runs set true via
 final-calibration-enabled = false   # When true, run a calibration pass before D-06 eval
 final-calibration-epochs = 1        # Local epochs per client during calibration (1-2 typical)
 
+# Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
+# Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
+# fuse_dicts requires the keys to exist with default values — declaring here is the contract.
+thesis-run-label = ""        # "" = non-thesis | "main" | "ablation_<knob>=<value>"
+ablation-dimension = "none"  # "none" | "alpha_method" | "per_user_alpha" | "item_perturbation" | "contrastive_lambda" | "fusion_type"
+ablation-value = ""           # specific value of the ablated knob; empty for main/non-thesis
+
 # =============================================================================
 # Early Stopping Configuration
 # =============================================================================

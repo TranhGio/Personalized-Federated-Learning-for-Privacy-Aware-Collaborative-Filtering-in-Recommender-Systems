@@ -83,9 +83,36 @@ _ABLATION_SHORT_NAME: Dict[str, str] = {
 #   MUST disable them explicitly for the main-comparison row.
 # - PFedRec / baseline / personalized: NO model-type/alpha-method overrides
 #   (those keys do not exist in their pyproject.toml).
+#
+# Protocol pins (sweep-unblocker review, 2026-06-12): the pins below lock the
+# C=0.1 thesis protocol for every claim cell — pyproject values override
+# ModeProfile defaults, so relying on per-module pyproject.toml alone is not
+# protocol-locked.
+# - pfedrec keeps mode=paper_compat_pfedrec but at fraction-train=0.1: matches
+#   the credited ef41ab bar run (paper-compat fraction=1.0 would be ~6 days/cell).
+# - baseline pins embedding-dim=128 to match its credited seed-42 run 1bf513 —
+#   PROVISIONAL: this perpetuates a capacity confound (other modules run
+#   embedding-dim=64) and is flagged for review.
+# - early-stopping-enabled=false sweep-wide so all runs complete 100 rounds and
+#   final-eval negatives stay bit-paired across modules/seeds.
+# - strict-d06-cache=true makes claim runs fail closed on cold-eval (knob being
+#   added in a parallel patch). flwr fuse_dicts REJECTS undeclared keys, so the
+#   key is declared (default false) in the personalized/pfedrec/adaptive
+#   pyprojects; baseline has no per-user local state, hence no guard and no pin.
 THESIS_BASE_OVERRIDES: Dict[str, Dict[str, str]] = {
-    "baseline":     {"strategy": "fedavg"},
-    "personalized": {"strategy": "fedavg"},
+    "baseline":     {
+        "strategy": "fedavg",
+        "early-stopping-enabled": "false",
+        "embedding-dim": "128",
+    },
+    "personalized": {
+        "strategy": "fedavg",
+        "embedding-dim": "64",
+        "lr": "0.005",
+        "early-stopping-enabled": "false",
+        "final-calibration-enabled": "false",
+        "strict-d06-cache": "true",
+    },
     "adaptive":     {
         "strategy": "fedavg",
         "model-type": "dual",
@@ -93,8 +120,22 @@ THESIS_BASE_OVERRIDES: Dict[str, Dict[str, str]] = {
         "enable-per-user-alpha": "false",
         "enable-item-perturbation": "false",
         "contrastive-lambda": "0.0",
+        "num-server-rounds": "100",
+        "fraction-train": "0.1",
+        "local-epochs": "1",
+        "embedding-dim": "64",
+        "lr": "0.005",
+        "early-stopping-enabled": "false",
+        "final-calibration-enabled": "true",
+        "strict-d06-cache": "true",
     },
-    "pfedrec":      {"strategy": "fedavg"},
+    "pfedrec":      {
+        "strategy": "fedavg",
+        "fraction-train": "0.1",
+        "early-stopping-enabled": "false",
+        "final-calibration-enabled": "false",
+        "strict-d06-cache": "true",
+    },
 }
 
 
@@ -206,6 +247,23 @@ def cell_already_done(cell: ThesisCell, results_root: Path) -> bool:
     Pitfall 8: matches on ``(module, thesis_run_label, run_seed, ablation_dimension,
     ablation_value)`` — NOT on ``(module, seed)`` alone (which collides at seed=42
     where adaptive runs 8 times: 1 main + 7 ablations).
+
+    Backfill-aware credit (run-id audit, 2026-06-12): ALSO returns True when a
+    run dir's ``EVAL_VALIDITY.json`` sidecar (written by
+    ``scripts/thesis/eval_validity.py``) has ``status == "valid"`` AND
+    (manifest ``thesis_run_label`` OR sidecar ``thesis_run_label_backfill``)
+    matches the cell label AND (manifest ``run_seed`` OR sidecar
+    ``run_seed_backfill``) matches the cell seed. This makes the sweep skip
+    cells credited by backfilled valid runs (pfedrec ef41ab seed42, baseline
+    1bf513 seed42, personalized f18e64 seed42) instead of re-running them —
+    mirroring ``aggregate_results.collect_thesis_results`` (manifest label takes
+    precedence; seed backfill applies only when the manifest seed is non-canonical).
+
+    Conversely, a manifest identity match whose sidecar explicitly says
+    ``status != "valid"`` (e.g. adaptive bc134c — invalid_cold_eval) does NOT
+    credit the cell: the aggregator would reject that run anyway, and crediting
+    it would deadlock the sweep (cell skipped here, missing at D-20). A run
+    with NO sidecar keeps the legacy credit behavior.
     """
     module_dir = results_root / "federated" / cell.module
     if not module_dir.exists():
@@ -225,6 +283,49 @@ def cell_already_done(cell: ThesisCell, results_root: Path) -> bool:
             m.get("ablation_value", ""),
         )
         if observed == cell.identity:
+            # Sidecar veto: an explicitly non-valid run never credits a cell.
+            sidecar_path = manifest_path.parent / "EVAL_VALIDITY.json"
+            if sidecar_path.exists():
+                try:
+                    with open(sidecar_path, "r", encoding="utf-8") as f:
+                        if json.load(f).get("status") != "valid":
+                            continue
+                except (OSError, json.JSONDecodeError):
+                    pass  # unreadable sidecar -> legacy behavior (credit)
+            return True
+    # Pass 2: backfilled-valid credit via EVAL_VALIDITY.json sidecars.
+    for sidecar_path in module_dir.glob("*/EVAL_VALIDITY.json"):
+        try:
+            with open(sidecar_path, "r", encoding="utf-8") as f:
+                sidecar = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if sidecar.get("status") != "valid":
+            continue
+        if sidecar.get("module", cell.module) != cell.module:
+            continue
+        manifest: Dict[str, Any] = {}
+        manifest_path = sidecar_path.parent / "manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                manifest = {}
+        # Manifest label takes precedence; backfill never overrides a non-empty label.
+        label = manifest.get("thesis_run_label", "") or sidecar.get("thesis_run_label_backfill", "")
+        if str(label) != cell.thesis_run_label:
+            continue
+        try:
+            seed_int = int(manifest.get("run_seed", -1))
+        except (TypeError, ValueError):
+            seed_int = -1
+        if seed_int not in THESIS_SEEDS and "run_seed_backfill" in sidecar:
+            try:
+                seed_int = int(sidecar["run_seed_backfill"])
+            except (TypeError, ValueError):
+                continue
+        if seed_int == cell.run_seed:
             return True
     return False
 

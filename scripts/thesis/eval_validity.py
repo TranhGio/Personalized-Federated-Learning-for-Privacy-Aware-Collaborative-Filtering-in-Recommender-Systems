@@ -72,6 +72,9 @@ FIX_COMMITS: Dict[str, Optional[str]] = {
 LABEL_BACKFILL: Dict[str, Dict[str, Any]] = {
     "20260608-071106-ef41ab": {"thesis_run_label_backfill": "main", "run_seed_backfill": 42},
     "20260504-203751-1bf513": {"thesis_run_label_backfill": "main", "run_seed_backfill": 42},
+    # personalized warm re-run (D-06 fix 3a393fb): manifest run_seed is already 42,
+    # so only the label needs backfilling.
+    "20260610-064423-f18e64": {"thesis_run_label_backfill": "main"},
 }
 
 _SIDECAR = "EVAL_VALIDITY.json"

@@ -758,14 +758,24 @@ def run_aggregator(
     output_dir: Path,
     check_only: bool = False,
     strict_validity: bool = False,
+    phase: str = "all",
 ) -> int:
-    """Top-level orchestration. Returns process exit code."""
-    print(f"[INFO] Aggregator: results_root={results_root} output_dir={output_dir}")
+    """Top-level orchestration. Returns process exit code.
+
+    ``phase="main"`` restricts the D-20 expected set to ``expected_main_cells()``
+    only (ablation cells are NOT required); the ablation/sparse-ablation tables
+    may then legitimately render empty (``_build_ablation_rows`` returns no rows
+    without ablation records — header-only tables, no crash). ``phase="all"``
+    (default) requires the full 12+21 cell matrix.
+    """
+    print(f"[INFO] Aggregator: results_root={results_root} output_dir={output_dir} phase={phase}")
     records = collect_thesis_results(results_root, strict_validity=strict_validity)
     print(f"[INFO] Collected {len(records)} thesis-tagged result records.")
 
-    # D-20 missing-cell check.
-    expected = expected_main_cells() | expected_ablation_cells()
+    # D-20 missing-cell check (phase-scoped: main-only skips the ablation matrix).
+    expected = expected_main_cells()
+    if phase == "all":
+        expected = expected | expected_ablation_cells()
     missing = find_missing_cells(records, expected)
     if missing:
         msg_lines: List[str] = [
@@ -830,6 +840,15 @@ def main(argv: Sequence[str]) -> int:
             "sweep wave so cold-eval runs can never slip into the claim tables."
         ),
     )
+    parser.add_argument(
+        "--phase",
+        choices=("main", "all"),
+        default="all",
+        help=(
+            "D-20 expected-cell scope: 'main' requires only the 12 main cells "
+            "(ablation tables may be empty); 'all' (default) requires main + ablation."
+        ),
+    )
     args = parser.parse_args(list(argv))
     results_root = args.results_root if args.results_root is not None else (_REPO_ROOT / "results")
     output_dir = args.output_dir if args.output_dir is not None else (results_root / "federated" / "_thesis")
@@ -838,6 +857,7 @@ def main(argv: Sequence[str]) -> int:
         output_dir=output_dir,
         check_only=args.check_only,
         strict_validity=args.strict_validity,
+        phase=args.phase,
     )
 
 
