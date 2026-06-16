@@ -1,85 +1,42 @@
-# Federated Personalized Collaborative Filtering
+# Federated Personalized (Split Learning)
 
-> Split Learning: LOCAL user embeddings + GLOBAL item embeddings
-> MovieLens 1M | SplitFedAvg/FedProx | BPR-MF
+> Local user embeddings + global item embeddings. Middle step: baseline → **this** → adaptive.
 
-## Role in Thesis
+**Role in thesis**: shows that keeping user embeddings local (privacy) already helps before any α-machinery enters the picture. If split learning alone doesn't beat baseline, the adaptive module isn't winning for the reason we think.
 
-Middle step in progression: baseline -> **personalized (this)** -> adaptive.
-Key innovation: User embeddings stay private on clients, only item embeddings communicated.
+## Split Learning Boundary
 
-## Directory Structure
+| Scope | Params | Notes |
+|---|---|---|
+| **Local** (private, cached in `.embedding_cache/`) | `user_embeddings.weight`, `user_bias.weight` | Never transmitted. Accumulate across rounds. |
+| **Global** (aggregated) | `item_embeddings.weight`, `item_bias.weight`, `global_bias` | ~485K params (-44% vs baseline) |
 
-```
-federated_personalized_cf/
-  dataset.py       - MovieLens loading, Dirichlet partitioning
-  task.py          - Training, evaluation, ranking metrics
-  client_app.py    - Split learning client, embedding caching, FedProx
-  server_app.py    - Flower server, W&B logging, results export
-  strategy.py      - SplitFedAvg & SplitFedProx custom strategies
-  models/
-    basic_mf.py    - BasicMF with get/set_local/global_parameters()
-    bpr_mf.py      - BPRMF with split learning support
-    losses.py      - MSE and BPR loss implementations
-```
+### Round Flow
+1. Server sends globals → client.
+2. Client loads locals from `.embedding_cache/partition_{id}/user_embeddings.pt`.
+3. Train all params locally.
+4. **FedProx proximal term applies to globals ONLY** — user embeddings are NOT regularized (that's the whole point).
+5. Save locals to cache; send only globals back.
 
-## Split Learning Architecture
-
-**LOCAL parameters** (stay on client, cached in `.embedding_cache/`):
-- `user_embeddings.weight` (6040 x 128) - PRIVATE
-- `user_bias.weight` (6040 x 1) - PRIVATE
-
-**GLOBAL parameters** (aggregated on server):
-- `item_embeddings.weight` (3706 x 128)
-- `item_bias.weight` (3706 x 1)
-- `global_bias` (1,)
-
-Communication savings: ~485K params vs 874K in baseline (44% reduction)
-
-### Training Flow Per Round
-
-1. Server sends GLOBAL params to client
-2. Client loads LOCAL params from `.embedding_cache/partition_{id}/user_embeddings.pt`
-3. Client trains on local data (all params updated)
-4. FedProx proximal term ONLY on GLOBAL params (user embeddings NOT regularized)
-5. Client saves LOCAL params to cache, sends ONLY GLOBAL params to server
-6. Server aggregates GLOBAL params
-
-## Key Differences from Baseline
-
-| Aspect | Baseline | This Project |
-|--------|----------|-------------|
-| User Embeddings | Global (averaged) | **Local (private)** |
-| Communication | 874K params | **485K params** |
-| FedProx scope | All params | **Global only** |
-| User history | Reset each round | **Accumulated** |
-
-## Commands
+## Run
 
 ```bash
-flwr run .                                              # Default BPR-MF + SplitFedAvg
+flwr run .                                              # default: BPR-MF + SplitFedAvg
 flwr run . --run-config "strategy=fedprox proximal-mu=0.01"
 flwr run . --run-config "model-type=basic"
-flwr run . --run-config "num-server-rounds=50"
-rm -rf .embedding_cache/                                # Reset user embedding cache
+rm -rf .embedding_cache/                                # reset local embedding cache
 ```
 
-## Key Config (pyproject.toml)
-
-- `num-server-rounds`: 10, `local-epochs`: 5
-- `model-type`: "bpr" or "basic"
-- `strategy`: "fedavg" (SplitFedAvg) or "fedprox" (SplitFedProx)
-- `embedding-dim`: 128, `alpha`: 0.5
+Defaults: `num-server-rounds=10`, `local-epochs=5`, `embedding-dim=128`, `alpha=0.5`.
 
 ## Gotchas
 
-- `.embedding_cache/` is created at runtime - delete to start fresh
-- Shape mismatch handling: partial loading when user population changes between rounds
-- Models expose `get_global_parameters()`, `set_global_parameters()`, `get_local_parameters()`, `set_local_parameters()` - these are critical for split learning
-- `strategy.py` defines `GLOBAL_PARAM_KEYS` and `LOCAL_PARAM_KEYS` frozensets
+- Models expose the split-learning interface: `get_global_parameters() / set_global_parameters() / get_local_parameters() / set_local_parameters()`. The aggregation surface is defined by `GLOBAL_PARAM_KEYS` and `LOCAL_PARAM_KEYS` frozensets in `strategy.py`.
+- `set_local_parameters(strict=False)` does partial loads when the user population grows between rounds.
+- `.embedding_cache/` is created at runtime; delete to start fresh.
 
-## Expected Performance (BPR-MF, 10 rounds)
+## Expected (BPR-MF, 10 rounds)
 
-- Hit Rate@10: 0.70-0.80 (+5-7% over baseline)
-- NDCG@10: 0.18-0.28
-- Communication: -44% vs baseline
+HR@10: 0.70-0.80 (+5-7% vs baseline) | NDCG@10: 0.18-0.28 | Comm: -44%
+
+A win over baseline here is required before claiming anything about the adaptive module.
