@@ -59,3 +59,10 @@ htmlcov/
 pal-mcp-server/
 # W&B local run artifacts (repo-root) — multi-hundred-MB logs, blocked GitHub push 2026-06-10
 wandb/
+
+# Per-user embedding caches — regenerated each run; some dirs are multi-GB (a single
+# adaptive run cache hit 14GB). NEVER commit; a blind `git add -A` would brick the repo.
+.embedding_cache/
+
+# Loose run/debug logs at repo root (large). Per-module .bug-investigation/*.log already ignored.
+/*.log
