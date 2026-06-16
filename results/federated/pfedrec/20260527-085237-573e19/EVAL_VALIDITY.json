@@ -11,6 +11,6 @@
   "git_commit": "0c3f06062",
   "status": "invalid_cold_eval",
   "reason": "run commit 0c3f06062 predates fix 01d8b72: D-06 eval read .embedding_cache/default/ -> all users scored with COLD local state",
-  "generated_at": "2026-06-10T08:17:52+00:00",
-  "generator_head": "70a92bd"
+  "generated_at": "2026-06-15T03:20:26+00:00",
+  "generator_head": "bb67cff"
 }
