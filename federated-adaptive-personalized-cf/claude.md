@@ -1,161 +1,106 @@
-# Federated Adaptive Personalized Collaborative Filtering
+# Federated Adaptive Personalized — **Thesis Contribution**
 
-> Thesis contribution: Hierarchical Conditional Alpha + Dual-Level Personalization
-> MovieLens 1M | Split Learning | FedAvg/FedProx | BPR-MF | Global Prototype
+> Hierarchical Conditional α + Dual-Level Personalization on top of split learning. EMA global prototype to help sparse users.
 
-## Directory Structure
+**Thesis bar (non-negotiable)**: this module must beat baseline, PFedRec, AND split-learning personalized on NDCG@10 — **especially on sparse users**. If it doesn't, the thesis story breaks.
 
-```
-federated_adaptive_personalized_cf/
-  dataset.py                       - MovieLens loading, Dirichlet partitioning
-  task.py                          - Training, evaluation, alpha computation
-  client_app.py                    - Split learning client + adaptive alpha
-  server_app.py                    - Server with wandb + alpha analysis
-  strategy.py                      - SplitFedAvg/FedProx with prototype aggregation
-  models/
-    adaptive_alpha.py              - DataQuantityAlpha, MultiFactorAlpha, HierarchicalConditionalAlpha
-    dual_personalized_bpr_mf.py    - DualPersonalizedBPRMF (novel architecture)
-    bpr_mf.py                      - Standard BPRMF with split learning
-    basic_mf.py                    - BasicMF
-    losses.py                      - Loss implementations
-  evaluation/
-    alpha_analysis.py              - Alpha distribution & correlation analysis
-    user_groups.py                 - Per-group metrics (sparse/medium/dense)
-```
+## Personalization Boundary
 
-## Key Innovations
+| Scope | Params |
+|---|---|
+| **Local** | `user_embeddings`, `user_bias`, `personal_mlp.*`, `fusion_gate/layer`, `logit_alpha` (per-user), `item_perturbation` |
+| **Global** | `item_embeddings`, `item_bias`, `global_bias` + server-side `_global_prototype` EMA |
 
-### 1. Hierarchical Conditional Alpha (recommended, `alpha-method=hierarchical_conditional`)
+~38% of params transmitted per round.
 
-Two-stage alpha computation addressing multi-factor conflicts:
+## The Innovations (in order of importance to the thesis)
 
-**Stage 1 - Hierarchical Aggregation:**
-- `data_volume = sqrt(f_quantity * f_coverage)` (geometric mean - resolves quantity-coverage redundancy, corr 0.8-1.0)
-- `preference_quality = harmonic_mean(f_diversity, f_consistency)` (resolves diversity-consistency contradiction, corr -0.3 to -0.5)
+### 1. Hierarchical Conditional α — `alpha-method=hierarchical_conditional` (default)
+
+Two-stage; solves the multi-factor pitfalls of the naive `multi_factor` formula.
+
+**Stage 1 — hierarchical aggregation:**
+- `data_volume = sqrt(f_quantity * f_coverage)` — geometric mean resolves quantity-coverage redundancy (corr 0.8-1.0).
+- `preference_quality = harmonic_mean(f_diversity, f_consistency)` — resolves diversity-consistency contradiction (corr -0.3 to -0.5).
 - `base_alpha = 0.55 * data_volume + 0.45 * preference_quality`
 
-**Stage 2 - Conditional Rules:**
-- Sparse users (n < 20): penalty up to 50%
-- Niche specialists (low diversity, high quantity): +0.15 bonus
+**Stage 2 — conditional rules:**
+- Sparse (n < 20): up to 50% penalty
+- Niche specialists (low diversity, high quantity): +0.15
 - Inconsistent raters (f_s < 0.3): 30% penalty
-- Completionists (high coverage, low diversity): +0.1 bonus
+- Completionists (high coverage, low diversity): +0.10
 
-### 2. Multi-Factor Alpha (alternative, `alpha-method=multi_factor`)
+α clipped to **[0.1, 0.95]** — never fully local or fully global.
 
-`alpha = 0.40*f_quantity + 0.25*f_diversity + 0.20*f_coverage + 0.15*f_consistency`
+Ablation comparators: `multi_factor` (naive weighted sum, has the conflicts), `data_quantity` (single-factor, trivial baseline).
 
-Known issues: quantity-coverage redundancy, diversity-consistency contradiction (why hierarchical conditional was created).
+### 2. Dual-Level Personalization — `model-type=dual`
 
-### 3. Dual-Level Personalization (`model-type=dual`)
+- **Level 1 (statistical)**: `p_effective = α·p_local + (1-α)·p_global`
+- **Level 2 (neural)**: `PersonalMLP` scores `p_effective ⊙ q_item`
+- **Fusion**: `add` | `gate` | `concat` (concat is default)
 
-- **Level 1 (Statistical)**: `p_effective = alpha * p_local + (1-alpha) * p_global`
-- **Level 2 (Neural)**: PersonalMLP scores element-wise product of embeddings
-- **Fusion**: `add`, `gate` (learnable sigma), or `concat` (Linear([cf; mlp]))
+`PersonalMLP` and fusion weights are **LOCAL** — never aggregated.
 
-### 4. Global Prototype
+### 3. Global Prototype (server-side EMA)
 
-Server-side EMA prototype: `p_global = 0.9 * p_old + 0.1 * weighted_avg(client_protos)`
-Helps sparse users by providing population-average user representation.
+`p_global = 0.9 · p_old + 0.1 · weighted_avg(client_protos)`. Sent down each round, used in α-blending. The mechanism by which sparse users borrow from the population.
 
-### 5. Per-User Learned Alpha (`enable-per-user-alpha=true`)
+### 4-6. Optional Next-Gen Techniques (off by default, backwards-compatible)
 
-Replaces single client-level alpha scalar with per-user learnable alpha.
-- Initialized from hierarchical conditional heuristic via logit transform
-- Refined by BPR gradient descent: `logit_alpha[u] -> sigmoid -> alpha[u]`
-- `p_effective[u] = alpha[u] * p_local[u] + (1-alpha[u]) * p_global`
-- LOCAL parameter (never sent to server)
+| Flag | Effect |
+|---|---|
+| `enable-per-user-alpha=true` | Replace scalar α with per-user learnable α (init from heuristic via `torch.logit`, refined by BPR gradient). Local. |
+| `enable-item-perturbation=true` | `q_effective[i] = q_global[i] + perturbation[i]`. Zero-init, L2-regularized. Local. |
+| `contrastive-lambda > 0` | InfoNCE on `(p_local, p_effective)` with batch users as negatives. Gives per-user α a stronger gradient signal. |
 
-### 6. Dual-Side Item Perturbation (`enable-item-perturbation=true`)
-
-Local item embedding adjustments: `q_effective[i] = q_global[i] + perturbation[i]`
-- Zero-initialized (no effect initially), refined by gradient descent
-- L2 regularized: `reg * ||perturbation||^2` added to loss
-- LOCAL parameter (never sent to server)
-
-### 7. Contrastive Local-Global Alignment (`contrastive-lambda > 0`)
-
-InfoNCE auxiliary loss contrasting local vs blended user embeddings.
-- `L_total = L_BPR + lambda * L_contrastive + reg * ||perturbation||^2`
-- Positive: (p_local[u], p_effective[u]), Negatives: other users in batch
-- Provides gradient signal to per-user alpha through effective embeddings
-
-## Parameter Classification
-
-| Parameter | Type | Privacy |
-|-----------|------|---------|
-| `user_embeddings`, `user_bias` | Local | Private (never sent) |
-| `personal_mlp.*`, `fusion_gate/layer` | Local | Private (never sent) |
-| `logit_alpha` (per-user alpha) | Local | Private (never sent) |
-| `item_perturbation` | Local | Private (never sent) |
-| `item_embeddings`, `item_bias`, `global_bias` | Global | Shared each round |
-
-~38% of parameters transmitted per round (unchanged by new techniques).
-
-## Commands
+## Run
 
 ```bash
-# Default: BPR-MF with hierarchical conditional alpha
+# Default: BPR-MF + hierarchical conditional α
 flwr run .
 
-# Dual-level with concat fusion
+# Thesis main configuration (dual + concat fusion)
 flwr run . --run-config "model-type=dual fusion-type=concat"
 
-# FedProx
-flwr run . --run-config "strategy=fedprox proximal-mu=0.01"
+# α-method ablation
+flwr run . --run-config "alpha-method=hierarchical_conditional"   # default
+flwr run . --run-config "alpha-method=multi_factor"               # ablation: known conflicts
+flwr run . --run-config "alpha-method=data_quantity"              # naive baseline
 
-# Alpha method comparison
-flwr run . --run-config "alpha-method=hierarchical_conditional"
-flwr run . --run-config "alpha-method=multi_factor"
-flwr run . --run-config "alpha-method=data_quantity"
-
-# W&B sweep
-wandb sweep sweep.yaml
-wandb agent <ENTITY>/federated-adaptive-personalized-cf/<SWEEP_ID>
-
-# Early stopping
-flwr run . --run-config "early-stopping-enabled=true early-stopping-patience=10"
-
-# Next-Gen Personalization Techniques
+# Next-gen techniques (toggle individually for ablation)
 flwr run . --run-config "enable-per-user-alpha=true"
 flwr run . --run-config "enable-item-perturbation=true item-perturbation-reg=0.01"
 flwr run . --run-config "contrastive-lambda=0.1 contrastive-tau=0.1"
 
-# Full combo (all three techniques)
-flwr run . --run-config "enable-per-user-alpha=true enable-item-perturbation=true contrastive-lambda=0.1"
+# W&B sweep (Bayesian + Hyperband)
+wandb sweep sweep.yaml
+wandb agent <ENTITY>/federated-adaptive-personalized-cf/<SWEEP_ID>
 ```
 
-## Key Config (pyproject.toml)
-
-- `num-server-rounds`: 50, `local-epochs`: 12
-- `model-type`: "bpr", "basic", or "dual"
-- `alpha-method`: "hierarchical_conditional" (default), "multi_factor", "data_quantity"
-- `mlp-hidden-dims`: "512,256,128", `fusion-type`: "concat"
-- `prototype-momentum`: 0.9
-- `early-stopping-metric`: "sampled_ndcg@10"
-- `enable-per-user-alpha`: false, `enable-item-perturbation`: false
-- `contrastive-lambda`: 0.0, `contrastive-tau`: 0.1
-- User groups: sparse (0-30), medium (30-100), dense (100+)
-
-## Factory Pattern
-
-```python
-from federated_adaptive_personalized_cf.models.adaptive_alpha import (
-    create_alpha_computer, AlphaConfig, HierarchicalConditionalAlphaConfig
-)
-config = AlphaConfig(method="hierarchical_conditional")
-hc_config = HierarchicalConditionalAlphaConfig()
-alpha_computer = create_alpha_computer(config, hc_config=hc_config)
-alpha = alpha_computer.compute_from_stats(user_stats)
-```
+Defaults: `num-server-rounds=50`, `local-epochs=12`, `model-type=dual`, `alpha-method=hierarchical_conditional`, `fusion-type=concat`, `prototype-momentum=0.9`, `early-stopping-metric=sampled_ndcg@10`.
 
 ## Gotchas
 
-- Alpha range clipped to [0.1, 0.95] - never fully local or fully global
-- Hierarchical conditional alpha needs all 4 user stats: n_interactions, genre_entropy, n_unique_items, rating_std
-- DualPersonalizedBPRMF has `set_alpha()` and `set_global_prototype()` methods - must be called before forward pass
-- PersonalMLP is LOCAL (client-specific, never aggregated)
-- Early stopping monitors `sampled_ndcg@10` by default
-- `sweep.yaml` uses Bayesian optimization with Hyperband early termination
-- Per-user alpha and item perturbation are LOCAL, auto-cached via `get/set_local_parameters()`
-- Per-user alpha is initialized from heuristic only on first call; subsequent rounds load from cache
-- All three next-gen techniques are disabled by default (backward-compatible)
+- Hierarchical conditional α **requires all 4 user stats**: `n_interactions`, `genre_entropy`, `n_unique_items`, `rating_std`. Missing any → fall back to `data_quantity`.
+- `DualPersonalizedBPRMF.set_alpha()` and `.set_global_prototype()` **MUST** be called before each `forward()`.
+- Per-user α is initialized from the heuristic on first call; subsequent rounds load from cache. Don't re-initialize blindly.
+- Next-gen techniques are LOCAL and auto-cached via `get_local_parameters() / set_local_parameters()`.
+- Early stopping monitors `sampled_ndcg@10` by default — change only if you know what you're trading off.
+
+## Factory (for sanity-checking α values)
+
+```python
+from federated_adaptive_personalized_cf.models.adaptive_alpha import (
+    create_alpha_computer, AlphaConfig, HierarchicalConditionalAlphaConfig,
+)
+alpha_computer = create_alpha_computer(
+    AlphaConfig(method="hierarchical_conditional"),
+    hc_config=HierarchicalConditionalAlphaConfig(),
+)
+alpha = alpha_computer.compute_from_stats(user_stats)
+```
+
+## What "Winning" Looks Like
+
+Beat baseline, PFedRec, and split-learning personalized on `sampled_ndcg@10` — overall AND for the sparse user group (0-30 interactions). The sparse-user case is the load-bearing claim of the thesis.

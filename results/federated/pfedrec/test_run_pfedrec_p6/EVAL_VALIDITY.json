@@ -1,0 +1,14 @@
+{
+  "schema": "eval_validity/1",
+  "module": "pfedrec",
+  "run_id": "test_run_pfedrec_p6",
+  "fix_commit": "01d8b72",
+  "poisoned_paths_if_invalid": [
+    "final_metrics.best",
+    "_manifest.metrics.best"
+  ],
+  "status": "diagnostics_only",
+  "reason": "no results.json (incomplete/aborted run)",
+  "generated_at": "2026-06-15T03:20:26+00:00",
+  "generator_head": "bb67cff"
+}

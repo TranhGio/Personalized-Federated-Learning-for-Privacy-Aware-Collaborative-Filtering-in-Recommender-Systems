@@ -1,0 +1,16 @@
+{
+  "schema": "eval_validity/1",
+  "module": "personalized",
+  "run_id": "20260527-085558-5ea2ef",
+  "fix_commit": "3a393fb",
+  "poisoned_paths_if_invalid": [
+    "final_metrics.best",
+    "_manifest.metrics.best"
+  ],
+  "effective_checkpoint_rule": "best_round_restore",
+  "git_commit": "0c3f06062",
+  "status": "invalid_cold_eval",
+  "reason": "run commit 0c3f06062 predates fix 3a393fb: D-06 eval read .embedding_cache/default/ -> all users scored with COLD local state",
+  "generated_at": "2026-06-15T03:20:26+00:00",
+  "generator_head": "bb67cff"
+}

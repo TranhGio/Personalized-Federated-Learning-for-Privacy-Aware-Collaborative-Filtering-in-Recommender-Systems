@@ -1,0 +1,100 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            4vnvn40ksmlrcwa1qtoyb4kb86yepzik:
+                args:
+                    - --app
+                    - .
+                    - --num-supernodes
+                    - "5"
+                    - --backend-config
+                    - '{"client-resources": {"num-cpus": 12, "num-gpus": 0.2}}'
+                    - --run-config
+                    - model-type="basic" strategy="fedavg" num-server-rounds=50 local-epochs=10 embedding-dim=128 lr=0.005 weight-decay=1e-5 dropout=0.1 alpha=0.5 fraction-train=1.0 eval-split-mode="leave-one-out" eval-num-negatives=99 early-stopping-enabled=true early-stopping-patience=10 early-stopping-metric="rmse" early-stopping-mode="min" wandb-run-name="loo_baseline_basic_fedavg_20260325_040824"
+                cpu_count: 24
+                cpu_count_logical: 32
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "982240026624"
+                        used: "918208327680"
+                email: tranhgio15@gmail.com
+                executable: /home/bes/miniconda3/envs/recsys_fl/bin/python3.11
+                git:
+                    commit: e0100967fb4ec5a44b3b80697c02f8a54990069d
+                    remote: git@github.com-vinh:TranhGio/Personalized-Federated-Learning-for-Privacy-Aware-Collaborative-Filtering-in-Recommender-Systems.git
+                gpu: NVIDIA GeForce RTX 5090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 21760
+                      memoryTotal: "34190917632"
+                      name: NVIDIA GeForce RTX 5090
+                      uuid: GPU-63741715-3e4c-5bcc-3255-600cb876e895
+                host: bes-aimachine-02
+                memory:
+                    total: "67119247360"
+                os: Linux-6.17.0-14-generic-x86_64-with-glibc2.39
+                program: /home/bes/miniconda3/envs/recsys_fl/bin/flower-simulation
+                python: CPython 3.11.14
+                root: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf
+                startedAt: "2026-03-24T22:51:58.934195Z"
+                writerId: 4vnvn40ksmlrcwa1qtoyb4kb86yepzik
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 30
+                - 49
+                - 53
+            "2":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 30
+                - 49
+                - 53
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+                - 62
+            "4": 3.11.14
+            "5": 0.23.1
+            "12": 0.23.1
+            "13": linux-x86_64
+alpha:
+    value: 0.5
+dropout:
+    value: 0.1
+early_stopping_enabled:
+    value: true
+early_stopping_metric:
+    value: rmse
+early_stopping_patience:
+    value: 10
+embedding_dim:
+    value: 128
+fraction_train:
+    value: 1
+local_epochs:
+    value: 10
+lr:
+    value: 0.005
+model_type:
+    value: basic
+num_rounds:
+    value: 50
+proximal_mu:
+    value: 0.01
+strategy:
+    value: fedavg
+weight_decay:
+    value: 1e-05

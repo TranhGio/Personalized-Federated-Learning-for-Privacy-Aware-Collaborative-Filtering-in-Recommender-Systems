@@ -1,281 +1,177 @@
-# Federated Adaptive Personalized Collaborative Filtering
+# federated-adaptive-personalized-cf
 
-**Master Thesis: Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems**
+**Role:** Thesis contribution.
+**Approach:** Split learning (local user embeddings) + **hierarchical-conditional α** for per-client personalization strength + dual-level personalization (statistical blending + neural PersonalMLP) + EMA-based server-side global user prototype. Optional next-generation techniques: per-user learned α, dual-side item perturbation, contrastive local-global alignment.
+**Model:** BPR-MF or `DualPersonalizedBPRMF` on MovieLens 1M.
 
-A Flower federated learning project implementing **Personalized Federated Learning** for collaborative filtering on the MovieLens 1M dataset, featuring **Split Learning Architecture** with **BPR-MF (Bayesian Personalized Ranking Matrix Factorization)**, **FedAvg/FedProx** strategies, and comprehensive ranking evaluation metrics.
+See [`../README.md`](../README.md) for the four-way thesis comparison context and [`claude.md`](./claude.md) for the complete architecture tour (factory pattern, parameter classification, loss composition).
 
-## Research Contribution
+## Why This Module Exists
 
-This project implements and evaluates personalized federated learning approaches for recommendation systems, with focus on:
+Under a correct cross-device protocol, this module must **beat all three baselines on NDCG@10 — especially on sparse users**. That is the falsifiable thesis claim defined in [`../.planning/PROJECT.md`](../.planning/PROJECT.md).
 
-1. **Split Learning Architecture**: Separating user embeddings (local/private) from item embeddings (global/shared)
-2. **Non-IID Data Handling**: Dirichlet-based partitioning to simulate realistic federated scenarios
-3. **Privacy-Preserving Recommendations**: User preferences never leave client devices
+The contribution combines six ingredients, each individually optional via config:
 
-### Proposed Experiments
+1. **Hierarchical conditional α** (default) — resolves multi-factor conflicts.
+2. **Dual-level personalization** — statistical blend + neural head.
+3. **Global user prototype (EMA)** — server-side support for sparse users.
+4. **Per-user learned α** (`enable-per-user-alpha`).
+5. **Dual-side item perturbation** (`enable-item-perturbation`).
+6. **Contrastive local-global alignment** (`contrastive-lambda`).
 
-- **Adaptive Alpha (α)**: Dynamic Dirichlet concentration based on user characteristics
-- **Popularity-Weighted Negative Sampling**: Improved BPR training with popularity-aware sampling
+## The Core Ingredients
 
-## Features
+### 1. Hierarchical Conditional α (default: `alpha-method=hierarchical_conditional`)
 
-- **Split Learning Architecture**: User embeddings stay local, item embeddings are globally aggregated
-- **MovieLens 1M Dataset**: Automatic download and preprocessing
-- **Dirichlet Partitioning**: Creates realistic non-IID data distribution based on genre preferences
-- **Model**: BPR-MF (Bayesian Personalized Ranking Matrix Factorization) - PyTorch implementation
-- **Federated Strategies**: FedAvg and FedProx with split-aware proximal term
-- **Comprehensive Ranking Metrics**: NDCG@K, Hit Rate@K, Precision@K, Recall@K, MAP@K, MRR, Coverage, Novelty
-- **Experiment Tracking**: Weights & Biases (wandb) integration
-- **Visualization Tools**: Analyze data partitioning across clients
+Two-stage per-client personalization strength computation. Addresses the quantity-coverage redundancy (correlation 0.8–1.0) and diversity-consistency contradiction (correlation -0.3 to -0.5) that a flat multi-factor weighted sum cannot express.
 
-## Architecture
+**Stage 1 — hierarchical aggregation:**
+- `data_volume = sqrt(f_quantity × f_coverage)` (geometric mean collapses the redundant pair)
+- `preference_quality = harmonic_mean(f_diversity, f_consistency)` (handles the contradictory pair)
+- `base_alpha = 0.55 × data_volume + 0.45 × preference_quality`
 
-```
-                    ┌─────────────────────────────────────────┐
-                    │           Flower Server                  │
-                    │  ┌─────────────────────────────────────┐│
-                    │  │    Global Parameters (Aggregated)   ││
-                    │  │  • Item Embeddings (3706 × 128)     ││
-                    │  │  • Item Biases (3706)               ││
-                    │  │  • Global Bias (1)                  ││
-                    │  └─────────────────────────────────────┘│
-                    │         FedAvg / FedProx                │
-                    └────────────────┬────────────────────────┘
-                                     │
-            ┌────────────────────────┼────────────────────────┐
-            │                        │                        │
-    ┌───────▼───────┐        ┌───────▼───────┐        ┌───────▼───────┐
-    │   Client 0    │        │   Client 1    │        │   Client N    │
-    ├───────────────┤        ├───────────────┤        ├───────────────┤
-    │ LOCAL (Private)│       │ LOCAL (Private)│       │ LOCAL (Private)│
-    │ • User Embeds │        │ • User Embeds │        │ • User Embeds │
-    │ • User Biases │        │ • User Biases │        │ • User Biases │
-    │               │        │               │        │               │
-    │ CACHED LOCALLY│        │ CACHED LOCALLY│        │ CACHED LOCALLY│
-    └───────────────┘        └───────────────┘        └───────────────┘
-```
+**Stage 2 — conditional rules:**
+- Sparse users (`n < 20`): penalty up to 50 %
+- Niche specialists (low diversity, high quantity): +0.15 bonus
+- Inconsistent raters (`f_s < 0.3`): 30 % penalty
+- Completionists (high coverage, low diversity): +0.10 bonus
 
-### Split Learning Design
+Output clipped to `[0.1, 0.95]`. Alternative methods: `multi_factor` (flat weighted sum — the ingredient being improved on) and `data_quantity` (interaction count only — simplest baseline).
 
-| Parameter Type | Location | Aggregation | Privacy |
-|----------------|----------|-------------|---------|
-| User Embeddings | Client | None (local only) | Private |
-| User Biases | Client | None (local only) | Private |
-| Item Embeddings | Server | FedAvg/FedProx | Shared |
-| Item Biases | Server | FedAvg/FedProx | Shared |
-| Global Bias | Server | FedAvg/FedProx | Shared |
+### 2. Dual-Level Personalization (`model-type=dual`)
 
-## Dataset
+- **Level 1 — statistical blending:** `p_effective = α · p_local + (1-α) · p_global`
+- **Level 2 — neural:** `PersonalMLP` scores the element-wise product of effective user × item embeddings
+- **Fusion:** `add` (sum), `gate` (learnable sigmoid), or `concat` (Linear over `[score_cf ; score_mlp]`)
 
-**MovieLens 1M**:
-- 1,000,209 ratings from 6,040 users on 3,883 movies
-- Rating scale: 1-5 stars
-- 18 movie genres
-- Automatically downloaded on first run
+### 3. Global User Prototype (EMA)
+
+Server maintains `p_global = 0.9 · p_old + 0.1 · weighted_avg(client_prototypes)`. Clients compute their local prototype after training and return it in `FitRes.metrics`. Helps sparse users by providing a population-average backbone in the α blending. Best-round checkpoint restores this alongside model state (Phase 4 of migration).
+
+### 4. Per-User Learned α (`enable-per-user-alpha=true`)
+
+Replaces the single per-client α scalar with a per-user learnable `nn.Embedding` (`logit_alpha`). Initialized from the hierarchical-conditional heuristic (`torch.logit(heuristic_alpha)`), then refined by BPR gradient descent. Cached as a LOCAL parameter. Bug fix from Phase 1 research: `enable_per_user_alpha()` must be called BEFORE `load_local_user_embeddings()` for cached values to restore across rounds.
+
+### 5. Dual-Side Item Perturbation (`enable-item-perturbation=true`)
+
+Local item embedding adjustment: `q_effective[i] = q_global[i] + perturbation[i]`. Zero-initialized, refined by gradient descent, L2-regularized (`reg · ‖perturbation‖²`). LOCAL parameter — never sent to server.
+
+### 6. Contrastive Local-Global Alignment (`contrastive-lambda > 0`)
+
+InfoNCE auxiliary loss: `L_total = L_BPR + λ · L_contrastive + reg · ‖perturbation‖²`. Positive pair `(p_local[u], p_effective[u])`; negatives are the other users in the batch. Gives a direct gradient signal to the per-user α through the blended embedding.
+
+## Parameter Classification
+
+| Parameter | Where it lives | Aggregation |
+|-----------|----------------|-------------|
+| `user_embeddings`, `user_bias` | Local | Never transmitted |
+| `personal_mlp.*`, `fusion_gate / fusion_layer` | Local | Never transmitted |
+| `logit_alpha` (per-user α) | Local | Never transmitted |
+| `item_perturbation` | Local | Never transmitted |
+| `item_embeddings`, `item_bias`, `global_bias` | Global | FedAvg / FedProx |
+| Server prototype EMA (`p_global`) | Server-only | Aggregated from client prototypes; broadcast in config each round |
+
+≈ 38 % of parameters transmitted per round.
 
 ## Quick Start
 
-### Install dependencies
-
 ```bash
 pip install -e .
-```
 
-### Run Federated Training (FedAvg)
-
-```bash
+# Default: dual model + hierarchical-conditional α + prototype EMA
 flwr run .
+
+# Ingredient toggles
+flwr run . --run-config "model-type=dual fusion-type=concat"
+flwr run . --run-config "alpha-method=multi_factor"           # ablation vs hierarchical
+flwr run . --run-config "strategy=fedprox proximal-mu=0.01"
+
+# Next-gen techniques
+flwr run . --run-config "enable-per-user-alpha=true"
+flwr run . --run-config "enable-item-perturbation=true item-perturbation-reg=0.01"
+flwr run . --run-config "contrastive-lambda=0.1 contrastive-tau=0.1"
+flwr run . --run-config "enable-per-user-alpha=true enable-item-perturbation=true contrastive-lambda=0.1"
+
+# Mode selector
+flwr run . --run-config "mode=cross_silo_legacy"              # pre-migration config
+
+# W&B sweep (see sweep.yaml)
+wandb sweep sweep.yaml
+wandb agent <ENTITY>/federated-adaptive-personalized-cf/<SWEEP_ID>
 ```
 
-### Run with FedProx
+## Configuration Surface (`pyproject.toml`)
 
-```bash
-flwr run . --run-config "strategy='fedprox' proximal-mu=0.01"
+Mode-locked by the top-level `mode` selector. Key overrides:
+
+| Key | Default (benchmark) | Purpose |
+|-----|---------------------|---------|
+| `num-supernodes` | 6040 | Client universe (= `num_users`) |
+| `partition-mode` | `natural` | 1 user / 1 client |
+| `model-type` | `dual` | `bpr` / `basic` / `dual` |
+| `alpha-method` | `hierarchical_conditional` | `hierarchical_conditional` / `multi_factor` / `data_quantity` |
+| `fusion-type` | `concat` | `add` / `gate` / `concat` |
+| `mlp-hidden-dims` | `512,256,128` | PersonalMLP hidden sizes |
+| `prototype-momentum` | 0.9 | Server EMA momentum |
+| `enable-per-user-alpha` | false | Turn on next-gen technique 1 |
+| `enable-item-perturbation` | false | Turn on next-gen technique 2 |
+| `item-perturbation-reg` | 0.01 | L2 on perturbation |
+| `contrastive-lambda` | 0.0 | InfoNCE auxiliary weight |
+| `contrastive-tau` | 0.1 | InfoNCE temperature |
+| `early-stopping-metric` | `sampled_ndcg@10` | Primary monitoring metric |
+| `ranking-k-values` | `5,10,20` | NDCG / HR cutoffs |
+
+User-group bucket boundaries used for reporting: sparse (0–30), medium (30–100), dense (100+).
+
+## Factory Pattern
+
+```python
+from federated_adaptive_personalized_cf.models.adaptive_alpha import (
+    create_alpha_computer, AlphaConfig, HierarchicalConditionalAlphaConfig
+)
+config = AlphaConfig(method="hierarchical_conditional")
+hc_config = HierarchicalConditionalAlphaConfig()
+alpha_computer = create_alpha_computer(config, hc_config=hc_config)
+alpha = alpha_computer.compute_from_stats(user_stats)   # -> float in [0.1, 0.95]
 ```
 
-### Run with Custom Configuration
+## Gotchas
 
-```bash
-# 50 rounds with FedProx
-flwr run . --run-config "num-server-rounds=50 strategy='fedprox' proximal-mu=0.1"
+- **α range is clipped to `[0.1, 0.95]`** — never fully local or fully global.
+- **Hierarchical-conditional α needs all four user stats**: `n_interactions`, `genre_entropy`, `n_unique_items`, `rating_std`. Phase 1 foundation precomputes and persists them in the split manifest.
+- **`DualPersonalizedBPRMF` requires** `model.set_alpha(...)` AND `model.set_global_prototype(...)` to be called before `forward()` — check client wiring if you hit NaN.
+- **PersonalMLP is LOCAL** (client-specific, never aggregated).
+- **Per-user learned α load order bug (known, Phase 4 fix)**: `enable_per_user_alpha()` must be called BEFORE `load_local_user_embeddings()` so `_logit_alpha.weight` is in `_LOCAL_PARAMS` when the loader runs. Same for `enable_item_perturbation()`.
+- **Prototype EMA restore at best-round checkpoint** (Phase 4 fix): the server's `p_global` state must be snapshot alongside model arrays so the final post-restore evaluation uses the best-round EMA, not the last-round EMA.
+- **Early stopping** monitors `sampled_ndcg@10` by default; `sweep.yaml` uses Bayesian optimization with Hyperband early termination.
+- **Contrastive `λ > 0`** only makes sense once `enable-per-user-alpha=true`, otherwise the auxiliary loss has no effective α to refine.
 
-# Different embedding size and more clients
-flwr run . --run-config "embedding-dim=256"
-
-# Adjust Dirichlet parameter (more non-IID)
-flwr run . --run-config "alpha=0.1"
-```
-
-### Test Dataset Loading
+## Testing
 
 ```bash
 python test_dataset.py
+python test_models.py
 ```
 
-### Visualize Data Partitions
+## Results Location
 
-```bash
-python visualize_partitions.py
-```
+`results/federated/adaptive/<run_id>/` with full protocol fingerprint manifest. Ablation tables for Phase 7 land under `results/federated/_thesis/`.
 
-## Evaluation Metrics
+## References
 
-### Rating Prediction
-- **RMSE**: Root Mean Squared Error
-- **MAE**: Mean Absolute Error
-
-### Ranking Metrics (Primary Focus)
-| Metric | Description | Optimized By |
-|--------|-------------|--------------|
-| **NDCG@K** | Normalized Discounted Cumulative Gain | BPR-MF |
-| **Hit Rate@K** | % of users with at least one relevant item in top-K | BPR-MF |
-| **Precision@K** | Fraction of relevant items in top-K | BPR-MF |
-| **Recall@K** | Fraction of relevant items retrieved | BPR-MF |
-| **MAP@K** | Mean Average Precision | BPR-MF |
-| **MRR** | Mean Reciprocal Rank | BPR-MF |
-| **Coverage@K** | Catalog coverage in recommendations | - |
-| **Novelty@K** | Average self-information of recommended items | - |
-| **F1@K** | Harmonic mean of Precision and Recall | - |
-
-## Configuration
-
-Key parameters in `pyproject.toml`:
-
-```toml
-[tool.flwr.app.config]
-# Federated Learning
-num-server-rounds = 10
-fraction-train = 1.0
-local-epochs = 5
-strategy = "fedavg"          # "fedavg" or "fedprox"
-proximal-mu = 0.01           # FedProx strength (0.001, 0.01, 0.1, 1.0)
-
-# Model
-model-type = "bpr"           # "basic" (MSE) or "bpr" (ranking)
-embedding-dim = 128          # Latent dimensions
-dropout = 0.1
-
-# Training
-lr = 0.005
-weight-decay = 1e-5
-num-negatives = 1            # Negative samples per positive
-
-# Data
-alpha = 0.5                  # Dirichlet concentration (lower = more non-IID)
-
-# Evaluation
-enable-ranking-eval = true
-ranking-k-values = "5,10,20"
-
-# Experiment Tracking
-wandb-enabled = true
-wandb-project = "federated-adaptive-personalized-cf"
-```
-
-## Dirichlet Partitioning
-
-The α parameter controls data heterogeneity:
-
-| α Value | Heterogeneity | Description |
-|---------|---------------|-------------|
-| 0.1 | Very High | Extreme non-IID (clients specialize in few genres) |
-| 0.5 | High | Recommended for realistic FL experiments |
-| 1.0 | Moderate | Balanced but still non-IID |
-| 10.0 | Low | Nearly IID distribution |
-
-## Project Structure
-
-```
-federated-adaptive-personalized-cf/
-├── federated_adaptive_personalized_cf/
-│   ├── __init__.py
-│   ├── dataset.py           # MovieLens 1M loader & Dirichlet partitioner
-│   ├── task.py              # Training, evaluation & ranking metrics
-│   ├── strategy.py          # SplitFedAvg & SplitFedProx strategies
-│   ├── client_app.py        # Flower client with split learning
-│   ├── server_app.py        # Flower server with wandb integration
-│   └── models/
-│       ├── __init__.py
-│       ├── basic_mf.py      # Basic Matrix Factorization (MSE)
-│       ├── bpr_mf.py        # BPR Matrix Factorization (ranking)
-│       └── losses.py        # MSELoss, BPRLoss implementations
-├── data/
-│   └── ml-1m/               # MovieLens 1M dataset (auto-downloaded)
-├── figures/                 # Generated visualizations
-├── test_dataset.py          # Test dataset loading
-├── test_models.py           # Test model implementations
-├── visualize_partitions.py  # Generate visualizations
-├── pyproject.toml           # Project config & dependencies
-├── README.md                # This file
-└── claude.md                # Detailed technical documentation
-```
-
-## Federated Strategies
-
-### FedAvg (Federated Averaging)
-Standard federated averaging where global parameters are aggregated using weighted average based on number of local samples.
-
-### FedProx (Federated Proximal)
-Adds a proximal term to handle heterogeneous data:
-- Proximal term applied **only to global parameters** (item embeddings, biases)
-- User embeddings remain fully personalized (no proximal constraint)
-- Controls drift from global model with μ parameter
-
-```
-L_local = L_BPR + (μ/2) * ||w_global - w_server||²
-```
-
-## Expected Results
-
-### BPR-MF Performance (Split Learning)
-
-| Metric | Round 1 | Round 10 | Notes |
-|--------|---------|----------|-------|
-| Train Loss | ~0.50 | ~0.25 | BPR loss (lower is better) |
-| Hit Rate@10 | ~0.55 | ~0.70 | Target metric |
-| NDCG@10 | ~0.30 | ~0.45 | Ranking quality |
-| Precision@10 | ~0.05 | ~0.10 | Sparse ground truth |
-
-**Note**: RMSE/MAE are high for BPR-MF (~2.0+) because it optimizes ranking, not rating prediction.
-
-## Future Work / Proposed Experiments
-
-### 1. Adaptive Alpha (α)
-Dynamic adjustment of Dirichlet concentration based on user characteristics:
-- Users with diverse preferences → higher α (more balanced)
-- Users with niche preferences → lower α (more specialized)
-
-### 2. Popularity-Weighted Negative Sampling
-Replace uniform negative sampling with popularity-aware sampling:
-- Popular items as harder negatives
-- Unpopular items for diversity
-- Better model calibration
-
-### 3. Additional Experiments
-- [ ] Compare FedAvg vs FedProx convergence
-- [ ] Analyze user embedding divergence across rounds
-- [ ] Cold-start user performance
-- [ ] Communication efficiency analysis
+- Rendle et al., "BPR: Bayesian Personalized Ranking from Implicit Feedback," UAI 2009.
+- Singhal et al., "Federated Reconstruction: Partially Local Federated Learning," NeurIPS 2021.
+- Zhang et al., "Dual Personalization on Federated Recommendation (PFedRec)," IJCAI 2023.
+- Zhang et al., "GPFedRec," KDD 2024 (global prototype aggregation).
+- Zhang et al., "FedCA — Beyond Similarity," 2024 (per-user-group reporting).
+- Further reading: `../Papers/digested/_INDEX.md`.
 
 ## Citation
 
-If you use this code, please cite:
-
 ```bibtex
-@mastersthesis{vinh2025personalizedfl,
+@mastersthesis{vinh2026personalizedfl,
   title={Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems},
   author={Dang Vinh},
-  year={2025}
+  year={2026}
 }
 ```
-
-## Resources
-
-- [Flower Documentation](https://flower.ai/docs/)
-- [MovieLens Dataset](https://grouplens.org/datasets/movielens/1m/)
-- [BPR Paper](https://arxiv.org/abs/1205.2618)
-- [FedProx Paper](https://arxiv.org/abs/1812.06127)
-
-## License
-
-Apache License 2.0
