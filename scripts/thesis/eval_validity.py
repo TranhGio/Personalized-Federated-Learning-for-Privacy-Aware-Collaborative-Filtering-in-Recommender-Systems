@@ -47,7 +47,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 _THIS = Path(__file__).resolve()
 _REPO_ROOT = _THIS.parents[2]
@@ -59,10 +59,16 @@ _REPO_ROOT = _THIS.parents[2]
 # CONSERVATIVE — runs become invalid_cold_eval and claim tables empty out,
 # which is loud, not silent. Long-term: record fix presence in the run
 # manifest at run time instead of proving it via git ancestry.
-FIX_COMMITS: Dict[str, Optional[str]] = {
-    "pfedrec": "01d8b72",
-    "personalized": "3a393fb",
-    "adaptive": "70a92bd",
+# PURGE ALIASES (2026-06-15 wandb blob purge): git filter-repo rewrote
+# d0cffd4..HEAD, so each fix exists under TWO SHAs — the pre-purge SHA
+# (recorded in manifests of runs launched before the purge; objects reachable
+# only via backup/pre-wandb-purge-20260615) and the post-purge SHA on the
+# current mainline. A run commit contains the fix iff ANY alias is its
+# ancestor. Subjects verified identical pre/post purge on 2026-07-27.
+FIX_COMMITS: Dict[str, Optional[Tuple[str, ...]]] = {
+    "pfedrec": ("01d8b72", "17be3db"),
+    "personalized": ("3a393fb", "22a6a96"),
+    "adaptive": ("70a92bd", "7d1831e"),
     "baseline": None,  # structurally immune — no per-user local state in eval
 }
 
@@ -183,15 +189,22 @@ def classify_run(module: str, run_dir: Path) -> Dict[str, Any]:
         )
         return out
 
-    has_fix = _commit_contains_fix(run_commit, fix)
+    verdicts = [_commit_contains_fix(run_commit, alias) for alias in fix]
+    if any(v is True for v in verdicts):
+        has_fix: Optional[bool] = True
+    elif verdicts and all(v is False for v in verdicts):
+        has_fix = False
+    else:
+        has_fix = None
+    fix_label = "/".join(fix)
     if has_fix:
-        out.update(status="valid", reason=f"run commit {run_commit[:9]} contains run_id eval fix {fix}")
+        out.update(status="valid", reason=f"run commit {run_commit[:9]} contains run_id eval fix {fix_label}")
     else:
         detail = "predates" if has_fix is False else "cannot be proven to contain"
         out.update(
             status="invalid_cold_eval",
             reason=(
-                f"run commit {run_commit[:9] or '<missing>'} {detail} fix {fix}: D-06 eval read "
+                f"run commit {run_commit[:9] or '<missing>'} {detail} fix {fix_label}: D-06 eval read "
                 ".embedding_cache/default/ -> all users scored with COLD local state"
             ),
         )

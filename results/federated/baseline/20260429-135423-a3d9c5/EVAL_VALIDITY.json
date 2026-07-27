@@ -11,6 +11,6 @@
   "git_commit": "3c3116f25",
   "status": "diagnostics_only",
   "reason": "BasicMF clamp artifact (NDCG@10==1.0)",
-  "generated_at": "2026-07-26T04:36:38+00:00",
-  "generator_head": "7e0f9b2"
+  "generated_at": "2026-07-27T03:53:21+00:00",
+  "generator_head": "62961dc"
 }
