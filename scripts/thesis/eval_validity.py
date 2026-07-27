@@ -212,10 +212,12 @@ def classify_run(module: str, run_dir: Path) -> Dict[str, Any]:
 
 
 def _marker_text(payload: Dict[str, Any]) -> str:
+    fix = payload.get("fix_commit") or ()
+    fix_label = "/".join(fix) if isinstance(fix, (list, tuple)) else str(fix)
     return (
         f"# INVALID — cold-eval artifact\n\n"
         f"Run `{payload['run_id']}` ({payload['module']}) was produced BEFORE the module's "
-        f"run_id eval fix (`{payload['fix_commit']}`). Its D-06 full-population eval omitted "
+        f"run_id eval fix (`{fix_label}`). Its D-06 full-population eval omitted "
         f"`run_id`, so the client read per-user local state from `.embedding_cache/default/` "
         f"(nonexistent) and scored every user with COLD init.\n\n"
         f"Poisoned: `final_metrics.best`, `_manifest.metrics.best` (and per-group variants).\n"

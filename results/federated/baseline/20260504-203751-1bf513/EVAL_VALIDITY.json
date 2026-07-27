@@ -13,6 +13,6 @@
   "git_commit": "fd4450b4d",
   "status": "valid",
   "reason": "module structurally immune (eval loads whole model from broadcast arrays; no per-user local cache)",
-  "generated_at": "2026-07-27T03:53:21+00:00",
-  "generator_head": "62961dc"
+  "generated_at": "2026-07-27T03:54:47+00:00",
+  "generator_head": "06d46f2"
 }
