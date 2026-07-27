@@ -1,141 +1,146 @@
 # Báo cáo Tiến độ Luận văn Thạc sĩ
 
 **Đề tài:** Personalized Federated Learning for Privacy-Aware Collaborative Filtering in Recommender Systems
-**Tác giả:** Đặng Vinh
+**Tác giả:** Đăng Vĩnh
 **Dataset:** MovieLens-1M | **Framework:** Flower (flwr) + PyTorch
-**Ngày cập nhật:** 2026-06-15
+**Ngày cập nhật:** 2026-07-27 *(bản trước: 2026-06-15)*
 
 ---
 
 ## 1. Tóm tắt cho người đọc nhanh (Executive Summary)
 
-Báo cáo này trình bày một **kết quả phủ định mang tính quyết định (decisive negative result)** cho claim gốc của luận văn, được xác lập dưới một evaluation protocol đúng về mặt phương pháp — protocol mà chúng tôi đã phải **sửa lỗi** trước khi bất kỳ con số nào đáng tin.
+Bản cập nhật này bổ sung **ba thí nghiệm mới (07/2026)** lên trên kết quả phủ định quyết định đã báo cáo hồi tháng 6. Trạng thái hiện tại:
 
-Claim gốc là: dưới cross-device protocol (1 user = 1 client, N=6040, natural partition, leave-one-out + 99 negatives, sampled NDCG@10), phương pháp **adaptive / hierarchical-conditional** đề xuất phải thắng cả ba comparator — all-global baseline, PFedRec, và split-learning personalized — **đặc biệt trên nhóm sparse users (0–30 interactions)** — đồng thời PFedRec phải tái lập (reproduce) được reference đã công bố.
+1. **Claim gốc của luận văn vẫn bị falsified** (adaptive không thắng, xếp bét trên sparse users) — không đổi.
+2. **Claim dương trung tâm được NÂNG CẤP:** khi so knob-for-knob (cùng loss BPR, cùng embedding-dim), split-learning thắng all-global baseline **+20.9%** NDCG@10 (trước đây +13% nhưng dính confound MSE-vs-BPR — confound này nay đã bị loại bằng thực nghiệm).
+3. **PFedRec + final-calibration đạt 0.3447** — số full-population cao nhất toàn ma trận, **vượt cả centralized BPR-MF (0.3332) cùng protocol** → "federated đạt/vượt centralized" là một câu bảo vệ được.
+4. **Capstone đề xuất (Adaptive-PFedRec, α ở mức head) đã bị BÁC BỎ ngay ở gate offline** với chi phí 0 GPU: ngay cả oracle-α theo bucket (biết trước đáp án) cũng không thắng nổi pure-local calibrated heads (Δ = −0.0002). Nhưng chính sweep đó cho **counterfactual dương mạnh nhất từ trước đến nay**: thay head cá nhân bằng head dân số làm mất **−9.4 điểm** → per-user personalization ở head là load-bearing.
+5. Hạ tầng đánh giá được củng cố thêm: công cụ **re-evaluation offline tái lập bit-exact** lượt eval D-06 của run gốc (trust gate max|Δ| = 0.0), và một bug phân loại validity (hậu quả của đợt purge git) được phát hiện + sửa.
 
-Ma trận run chính thức (4 run hợp lệ, full-population, single-seed, dùng chung protocol đã khóa) cho thấy:
-
-- Adaptive chỉ thắng **duy nhất** all-global baseline về overall (+6.5%).
-- **Thua** split-learning personalized và PFedRec về overall.
-- Trên **sparse users — chính là claim cốt lõi — adaptive xếp BÉT (DEAD LAST)**, thấp hơn cả all-global baseline.
-
-**Do đó claim gốc của luận văn bị falsified dưới protocol đúng** (single-seed; xem §7 cho caveat về ý nghĩa thống kê). Tuy nhiên, dự án mang lại hai đóng góp thực chất và bảo vệ được: (a) một **đóng góp phương pháp** — phát hiện và sửa một lớp bug "cold-evaluation" đã làm sụt giảm ~5× các model per-user-personalized; và (b) một **phát hiện cơ chế (mechanism)** sạch sẽ: lợi ích của split-learning đến từ việc *bảo vệ quá trình train item-embedding*, không phải từ personalized inference. Hướng đề xuất là tái định khung (reframe) luận văn quanh kết quả phủ định cộng với mechanism claim, thay vì tiếp tục đuổi theo claim dương đã bị bác bỏ.
+Khung luận văn khuyến nghị giữ nguyên hướng đã đề xuất: **kết quả phủ định trung thực + đóng góp phương pháp + cơ chế**, nay được làm giàu bằng chuỗi counterfactual về "personalization nên đặt ở đâu". Phần thực nghiệm còn thiếu duy nhất mang tính bắt buộc: **ma trận seed + kiểm định ý nghĩa thống kê theo cặp** (dữ liệu per-user cho việc này đã bắt đầu được sinh tự động).
 
 ---
 
-## 2. Những gì đã thay đổi kể từ lần cập nhật trước
+## 2. Những gì mới so với bản 2026-06-15
 
-Hai chỉnh sửa lồng vào nhau đã làm vô hiệu mọi số liệu cũ và buộc phải chạy lại toàn bộ ma trận.
+| # | Hạng mục | Kết quả | Chi phí |
+|---|---|---|---|
+| Exp 1 | **BPR all-global baseline** (run `e81518`, 2026-07-26) | Giết confound MSE-vs-BPR; split-learning +20.9% knob-for-knob | ~15h GPU |
+| Exp 2 | **PFedRec + final-calibration** (run `cf72e0`, 2026-07-27) | 0.3447 — comparator bar mới; calibration đóng 45% staleness gap | ~8h GPU |
+| Exp 3 | **Capstone α-PFedRec — Stage A offline gate** (2026-07-27) | **NO-GO** theo bands đăng ký trước; + counterfactual α=0 mạnh | **0 GPU, ~5 phút** |
+| Tooling | reeval.py PfedrecAdapter + trust gate bit-exact; per-user NDCG dump; sửa bug purge-alias trong eval-validity | Nền cho kiểm định theo cặp (queue #4) | — |
 
-**(a) Bug cold-evaluation.** Lượt evaluation full-population cuối cùng (D-06) đã chấm điểm **mọi user bằng một personal head cold, chưa khởi tạo**, đọc từ một cache path không tồn tại (`.embedding_cache/default/`), bởi vì lượt eval không stamp `run_id` / `reuse_cache` vào eval config. Với bất kỳ module nào giữ tham số *local* theo từng user (PFedRec: `affine_output`; personalized: user embeddings; adaptive: user embeddings / personal MLP / fusion / α / perturbation), lỗi này làm sụt full-population metrics khoảng **5×** — quan sát trực tiếp ở PFedRec: **0.0711 (cold) vs 0.3478 (warm)**. Đã fix theo từng module:
-
-- `01d8b72` — PFedRec (`affine_output` heads)
-- `3a393fb` — personalized (`user_embeddings` / `user_bias`)
-- `70a92bd` — adaptive (`user_embeddings` / `personal_mlp` / fusion / `logit_alpha` / `item_perturbation`)
-
-All-global baseline **miễn nhiễm về mặt cấu trúc** (nó dựng lại toàn bộ model từ broadcast aggregated arrays, không giữ per-user local cache), nên run của nó không cần fix và hợp lệ theo thiết kế.
-
-**(b) Migration protocol.** Chúng tôi đã loại bỏ setup cross-silo `num-supernodes=5` cũ, chuyển sang cross-device **natural** partition (1 user = 1 client, N=6040). Đây là protocol mà claim của luận văn được *định nghĩa trên đó* — bối cảnh mà một claim về per-user personalization mới có ý nghĩa vận hành cho công trình này; cross-silo federated RecSys vẫn là một setting hợp lệ nhưng khác, được giữ lại dạng opt-in chỉ để tái lập các run cũ. Natural partition giờ là default đã khóa.
-
-Hai thay đổi này là *lý do vì sao các kết quả trước đây không đáng tin*, và vì sao toàn bộ ma trận phải được tạo lại dưới pipeline đã sửa.
+Chiến lược capstone được xây dựng qua một phiên đề xuất (2026-07-04) và một vòng **phản biện đối kháng nội bộ** (2026-07-06, 3 reviewer độc lập + 1 công cụ ngoài) — vòng phản biện này yêu cầu: comparator phải là PFedRec+calibration (→ Exp 2), kỳ vọng trung thực −1..+1 điểm, và **gate oracle-α offline bắt buộc trước khi viết code federation** (→ Exp 3). Gate đã làm đúng nhiệm vụ của nó: chặn ~4 ngày code + ~8h GPU cho một hướng không có tín hiệu.
 
 ---
 
-## 3. Evaluation Protocol đã khóa
+## 3. Evaluation Protocol (không đổi, đã khóa)
 
-Cả 4 run chính thức dùng chung một protocol y hệt:
-
-| Knob | Giá trị |
-|---|---|
-| Partition | `natural` (cross-device, 1 user = 1 client, **N=6040**) |
-| Eval | leave-one-out + 99 negative samples (NCF protocol) |
-| Metric chính | `sampled_ndcg@10` (kèm HR@10) |
-| Nhóm user | sparse (0–30), medium (30–100), dense (100+) interactions |
-| Client sampling | `fraction_train = 0.1` (C=0.1) |
-| Rounds | `num_server_rounds = 100` (cả 4 chạy đủ 100) |
-| Checkpoint | `best_round_restore` |
-| Eval coverage | full-population D-06, **evaluated_users = 6040** |
-| Seed | 42 (mới chỉ single seed) |
-
-Các số bên dưới được copy nguyên văn từ `final_metrics.best` trong `results.json` của từng run, không làm tròn.
+Như bản trước: natural partition (cross-device, 1 user = 1 client, N=6040), leave-one-out + 99 negatives, `sampled_ndcg@10` chính, nhóm sparse/medium/dense, C=0.1, 100 rounds, `best_round_restore`, full-population D-06 (6040 users), seed 42. Bổ sung duy nhất: **final-calibration** (1 epoch căn lại head cá nhân cho toàn bộ user sau khi khôi phục vòng tốt nhất) nay được xác lập là **một phần của comparator bar** cho mọi so sánh liên quan đến per-user head (lý do: Exp 2 cho thấy nó cải thiện thật và đều).
 
 ---
 
-## 4. Kết quả chính (Main Results)
+## 4. Ma trận kết quả cập nhật (Main Results)
 
-| Module | Run ID | Best Round | NDCG@10 (overall) | NDCG@10 sparse | NDCG@10 medium | NDCG@10 dense | HR@10 (overall) | HR@10 sparse |
+Tất cả: N=6040, warm full-population D-06, best-round restore, seed 42. Copy nguyên văn từ `final_metrics.best`.
+
+| Hệ thống | Run ID | Best round | NDCG@10 | NDCG@10 sparse | NDCG@10 medium | NDCG@10 dense | HR@10 | HR@10 sparse |
 |---|---|---|---|---|---|---|---|---|
-| **PFedRec** (calibration) | `…071106-ef41ab` | 100 | **0.33518** | **0.40567** | **0.37104** | **0.28697** | **0.59238** | **0.67120** |
-| **Personalized** (split-learning) | `…064423-f18e64` | 33 | 0.22748 | 0.27263 | 0.24509 | 0.20087 | 0.41970 | 0.49197 |
-| **Adaptive** (đóng góp luận văn) | `…152226-869730` | 83 | 0.21436 | 0.23546 | 0.22641 | 0.19887 | 0.38675 | 0.40915 |
-| **Baseline** (all-global, lower bound) | `…203751-1bf513` | 25 | 0.20131 | 0.24458 | 0.22171 | 0.17300 | 0.36457 | 0.42645 |
+| **PFedRec + calibration** *(MỚI)* | `…083121-cf72e0` | 83 | **0.34471** | **0.42697** | **0.38016** | **0.29354** | **0.61109** | **0.70581** |
+| PFedRec (không calibration) | `…071106-ef41ab` | 100 | 0.33518 | 0.40567 | 0.37104 | 0.28697 | 0.59238 | 0.67120 |
+| Personalized (split-learning) | `…064423-f18e64` | 33 | 0.22748 | 0.27263 | 0.24509 | 0.20087 | 0.41970 | 0.49197 |
+| Adaptive (đóng góp gốc) | `…152226-869730` | 83 | 0.21436 | 0.23546 | 0.22641 | 0.19887 | 0.38675 | 0.40915 |
+| Baseline all-global, MSE (dim 128) | `…203751-1bf513` | 25 | 0.20131 | 0.24458 | 0.22171 | 0.17300 | 0.36457 | 0.42645 |
+| **Baseline all-global, BPR (dim 64)** *(MỚI)* | `…093704-e81518` | 83 | 0.18817 | 0.24687 | 0.19935 | 0.16292 | 0.32583 | 0.40049 |
 
-**Xếp hạng — overall NDCG@10:** PFedRec (0.33518) > Personalized (0.22748) > **Adaptive (0.21436)** > Baseline (0.20131).
-**Xếp hạng — sparse NDCG@10:** PFedRec (0.40567) > Personalized (0.27263) > Baseline (0.24458) > **Adaptive (0.23546)**.
+Điểm tham chiếu ngoài-federated: **centralized BPR-MF cùng LOO-99 protocol = NDCG@10 0.3332** → PFedRec federated (cả hai biến thể) **đạt/vượt centralized**. (SVD/NCF centralized là RMSE-only, không so được trên protocol này.)
 
-*Lưu ý về tính so sánh được:* `mrr` không có trong `final_metrics.best` ở cả 4 run nên được lược bỏ. Các module khác nhau ở **nhiều hơn một trục thiết kế**, nên ma trận là một so sánh *cấp hệ thống (system-level)*, không phải ablation knob-for-knob:
-- **Loss objective:** run baseline là **BasicMF (MSE / rating loss)**, trong khi personalized dùng **BPR (ranking loss)** và adaptive dùng model **dual**. Vai trò lower-bound của baseline không bị ảnh hưởng, nhưng objective của nó không đồng nhất với các module họ BPR.
-- **Embedding dimension:** baseline=128, personalized=64, adaptive=64; PFedRec dùng `latent_dim=32` gốc của nó.
-- **Optimizer regime:** PFedRec chạy regime riêng (`lr=0.1`, `lr_eta=80`, `local_epochs=1`, `num_negatives=4`, FedAvg), không so sánh knob-for-knob trực tiếp với các module họ MF (`lr=0.005`).
-- **Strategy:** adaptive là module duy nhất trong chuỗi đóng góp dùng `fedprox`; baseline/personalized có lưu `proximal_mu=0.01` nhưng chạy FedAvg, nên μ bị vô hiệu (inert).
+**Cặp so sánh knob-for-knob duy nhất trong ma trận** — hai run chỉ khác đúng một trục (user embedding bị FedAvg vs giữ local): Baseline-BPR (0.18817) vs Personalized (0.22748) = **+20.9% overall, +10.4% sparse, +28.8% HR@10**. Đây nay là ô nhân-quả sạch nhất của luận văn.
 
 ---
 
-## 5. Phát hiện quyết định & Diễn giải
+## 5. Ba thí nghiệm tháng 7 — chi tiết
 
-Run quyết định là adaptive **`20260613-152226-869730`** (hoàn tất 2026-06-14), với trust gates đều pass (`d06_cache_misses=0`, `evaluated_users=6040`). Ba kết luận rút ra:
+### 5.1. Exp 1 — BPR all-global baseline: loại confound MSE-vs-BPR
 
-**(1) Claim gốc của luận văn bị falsified.** Adaptive phải thắng cả ba comparator trên NDCG@10, đặc biệt sparse. Thực tế nó chỉ thắng baseline (+6.5% overall), thua cả personalized (−5.8%) lẫn PFedRec (−36%), và **xếp bét trên sparse users (0.23546 < baseline 0.24458)** — ngược hẳn với dự đoán cốt lõi. *(Các phần trăm liên-phương-pháp này là single-seed; khoảng cách adaptive/personalized/baseline nhỏ và chưa được chứng minh là tách biệt về thống kê — xem §7. Riêng khoảng cách của PFedRec và thứ hạng "adaptive bét trên sparse" đủ lớn để robust.)* Cơ chế α và dual-level personalization, dưới protocol và cấu hình này, không tạo ra được sự transfer cho sparse users như thiết kế kỳ vọng. Ngay cả confound về calibration-uniformity (§7) cũng chỉ *làm đẹp (flatter)* cho adaptive, nên không thể cứu verdict.
+**Vấn đề:** claim "+13% split-learning vs baseline" cũ so personalized (BPR, dim 64) với baseline (MSE/BasicMF, dim 128) — khác cả loss lẫn capacity, không quy được nhân quả.
+**Thí nghiệm:** chạy baseline all-global với đúng cấu hình của personalized (BPR, dim 64, lr 0.005, FedAvg, 100 rounds, C=0.1, seed 42), chỉ khác duy nhất chỗ user embedding bị trung bình hóa. Run `20260725-093704-e81518`, sidecar valid, đủ 6040 users.
+**Kết quả:** 0.18817 — split-learning thắng knob-for-knob **+20.9%**. Confound chết theo hướng CÓ LỢI: claim cũ hóa ra còn khiêm tốn.
+**Ghi chú trung thực:** all-global BPR (0.18817) < all-global MSE (0.20131) *gợi ý* FedAvg phá user embedding của BPR nặng hơn, nhưng cặp này còn lệch dim (64 vs 128) — không trích dẫn như hiệu ứng thuần của loss. Verdict về adaptive không đổi: sparse của adaptive (0.23546) vẫn thua cả baseline yếu hơn này (0.24687).
 
-**(2) PFedRec reproduce đúng (trong giới hạn compute khả thi).** Dưới cross-device C=0.1, PFedRec đạt **NDCG@10 ≈ 0.335 / HR@10 ≈ 0.59**, khớp với bar đã ghi nhận cho protocol này. Band cao hơn của paper (HR@10 0.65–0.70, NDCG@10 0.35–0.42) cần full participation (`fraction=1.0`, ~6 ngày compute) — một bất khả thi đã được ghi nhận, **không phải reproduction thất bại**; lưu ý con số cross-device 0.335 nằm ngay dưới band full-participation của paper, đúng như compute envelope dự đoán. Việc PFedRec là phương pháp mạnh nhất ở đây tự nó cũng mang thông tin: một *per-user local score function trên item embeddings dùng chung toàn cục* vượt cả split-learning lẫn adaptive blend.
+### 5.2. Exp 2 — PFedRec + final-calibration: xác lập comparator bar 0.3447
 
-**(3) Điểm dương có thể công bố: cơ chế của split-learning.** Split-learning personalized thắng all-global baseline **+13% overall** (0.22748 vs 0.20131) và trên mọi density bucket. **Giả thuyết khả dĩ nhất** **không phải** là personalized inference mà là *bảo vệ quá trình train item-embedding khỏi việc FedAvg averaging user embeddings một cách phá hoại*: bằng cách giữ user embeddings cục bộ, bảng item toàn cục hội tụ về một representation chung sạch hơn. Đây là một mechanism claim có thể bác bỏ (falsifiable) — và nó sẽ giải thích vì sao PFedRec (cũng loại user embeddings khỏi aggregation surface) thắng tuyệt đối. Hiện **chưa được kiểm chứng bằng thực nghiệm**, cần **một ablation** để xác nhận (ví dụ: local-user-embedding vs frozen/global-user-embedding, giữ cố định item aggregation). Cần trình bày như một **giả thuyết, không phải kết quả**, cho đến khi ablation đó được chạy.
+**Vấn đề:** trước capstone, phải đo xem cơ chế "reconstruction" đơn giản (calibration 1 epoch toàn bộ user sau best-round restore, item embeddings đóng băng) đóng được bao nhiêu phần staleness gap (full-pop 0.3352 vs trần in-loop 0.3563, gap 0.0211).
+**Kết quả (run `20260726-083121-cf72e0`, ~8h):** mọi gate đạt (`d06_cache_misses=0` — bằng chứng warm trực tiếp; 6040 users; quỹ đạo in-loop tái lập run cũ với lệch 0.0001). Full-pop best = **0.34471** → calibration đóng **45.2% gap** (band PARTIAL đăng ký trước). Sparse hưởng lợi nhiều nhất (+2.1 điểm → 0.42697).
+**Hệ quả:** (a) comparator trung thực cho mọi cải tiến head-level từ nay là **0.3447**, không phải 0.3352; (b) headroom còn lại đến trần in-loop chỉ ~0.0115; (c) federated vượt centralized BPR-MF (0.3332).
 
----
+### 5.3. Exp 3 — Capstone α-PFedRec: gate offline trả NO-GO
 
-## 6. Bằng chứng tính hợp lệ (Trust Gates)
+**Đề xuất capstone** (07-04, sau phản biện 07-06): client upload head cá nhân `affine_output.weight` (32 số) → server FedAvg thành `global_head` → khi chấm điểm blend `w = α·w_local + (1−α)·w_global`, α per-user. Kế hoạch 3 giai đoạn với **gate bắt buộc**: Stage A đo bằng oracle offline xem hướng này CÓ THỂ thắng hay không, trước khi viết plumbing federation (Stage B) và chạy GPU (Stage C).
 
-Cả 4 ô chính thức được audit độc lập qua sidecar `EVAL_VALIDITY.json` từng run (tổng 38 sidecar: **5 valid, 14 invalid_cold_eval, 19 diagnostics_only**). Luật validity mã hóa trong sidecar là *tĩnh (static)*: một run được gán nhãn valid nếu git commit của nó ở tại/sau commit fix cold-eval của module **và** `effective_checkpoint_rule = best_round_restore`.
+**Stage A đã thực thi** (commit `3ce1367`): viết adapter tái lập offline lượt eval D-06 của run cf72e0. **Trust gate: bản replay khớp BIT-EXACT** khối `final_metrics.best` của run (max|Δ| = 0.0, đủ 6040/809/2322/2909) — mọi số của sweep phía sau kế thừa độ tin cậy này. Sau đó sweep α ∈ {0.00, 0.05, …, 1.00} trên toàn dân số + oracle theo bucket (cross-fitted: α* chọn trên nửa chẵn áp lên nửa lẻ và ngược lại; 3 họ bucket: nhóm mật độ / decile số tương tác / staleness) + policy heuristic HC port từ module adaptive.
 
-**Lưu ý quan trọng — nhãn "valid" ≠ chứng minh eval đã warm.** Luật sidecar là *cần* nhưng không *đủ*: nó chứng nhận *code* có chứa fix, chứ không chứng nhận một lượt eval cụ thể thực sự chạy warm. Bằng chứng trực tiếp duy nhất cho một warm full-pop eval là **`d06_cache_misses = 0` được stamp**. Phản ví dụ ngay trong corpus của chúng tôi: một adaptive run *thứ hai* cũng được gán nhãn valid, `20260612-120025-6394ca` (chính là run v1 bị early-stopped, commit có fix `70a92bd`), vẫn **crater xuống NDCG@10 ≈ 0.080** vì run đó bị dừng sớm *và* không stamp cache-miss gate. Vậy nhãn "valid" đơn thuần không đảm bảo con số đáng tin — gate được stamp mới đảm bảo.
+**Kết quả — NO-GO theo bands đăng ký trước:**
 
-| Module | Run | Bằng chứng warm-eval trực tiếp |
+| Đại lượng | Giá trị | Ngưỡng GO |
 |---|---|---|
-| **Adaptive** | `…869730` | **`d06_cache_misses = 0` được stamp** (bằng chứng mạnh nhất; gate trực tiếp) |
-| PFedRec | `…ef41ab` | Field không stamp, nhưng full-pop NDCG@10 = 0.3352 *khớp warm bar đã ghi nhận* (cold sẽ crater về ~0.07) → fix đã có hiệu lực (gián tiếp) |
-| Personalized | `…f18e64` | Field không stamp; commit `9ce092d` chứa fix `3a393fb`; nhất quán với warm (gián tiếp) |
-| Baseline | `…1bf513` | Miễn nhiễm cấu trúc — không có per-user local cache, nên phân biệt warm/cold không áp dụng |
+| Δ_gate (oracle bucket cross-fitted, họ tốt nhất, vs cached 0.34471) | **−0.0002** | ≥ +0.010 |
+| α* toàn cục trên grid | **1.0** (cả 3 họ bucket; các bucket 0.7–1.0, tập trung 0.9–1.0) | — |
+| Δ sparse (crossfit) | −0.0015 (blend làm hại đúng nhóm yếu) | ≥ +0.015 |
+| Policy heuristic HC | 0.30612 = **−3.9 điểm** (đúng như phản biện 07-06 dự đoán) | — |
+| Oracle per-user (upper bound, không gate) | +0.0712 — nhưng 74% user chọn α=1.0 → thuần noise-fitting trên 1 item held-out | — |
 
-14 run `invalid_cold_eval` đều có trước commit fix của module; 19 run `diagnostics_only` bị loại vì lý do không-hợp-lệ khác (`last_round` protocol, thiếu `results.json`, hoặc artifact BasicMF NDCG@10==1.0 do clamp). **Kết luận:** run adaptive *quyết định* mang bằng chứng mạnh nhất có thể (stamp trực tiếp); ba run còn lại warm-consistent theo reference/cấu trúc, và việc re-stamp `d06_cache_misses` cho chúng là một hạng mục belt-and-suspenders rẻ tiền cho ma trận cuối.
+**Kết luận:** hướng "pha population head vào head cá nhân" không chứa tín hiệu khai thác được ở granularity bucket, dưới protocol đã khóa (sau calibration). Stage B/C không khởi công — tiết kiệm ~4 ngày code + ~8h GPU.
+
+**Nhưng cùng sweep đó cho chuỗi counterfactual giá trị cao cho luận văn** (tất cả bit-paired với D-06, đã commit thành `reeval_*.json`):
+
+| Arm | NDCG@10 | Ý nghĩa |
+|---|---|---|
+| Head cá nhân (α=1) | 0.34471 | ground truth |
+| **Head dân số (α=0, mean 6040 head)** | **0.25099** | mất **−9.4 điểm** → **per-user head là load-bearing** — counterfactual "trong-PFedRec" mà phản biện yêu cầu, trả lời TÍCH CỰC cho câu hỏi "personalization đặt ở head có giá trị không" |
+| Head của user khác (shuffled) | 0.19733 | head thực sự cá nhân hóa, không phải generic |
+| Head Kaiming ngẫu nhiên | 0.07412 | sàn |
+
+Câu chuyện gọn cho luận văn: *có head riêng cho từng user đáng giá +9.4 điểm; nội suy α giữa head riêng và head dân số không thêm được gì — giá trị nằm ở VIỆC CÓ head riêng, không phải ở việc PHA nó.*
 
 ---
 
-## 7. Giới hạn & Confounds
+## 6. Bằng chứng tính hợp lệ (Trust Gates) — cập nhật
 
-1. **Single seed (42).** Mọi con số trên đều từ một seed. Ma trận ý nghĩa-thống-kê 3-seed **chưa** chạy, nên chưa thể gắn confidence interval hay claim sự tách biệt thống kê giữa các ô gần nhau (adaptive 0.21436 vs personalized 0.22748 vs baseline 0.20131). Khoảng cách PFedRec đủ lớn để robust; thứ tự adaptive-vs-baseline-vs-personalized thì chưa được củng cố. *Đây là khoảng trống quan trọng nhất cần đóng trước khi nộp.*
+- Corpus hiện có **7 run valid** (thêm `e81518`, `cf72e0`); 14 invalid_cold_eval; 19 diagnostics_only.
+- Hai run mới đều mang bằng chứng warm mạnh: `cf72e0` có **`d06_cache_misses=0` stamped**; `e81518` miễn nhiễm cấu trúc (all-global).
+- **Nâng cấp lớn:** trust gate của công cụ re-evaluation offline nay được code tường minh (trước chỉ là quy ước) — bản replay `cached` phải khớp `final_metrics.best` với |Δ| < 1e-6 và đúng số user từng nhóm, nếu không toàn bộ phiên phân tích bị hủy (exit 3). Trên cf72e0: **khớp bit-exact (max|Δ| = 0.0)**.
+- **Bug hạ tầng được phát hiện + sửa:** `FIX_COMMITS` trong eval-validity giữ SHA trước đợt purge git (15/06) nên run per-user-state đầu tiên sau purge bị phân loại nhầm `invalid_cold_eval`. Fix: mỗi module giữ cặp SHA alias (trước + sau purge), hợp lệ nếu bất kỳ alias nào là ancestor. Cả 7 run valid phân loại đúng (commit `4b8d059`).
 
-2. **Calibration không đồng nhất.** Trong chuỗi đóng góp, pipeline adaptive có thêm bước final-calibration realignment mà các ô so sánh không có. Đây là một lập luận *phân tích*, không phải đại lượng đo được, nhưng nếu có thì chỉ **làm đẹp** cho adaptive — nên nó củng cố, chứ không làm yếu, verdict phủ định.
+---
 
-3. **Cấu hình không phải pure-default.** Run adaptive có tắt các kỹ thuật next-gen tùy chọn `enable-per-user-alpha` và `enable-item-perturbation`, **nhưng** `contrastive_lambda = 0.1` vẫn **bật** (InfoNCE auxiliary loss). Phân tích factorial trước đó cho thấy số hạng contrastive này gần như inert trên full-pop metrics, nên verdict không bị ảnh hưởng, song run nên được dán nhãn "dual + contrastive", không phải "vanilla dual". Ngoài ra `per-user-alpha` còn mang một *known full-population staleness bug*, nên hiện chưa phải là một đòn bẩy sạch.
+## 7. Giới hạn & Confounds — cập nhật
 
-4. **Dị biệt architecture / objective / optimizer.** Như §4, các module khác nhau ở loss objective (MSE vs BPR vs dual), embedding dim, optimizer regime, và FL strategy. So sánh công bằng *trong họ BPR/MF*, nhưng PFedRec là architecture khác; ưu thế của nó nên đọc là "một thiết kế per-user-head thắng", chứ không phải một thất bại knob-for-knob.
+1. **Single seed (42) — vẫn là khoảng trống lớn nhất.** Chưa có khoảng tin cậy cho các ô sát nhau (personalized/adaptive/2×baseline). Đã có nền cho hướng rẻ hơn ma trận seed thuần: **per-user NDCG dump** (6040 dòng/hệ thống) cho phép kiểm định theo cặp Wilcoxon signed-rank — dump cho ô PFedRec đã sinh và commit; cần bổ sung cho các module khác.
+2. **Dim confound mới (ghi nhận chủ động):** cặp baseline MSE (dim 128) vs baseline BPR (dim 64) lệch capacity — không dùng để claim hiệu ứng loss thuần. Cặp knob-for-knob hợp lệ duy nhất là BPR-baseline vs personalized.
+3. Các giới hạn cũ (calibration non-uniformity của run adaptive; `contrastive_lambda=0.1` còn bật trong run adaptive; khác biệt architecture giữa các họ) — không đổi, xem bản 2026-06-15.
+4. **Giới hạn của kết luận capstone:** NO-GO đo trên head ĐÃ calibrate (staleness đã bị xóa khỏi cache). Blend theo staleness trên run KHÔNG calibration về lý thuyết còn bỏ ngỏ — nhưng vì comparator trung thực nay bao gồm calibration (rẻ, hiệu quả), hướng đó khó có ý nghĩa triển khai.
 
 ---
 
 ## 8. Đề xuất bước tiếp theo / Điểm cần quyết định
 
-Tôi thấy hai hướng nhất quán và đề xuất **Path A**.
+Câu hỏi Path A/B của bản trước đã được giải quyết một phần **bằng dữ liệu**: biến thể Path B tham vọng nhất (capstone α-PFedRec) đã được thử và bác bỏ với chi phí ~0. Khuyến nghị hiện tại:
 
-**Path A — Tái định khung quanh kết quả phủ định + mechanism (đề xuất).** Chấp nhận rằng adaptive không thắng dưới protocol đúng, và xoay narrative luận văn sang:
-- **đóng góp phương pháp**: phát hiện và sửa lớp bug cold-eval, và migration protocol giúp evaluation đáng tin (một bài học thực, chuyển giao được, cho evaluation trong federated-RecSys);
-- **giả thuyết mechanism**: split-learning hỗ trợ bằng cách bảo vệ item-embedding training, được củng cố (tương quan) bởi chiến thắng tuyệt đối của PFedRec — sẽ xác nhận bằng một ablation;
-- một **kết quả phủ định trung thực** về adaptive α-personalization, kèm phân tích *vì sao* transfer cho sparse users thất bại.
-Công việc cần làm: (i) **ma trận 3-seed** (đóng Limitation 1, củng cố mọi xếp hạng); (ii) **một ablation split-learning** để xác nhận mechanism claim; (iii) một phân tích thất bại ngắn của α-blend trên sparse users.
+**Chốt narrative luận văn** = Path A làm giàu:
+1. **Đóng góp phương pháp:** lớp bug cold-eval (sụt ~5×, 3/4 module) + protocol migration + trust-gate hạ tầng (replay bit-exact) — bài học chuyển giao được.
+2. **Kết quả dương:** split-learning +20.9% knob-for-knob (Exp 1); PFedRec+calibration 0.3447 ≥ centralized 0.3332; calibration đóng 45% staleness gap (Exp 2).
+3. **Chuỗi placement/counterfactual:** per-user head đáng giá +9.4 điểm so với head dân số; head thực sự cá nhân hóa (shuffled −14.7 điểm); nhưng α-blend không thêm giá trị (Exp 3) — một khảo sát "personalization nên đặt ở đâu" có số liệu ở mọi điểm.
+4. **Kết quả phủ định trung thực:** adaptive gốc (đã báo cáo) + capstone α-blend (mới) — cả hai đều có phân tích nguyên nhân.
 
-**Path B — Một lần chạy next-gen cuối.** Chạy lại adaptive với `per-user-alpha` và `item-perturbation` bật, hy vọng phục hồi khoảng cách sparse. **Caveats:** `per-user-alpha` có known full-pop staleness bug phải sửa trước; khoảng cần bù (sparse 0.23546 → phải vượt ≥0.27263 để thắng personalized, và ≥0.40567 để thắng PFedRec) là rất lớn; và đốt compute cho một giả thuyết n=1 có nguy cơ trì hoãn ma trận seed mà Path A dù sao cũng cần.
+**Việc còn lại trước khi viết:**
+- **(Bắt buộc)** Ma trận ý nghĩa thống kê: per-user dump cho 4 hệ thống chính + kiểm định theo cặp; nếu GPU cho phép, +2 seed cho 3 ô sát nhau. (~2–4 ngày GPU tùy mức.)
+- **(Bắt buộc, 0 GPU)** Digest 6 paper prior-art còn thiếu (FedRecon, FedTHE, FedRAP, APFL, FedRep, GPFedRec) — FedTHE là prior art sát capstone nhất, PHẢI được cite khi kể chuyện α-blend.
+- **(Bắt buộc, 0 GPU)** Mục threat-model + bảng lượng truyền per-method cho chữ "Privacy-Aware" trong tên đề tài.
+- (Tùy chọn) Ablation cơ chế split-learning (frozen/random p_u) nếu muốn nâng "giả thuyết cơ chế" thành "kết quả cơ chế".
 
-**Quyết định cần xin ý kiến từ giáo sư hướng dẫn:** Chúng ta cam kết Path A (luận văn negative-finding + mechanism, với ma trận 3-seed và ablation split-learning là phần thực nghiệm còn lại), hay cho phép một nỗ lực Path B *có giới hạn* (sửa per-user-alpha staleness, một cấu hình duy nhất, dừng cứng) trước khi khóa narrative? Khuyến nghị của tôi là Path A, giữ Path B chỉ như một phương án dự phòng có giới hạn thời gian chặt chẽ.
+**Câu hỏi cho giáo sư:** (1) đồng ý chốt narrative trên? (2) mức đầu tư cho ý nghĩa thống kê: chỉ paired-tests trên seed 42, hay +2 seed cho các ô sát nhau? (3) thủ tục đổi tên đề tài (nếu narrative đổi) cần lead time bao lâu?
 
 ---
 
-*Cả 4 kết quả được copy nguyên văn từ `final_metrics.best` trong `results.json` của từng module tại `results/federated/<module>/<run_id>/`. Validity provenance lấy từ sidecar `EVAL_VALIDITY.json` từng run (schema `eval_validity/1`, tạo lúc 2026-06-15 tại generator head `bb67cff`). Mọi numeric claim trong báo cáo này đã được kiểm chứng độc lập lại với JSON gốc.*
+*Nguồn số liệu: `final_metrics.best` trong `results.json` của từng run tại `results/federated/<module>/<run_id>/`; các arm counterfactual từ `reeval_*.json` cùng thư mục (schema v2, kèm trust-gate verdict); centralized từ `results/centralized/bpr_mf_centralized_results.json`. Mọi con số trong báo cáo đã được kiểm chứng lại trực tiếp với JSON gốc ngày 2026-07-27. Bản diễn giải đầy đủ cho người ngoài chuyên ngành: `THESIS_REPORT_EXPLAINED_VI.md`.*
