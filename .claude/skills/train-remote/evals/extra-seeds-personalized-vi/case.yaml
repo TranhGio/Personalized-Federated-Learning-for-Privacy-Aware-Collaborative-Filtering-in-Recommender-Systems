@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: extra-seeds-personalized-vi
+expected_outcome: |
+  Pre-flight reported; two portable wrappers (seed 1337 and 2026) mirroring f18e64 with mode thesis_crossdevice_main, early stopping off, correct run-seed, correct TOML quoting; a handoff block with start_run.sh commands that launches the runs one at a time.
