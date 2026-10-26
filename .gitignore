@@ -55,7 +55,14 @@ htmlcov/
 
 # Keep results JSON files
 !results/**/*.json
-.claude/
+.claude/*
+# ...except project skills + paper-digest commands, so they travel to every machine via git
+!.claude/skills/
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/digest-paper.md
+!.claude/commands/digest-survey.md
+!.claude/commands/batch-digest.md
 pal-mcp-server/
 # W&B local run artifacts (repo-root) — multi-hundred-MB logs, blocked GitHub push 2026-06-10
 wandb/
