@@ -81,6 +81,7 @@ from fedrec_foundation.mode import (
 from fedrec_foundation.paths import data_derived
 from fedrec_foundation.paths import module_run_results_dir, repo_root
 from fedrec_foundation.atomic import atomic_write_json
+from fedrec_foundation.wandb_alerts import send_run_finished_alert
 from fedrec_foundation.rng import server_rng
 from fedrec_foundation.split import load_split_manifest
 from dataclasses import replace as dataclass_replace
@@ -1156,6 +1157,18 @@ def main(grid: Grid, context: Context) -> None:
         wandb.run.summary["cold_start_rate"] = float(cold_start_rate)
 
     # Finish wandb run
+    # End-of-run alert (email/Slack via W&B): headline metrics + trust
+    # signals, so a finished run is visible without ssh. Non-fatal.
+    if wandb_enabled and wandb_run is not None:
+        send_run_finished_alert(
+            "personalized",
+            str(run_id),
+            final_metrics,
+            expected_users=int(manifest.num_supernodes),
+            thesis_run_label=str(getattr(manifest, "thesis_run_label", "") or ""),
+            results_path=str(results_filename.resolve()),
+        )
+
     if wandb_enabled and wandb_run is not None:
         wandb.finish()
         print("  Weights & Biases run completed")

@@ -43,6 +43,7 @@ from fedrec_foundation.mode import (
     resolve_mode_defaults,
 )
 from fedrec_foundation.atomic import atomic_write_json
+from fedrec_foundation.wandb_alerts import send_run_finished_alert
 from fedrec_foundation.paths import data_derived, module_run_results_dir, repo_root
 from fedrec_foundation.rng import server_rng
 from dataclasses import replace as dataclass_replace
@@ -952,6 +953,18 @@ def main(grid: Grid, context: Context) -> None:
         })
 
     # Finish wandb run
+    # End-of-run alert (email/Slack via W&B): headline metrics + trust
+    # signals, so a finished run is visible without ssh. Non-fatal.
+    if wandb_enabled:
+        send_run_finished_alert(
+            "baseline",
+            str(run_id),
+            final_metrics,
+            expected_users=int(manifest.num_supernodes),
+            thesis_run_label=str(getattr(manifest, "thesis_run_label", "") or ""),
+            results_path=str(results_filename.resolve()),
+        )
+
     if wandb_enabled:
         wandb.finish()
         print("  Weights & Biases run completed")

@@ -95,6 +95,7 @@ from fedrec_foundation.rng import server_rng
 from fedrec_foundation.split import load_split_manifest
 # Phase 6 Plan 05: repo-root-anchored path + atomic write + dataclasses.replace.
 from fedrec_foundation.atomic import atomic_write_json
+from fedrec_foundation.wandb_alerts import send_run_finished_alert
 from dataclasses import replace as dataclass_replace
 
 # Create ServerApp
@@ -1620,6 +1621,18 @@ def main(grid: Grid, context: Context) -> None:
             wandb.run.summary["best_prototype_norm"] = float(np.linalg.norm(strategy.best_prototype))
 
     # Finish wandb run
+    # End-of-run alert (email/Slack via W&B): headline metrics + trust
+    # signals, so a finished run is visible without ssh. Non-fatal.
+    if wandb_enabled and wandb_run is not None:
+        send_run_finished_alert(
+            "adaptive",
+            str(run_id),
+            final_metrics,
+            expected_users=int(manifest.num_supernodes),
+            thesis_run_label=str(getattr(manifest, "thesis_run_label", "") or ""),
+            results_path=str(results_filename.resolve()),
+        )
+
     if wandb_enabled and wandb_run is not None:
         wandb.finish()
         print("  Weights & Biases run completed")

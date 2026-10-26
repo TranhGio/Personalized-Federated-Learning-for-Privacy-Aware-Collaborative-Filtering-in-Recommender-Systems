@@ -96,6 +96,7 @@ from flwr.serverapp import Grid, ServerApp
 
 # Phase 5 Plan 04 foundation imports.
 from fedrec_foundation.atomic import atomic_write_json
+from fedrec_foundation.wandb_alerts import send_run_finished_alert
 from fedrec_foundation.bundle import verify_bundle
 from fedrec_foundation.manifest import (
     build_run_manifest,
@@ -1365,6 +1366,18 @@ def main(grid: Grid, context: Context) -> None:
         })
         wandb.run.summary["total_cold_starts"] = int(total_cold_starts)
         wandb.run.summary["cold_start_rate"] = float(cold_start_rate)
+
+    # End-of-run alert (email/Slack via W&B): headline metrics + trust
+    # signals, so a finished run is visible without ssh. Non-fatal.
+    if wandb_enabled and wandb_run is not None:
+        send_run_finished_alert(
+            "pfedrec",
+            str(run_id),
+            final_metrics,
+            expected_users=int(manifest.num_supernodes),
+            thesis_run_label=str(getattr(manifest, "thesis_run_label", "") or ""),
+            results_path=str(results_filename.resolve()),
+        )
 
     if wandb_enabled and wandb_run is not None:
         wandb.finish()
