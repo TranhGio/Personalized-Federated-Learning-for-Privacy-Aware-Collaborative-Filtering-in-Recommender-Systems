@@ -1,0 +1,25 @@
+================================================================================
+BUG INVESTIGATION — Comparison Table
+================================================================================
+label                   module      mode                        overrides                                           NDCG@10    HR@10      sparse     medium     dense      n_users   best_r 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+PFedRec paper repro #4  pfedrec     paper_compat_pfedrec                                                            -          -          -          -          -                           
+Adaptive basic abl #1   adaptive    thesis_crossdevice_main     model_type=basic                                    -          -          -          -          -                           
+Adaptive dual Bug3 ref  adaptive    thesis_crossdevice_main     checkpoint_rule=best_round_restore, lr=0.005        0.0842     0.1748     0.0871     0.0875     0.0809     6040.0    31     
+Baseline ref            baseline    thesis_crossdevice_main     checkpoint_rule=best_round_restore, embedding_dim=  0.2013     0.3646     0.2446     0.2217     0.1730     6040.0    25     
+
+================================================================================
+HYPOTHESIS VERDICTS
+================================================================================
+
+H1 — PFedRec framework healthy?  [PENDING]
+     No PFedRec run available yet.
+
+H2 — PersonalMLP overkill?       [PENDING]
+     No adaptive-basic run available yet.
+
+================================================================================
+JOINT DIAGNOSIS
+================================================================================
+Joint diagnosis pending — wait for both runs.
+

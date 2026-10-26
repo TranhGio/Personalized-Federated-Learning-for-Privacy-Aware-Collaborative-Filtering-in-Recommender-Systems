@@ -1,0 +1,48 @@
+{
+  "os":  "Linux-6.17.0-19-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.13.5",
+  "startedAt":  "2026-04-19T09:01:13.151147Z",
+  "args":  [
+    "--app",
+    ".",
+    "--num-supernodes",
+    "6040",
+    "--backend-config",
+    "{\"client-resources\": {\"num-cpus\": 1, \"num-gpus\": 0.05}}",
+    "--run-config",
+    "mode=\"benchmark_cross_device\" num-server-rounds=2 fraction-train=0.01 model-type=\"bpr\" local-epochs=1"
+  ],
+  "program":  "/home/bes/miniconda3/bin/flower-simulation",
+  "git":  {
+    "remote":  "git@github.com-vinh:TranhGio/Personalized-Federated-Learning-for-Privacy-Aware-Collaborative-Filtering-in-Recommender-Systems.git",
+    "commit":  "87b751d10c35a07259a07ddf47911bc56a14071b"
+  },
+  "email":  "tranhgio15@gmail.com",
+  "root":  "/home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf",
+  "host":  "bes-aimachine-02",
+  "executable":  "/home/bes/miniconda3/bin/python3.13",
+  "cpu_count":  24,
+  "cpu_count_logical":  32,
+  "gpu":  "NVIDIA GeForce RTX 5090",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "982240026624",
+      "used":  "888542552064"
+    }
+  },
+  "memory":  {
+    "total":  "67119235072"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 5090",
+      "memoryTotal":  "34190917632",
+      "cudaCores":  21760,
+      "architecture":  "Blackwell",
+      "uuid":  "GPU-63741715-3e4c-5bcc-3255-600cb876e895"
+    }
+  ],
+  "cudaVersion":  "13.1",
+  "writerId":  "1kpd7x36fp9ahmt4fnbxqpawpz52132j"
+}

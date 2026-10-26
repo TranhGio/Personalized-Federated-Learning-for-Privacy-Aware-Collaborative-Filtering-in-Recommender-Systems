@@ -1,0 +1,110 @@
+_manifest:
+    value:
+        checkpoint_rule: best_round
+        foundation_contract_sha256: fe181dafe6f791d6679b08fdf6a4ad88f17ea3a7cce98df7f491d1c96a14233a
+        mode: benchmark_cross_device
+        num_supernodes: 6040
+        run_id: 20260419-090228-08262a
+        run_seed: 42
+        split_hash: 5685bed7e4b650807e58a49e25ea611cdef82444a034bdf105e46aa3755284d6
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            1kpd7x36fp9ahmt4fnbxqpawpz52132j:
+                args:
+                    - --app
+                    - .
+                    - --num-supernodes
+                    - "6040"
+                    - --backend-config
+                    - '{"client-resources": {"num-cpus": 1, "num-gpus": 0.05}}'
+                    - --run-config
+                    - mode="benchmark_cross_device" num-server-rounds=2 fraction-train=0.01 model-type="bpr" local-epochs=1
+                cpu_count: 24
+                cpu_count_logical: 32
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "982240026624"
+                        used: "888542552064"
+                email: tranhgio15@gmail.com
+                executable: /home/bes/miniconda3/bin/python3.13
+                git:
+                    commit: 87b751d10c35a07259a07ddf47911bc56a14071b
+                    remote: git@github.com-vinh:TranhGio/Personalized-Federated-Learning-for-Privacy-Aware-Collaborative-Filtering-in-Recommender-Systems.git
+                gpu: NVIDIA GeForce RTX 5090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 21760
+                      memoryTotal: "34190917632"
+                      name: NVIDIA GeForce RTX 5090
+                      uuid: GPU-63741715-3e4c-5bcc-3255-600cb876e895
+                host: bes-aimachine-02
+                memory:
+                    total: "67119235072"
+                os: Linux-6.17.0-19-generic-x86_64-with-glibc2.39
+                program: /home/bes/miniconda3/bin/flower-simulation
+                python: CPython 3.13.5
+                root: /home/bes/Desktop/vinh/federated-learning/movie-recommendation-system/federated-baseline-cf
+                startedAt: "2026-04-19T09:01:13.151147Z"
+                writerId: 1kpd7x36fp9ahmt4fnbxqpawpz52132j
+        m: []
+        python_version: 3.13.5
+        t:
+            "1":
+                - 1
+                - 30
+                - 105
+            "2":
+                - 1
+                - 30
+                - 105
+            "3":
+                - 2
+                - 16
+                - 61
+                - 62
+            "4": 3.13.5
+            "5": 0.23.1
+            "12": 0.23.1
+            "13": linux-x86_64
+alpha:
+    value: 0.5
+checkpoint_rule:
+    value: best_round_restore
+dropout:
+    value: 0.1
+early_stopping_enabled:
+    value: false
+early_stopping_metric:
+    value: sampled_ndcg@10
+early_stopping_patience:
+    value: 10
+embedding_dim:
+    value: 128
+fraction_train:
+    value: 0.01
+local_epochs:
+    value: 1
+lr:
+    value: 0.005
+mode:
+    value: benchmark_cross_device
+model_type:
+    value: bpr
+num_rounds:
+    value: 2
+partition_mode:
+    value: natural
+proximal_mu:
+    value: 0.01
+run_seed:
+    value: 42
+strategy:
+    value: fedavg
+weight_decay:
+    value: 1e-05
+weight_policy:
+    value: num_positives

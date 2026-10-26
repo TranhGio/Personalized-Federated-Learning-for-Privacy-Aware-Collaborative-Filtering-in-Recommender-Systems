@@ -1,0 +1,14 @@
+{
+  "completed": 1,
+  "elapsed_sec": 46579.03,
+  "failed": 0,
+  "last_cell": [
+    "adaptive",
+    "main",
+    42,
+    "none",
+    ""
+  ],
+  "remaining": 0,
+  "timestamp": "2026-05-06T20:44:08Z"
+}

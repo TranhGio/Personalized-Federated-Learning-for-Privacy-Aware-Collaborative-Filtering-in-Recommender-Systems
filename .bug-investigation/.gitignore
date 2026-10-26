@@ -1,0 +1,3 @@
+# Transient: full flwr/python stdout logs (multi-MB each). Reproducible via
+# the .sh wrappers — don't commit. Milestone snapshots checked in as .txt.
+*.log

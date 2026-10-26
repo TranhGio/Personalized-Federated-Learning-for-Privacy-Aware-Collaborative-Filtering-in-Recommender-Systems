@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class MSELoss(nn.Module):
@@ -129,3 +130,60 @@ class BPRLossWithRegularization(nn.Module):
             reg_loss = self.weight_decay * reg_loss
 
         return bpr_loss + reg_loss
+
+
+class InfoNCEContrastiveLoss(nn.Module):
+    """
+    InfoNCE contrastive loss for local-global user embedding alignment.
+
+    Positive pair: (p_local[u], p_effective[u]) for same user
+    Negative pairs: (p_local[u], p_effective[v]) for different users in batch
+
+    Encourages:
+    1. Local embeddings to remain aligned with blended embeddings (not collapse)
+    2. Different users to maintain distinct representations (discrimination)
+    """
+
+    def __init__(self, temperature: float = 0.1):
+        """
+        Args:
+            temperature: Scaling temperature for similarity scores.
+                        Lower = sharper distribution (harder negatives).
+                        Typical values: 0.05 to 0.5
+        """
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(
+        self,
+        local_embeddings: torch.Tensor,
+        effective_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute InfoNCE contrastive loss.
+
+        Args:
+            local_embeddings: Local user embeddings, shape (batch_size, embed_dim)
+            effective_embeddings: Alpha-blended user embeddings, shape (batch_size, embed_dim)
+
+        Returns:
+            Scalar contrastive loss
+        """
+        batch_size = local_embeddings.shape[0]
+        if batch_size <= 1:
+            return torch.tensor(0.0, device=local_embeddings.device)
+
+        # L2 normalize for cosine similarity
+        local_norm = F.normalize(local_embeddings, dim=1)
+        effective_norm = F.normalize(effective_embeddings, dim=1)
+
+        # Similarity matrix: (B, B) where [i,j] = sim(local[i], effective[j])
+        sim_matrix = torch.mm(local_norm, effective_norm.t()) / self.temperature
+
+        # Positive pairs are on the diagonal
+        labels = torch.arange(batch_size, device=local_embeddings.device)
+
+        # Cross-entropy loss with diagonal as positive
+        loss = F.cross_entropy(sim_matrix, labels)
+
+        return loss

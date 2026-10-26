@@ -1,0 +1,124 @@
+# =====================================================================
+# PFedRec: Personalized Federated Recommendation (IJCAI-23)
+# Calibration baseline: Client-local score function + global item embeddings
+# Phase 5 cross-device migration (PFR-01): num-supernodes=6040, partition-mode=natural,
+# weight_policy=uniform (D-24, paper-compat). fedrec_foundation.mode.resolve_mode_defaults(mode)
+# is the canonical runtime hyperparameter source (D-25); pyproject values below are the
+# fallback / override surface only. Overrides are visible per D-11 ([MODE OVERRIDE] log lines).
+# =====================================================================
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "federated-pfedrec"
+version = "1.0.0"
+description = "PFedRec (IJCAI-23) - Personalized Federated Recommendation via local score function"
+license = "Apache-2.0"
+dependencies = [
+    # Foundation contract (Phase 1) — install ../scripts/foundation/ in editable mode FIRST; see docs/setup.md
+    "fedrec-foundation",
+    "flwr[simulation]>=1.22.0",
+    "flwr-datasets[vision]>=0.5.0",
+    "torch>=2.7.1",
+    "torchvision>=0.22.1",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "wandb>=0.16.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "DangVinh"
+
+[tool.flwr.app.components]
+serverapp = "federated_pfedrec.server_app:app"
+clientapp = "federated_pfedrec.client_app:app"
+
+[tool.flwr.app.config]
+# Phase-5 contract keys (D-25 mode resolver canonical hyperparam source).
+# Pyproject is the override surface; the mode profile owns canonical values.
+mode = "paper_compat_pfedrec"     # D-05: paper_compat is the only PFedRec mode
+run-seed = 42                     # FND-06 single source of truth
+weight-policy = "uniform"         # D-24 — matches engine.py:81 (uniform mean over participating clients)
+reuse-cache = false               # D-18 default; --run-config "reuse-cache=true" opt-in
+eval-num-negatives = 99           # NCF protocol (FND-04)
+checkpoint-rule = "best_round_restore"  # D-13 best-round monitor against sampled_ndcg@10
+strict-d06-cache = false          # fail-closed D-06 eval guard (claim runs set true via sweep)
+
+# C3 / D-06.7 (Alt-A mirror): end-of-training calibration pass. When enabled,
+# after best-round-restore and before D-06 full-pop eval, broadcast ONE local
+# epoch to ALL partitions to realign each user's local affine_output head with
+# the restored best-round globals (fixes the ~5.19x full-pop crater for users
+# not sampled in the best round). Default false → no effect on existing runs.
+# Cost: 6040 clients x final-calibration-epochs local epochs (~1 extra round).
+final-calibration-enabled = false   # When true, run a calibration pass before D-06 eval
+final-calibration-epochs = 1        # Local epochs per client during calibration (1-2 typical)
+final-calibration-freeze-items = true  # Affine-only calibration: freeze item-emb (lr_eta=0) so the head aligns to the exact restored globals D-06 evaluates. false = moving-item (adaptive Alt-A variant), for ablation.
+
+# Phase 7 D-22 thesis-tagging keys. Default sentinels = non-thesis run.
+# Orchestrator scripts/thesis/run_thesis_sweep.py overrides these via --run-config.
+# fuse_dicts requires the keys to exist with default values — declaring here is the contract.
+thesis-run-label = ""        # "" = non-thesis | "main" | "ablation_<knob>=<value>"
+ablation-dimension = "none"  # "none" | "alpha_method" | "per_user_alpha" | "item_perturbation" | "contrastive_lambda" | "fusion_type"
+ablation-value = ""           # specific value of the ablated knob; empty for main/non-thesis
+
+# Federated Learning parameters
+num-server-rounds = 100         # Paper default: 100
+fraction-train = 1.0            # D-06: paper uses full participation
+local-epochs = 1                # Paper default: 1
+
+# Strategy (D-07: FedProx dropped for PFedRec — paper does not use it)
+strategy = "fedavg"
+
+# PFedRec Model parameters (D-15 strict hyperparam lock — paper-faithful values)
+latent-dim = 32                 # Paper default: 32
+batch-size = 256                # Paper default: 256
+
+# PFedRec Training parameters (dual learning rate)
+lr = 0.1                        # Paper default: 0.1 (score function LR)
+lr-eta = 80                     # Paper default: 80 (item embedding LR multiplier)
+                                # Effective item LR = lr * num_items * lr_eta
+num-negatives = 4               # Paper default: 4 (negative samples per positive)
+l2-regularization = 0.0         # Paper default: 0.0
+
+# Data partitioning (Phase 5 PFR-01: cross-device default)
+alpha = 0.5                     # Dirichlet concentration (legacy, unused under partition-mode=natural)
+partition-mode = "natural"      # D-09: cross-silo (dirichlet) FROZEN at pre-Phase-5 commits
+
+# Evaluation (same protocol as other modules)
+enable-ranking-eval = true
+ranking-k-values = "5,10,20"
+eval-split-mode = "leave-one-out"
+
+# Early stopping
+early-stopping-enabled = false
+early-stopping-patience = 10
+early-stopping-metric = "sampled_ndcg@10"
+early-stopping-mode = "max"
+early-stopping-min-delta = 0.001
+
+# Weights & Biases (D-10: empty wandb-project => server_app.py defaults to federated-cf-cross-device)
+wandb-enabled = true
+wandb-project = ""
+wandb-entity = ""
+wandb-run-name = ""
+
+# Default federation
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 6040   # PFR-01: cross-device (1 user = 1 client). To run cross-silo, check out a pre-Phase-5 commit.
+
+[tool.flwr.federations.local-sim-gpu]
+options.num-supernodes = 6040   # PFR-01: cross-device (1 user = 1 client). Same opt-in note as above.
+options.backend.client-resources.num-cpus = 12
+options.backend.client-resources.num-gpus = 0.2

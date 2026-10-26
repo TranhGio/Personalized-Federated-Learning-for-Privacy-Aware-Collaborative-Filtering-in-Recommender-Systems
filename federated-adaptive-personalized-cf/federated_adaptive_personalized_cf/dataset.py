@@ -1,9 +1,52 @@
-"""MovieLens 1M Dataset Loading and Dirichlet Partitioning."""
+"""MovieLens 1M Dataset Loading — Phase 4 thin adapter over fedrec_foundation.
+
+Post-Phase-4 this module is responsible only for:
+  1. Raw data download + parse (``download_movielens_1m``, ``load_movielens_1m``).
+  2. Building the natural cross-device partitioning (1 user = 1 client) from the
+     canonical ``user2idx`` exposed by ``fedrec_foundation.mapping``
+     (``natural_partition_users``).
+  3. Wrapping the above into PyTorch DataLoaders keyed by (partition_id,
+     num_partitions) and returning the tuple shape consumed by
+     ``client_app.py`` / ``task.py`` (``load_partition_data``,
+     ``load_full_data``). The adaptive module's 7-tuple return (including
+     ``user_stats``) is preserved verbatim for backwards compatibility — the
+     per-user stats dict is now sourced from
+     ``bundle["split_manifest"].train_user_stats[user_idx]`` (Phase 1 Plan 02
+     CR-5 train-only stats) so ``compute_client_alpha`` / ``compute_per_user_alpha``
+     receive the same field names they expect (``n_interactions``,
+     ``genre_entropy``, ``n_unique_items``, ``rating_std``).
+
+Mapping / split / exclusion-set construction is DELEGATED to the Phase 1
+foundation bundle at ``data/derived/`` (committed, hash-locked). Callers of
+``load_partition_data`` observe the same ``user2idx`` / ``item2idx`` / held-out
+test items as every other federated module -- there is now a single source
+of truth for the cross-device protocol.
+
+Per D-17: ``create_global_mappings``, ``create_leave_one_out_split``,
+``compute_user_genre_distribution``, ``compute_user_stats``,
+``compute_partition_user_stats``, ``dirichlet_partition_users``,
+``create_train_test_split`` are REMOVED. The corresponding foundation loaders
+(``fedrec_foundation.mapping.load_mapping``, ``.split.load_split_manifest``,
+``.exclusion.load_exclusion``) are the replacements; per-user stats come
+from ``SplitManifest.train_user_stats`` (Phase 1 Plan 02 CR-5).
+
+Per D-02: ``partition_mode='dirichlet'`` raises ``NotImplementedError`` -- the
+adaptive cross-device migration removes multi-user support. Check out a
+pre-Phase-4 commit (see
+``.planning/phases/04-adaptive-migration-bug-fixes/04-CONTEXT.md`` §Deferred)
+to reproduce legacy cross-silo numbers. Raises at BOTH ``load_partition_data``
+AND ``load_full_data`` (Phase-3 D-02 tightening).
+
+Per D-18: ``MovieLensDataset``, ``download_movielens_1m``, ``load_movielens_1m``,
+and ``natural_partition_users`` retain their pre-existing WIP state; only the
+D-17 rip targets and ``load_partition_data`` / ``load_full_data`` bodies change
+in this plan.
+"""
 
 import os
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.request import urlretrieve
 
 import numpy as np
@@ -11,9 +54,21 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
+from fedrec_foundation.bundle import verify_bundle
+from fedrec_foundation.exclusion import ExclusionTable, load_exclusion
+from fedrec_foundation.mapping import CanonicalMapping, load_mapping
+from fedrec_foundation.paths import data_derived
+from fedrec_foundation.split import PerUserStats, SplitManifest, load_split_manifest
+
 # Default data directory: relative to project root (../../data from this module)
 _MODULE_DIR = Path(__file__).parent
 _DEFAULT_DATA_DIR = _MODULE_DIR.parent.parent / "data"
+
+
+# Module-level in-memory cache: avoids re-reading the bundle each client.
+# Keyed by the foundation_contract_sha256 so a bundle rebuild invalidates
+# the cache automatically. Replaces the pre-Phase-4 ``_partition_cache`` dict.
+_foundation_cache: Dict[str, Dict[str, Any]] = {}
 
 
 class MovieLensDataset(Dataset):
@@ -136,296 +191,108 @@ def load_movielens_1m(data_dir: Optional[str] = None) -> Tuple[pd.DataFrame, pd.
     return ratings, movies, users
 
 
-def compute_user_genre_distribution(
-    ratings_df: pd.DataFrame,
-    movies_df: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Compute user's genre preference distribution.
-
-    Args:
-        ratings_df: DataFrame with ratings
-        movies_df: DataFrame with movie genres
-
-    Returns:
-        DataFrame with user_id and genre preference proportions
-    """
-    # Merge ratings with movies to get genres
-    merged = ratings_df.merge(movies_df[["movie_id", "genres"]], on="movie_id")
-
-    # Split genres (format: "Action|Adventure|Sci-Fi")
-    all_genres = set()
-    for genres_str in movies_df["genres"].unique():
-        all_genres.update(genres_str.split("|"))
-    all_genres = sorted(all_genres)
-
-    # Compute genre counts per user
-    user_genre_counts = {user_id: {genre: 0 for genre in all_genres}
-                         for user_id in ratings_df["user_id"].unique()}
-
-    for _, row in merged.iterrows():
-        user_id = row["user_id"]
-        genres = row["genres"].split("|")
-        for genre in genres:
-            user_genre_counts[user_id][genre] += 1
-
-    # Convert to DataFrame
-    user_genre_df = pd.DataFrame(user_genre_counts).T
-    user_genre_df.index.name = "user_id"
-
-    # Normalize to get proportions
-    user_genre_proportions = user_genre_df.div(user_genre_df.sum(axis=1), axis=0)
-    user_genre_proportions = user_genre_proportions.fillna(0)
-
-    return user_genre_proportions
-
-
-def compute_user_stats(
-    ratings_df: pd.DataFrame,
-    movies_df: Optional[pd.DataFrame] = None,
-) -> Dict[int, Dict]:
-    """
-    Compute per-user statistics for adaptive alpha computation.
-
-    These statistics are used to determine the personalization level (alpha)
-    for each user. Users with more interactions get higher alpha values
-    (more personalization), while users with fewer interactions rely more
-    on the global prototype.
-
-    Args:
-        ratings_df: DataFrame with ratings [user_id, movie_id, rating, timestamp]
-        movies_df: Optional DataFrame with movies [movie_id, title, genres]
-                   If provided, genre entropy is computed
-
-    Returns:
-        Dictionary mapping user_id to stats dict with:
-        - n_interactions: number of ratings
-        - n_unique_items: number of unique items rated
-        - rating_mean: mean rating
-        - rating_std: standard deviation of ratings
-        - genre_entropy: entropy of genre distribution (if movies_df provided)
-    """
-    user_stats = {}
-
-    for user_id, group in ratings_df.groupby("user_id"):
-        stats = {
-            "n_interactions": len(group),
-            "n_unique_items": group["movie_id"].nunique(),
-            "rating_mean": float(group["rating"].mean()),
-            "rating_std": float(group["rating"].std()) if len(group) > 1 else 0.0,
-        }
-
-        # Compute genre entropy if movies are provided
-        if movies_df is not None:
-            genre_counts = {}
-            # Get genres for items rated by this user
-            user_items = group["movie_id"].values
-            user_movies = movies_df[movies_df["movie_id"].isin(user_items)]
-
-            for genres_str in user_movies["genres"].values:
-                for genre in genres_str.split("|"):
-                    genre_counts[genre] = genre_counts.get(genre, 0) + 1
-
-            if genre_counts:
-                total = sum(genre_counts.values())
-                probs = np.array(list(genre_counts.values())) / total
-                # Entropy: -sum(p * log(p))
-                entropy = -np.sum(probs * np.log(probs + 1e-10))
-                stats["genre_entropy"] = float(entropy)
-                stats["n_genres"] = len(genre_counts)
-            else:
-                stats["genre_entropy"] = 0.0
-                stats["n_genres"] = 0
-
-        user_stats[user_id] = stats
-
-    return user_stats
-
-
-def compute_partition_user_stats(
+def natural_partition_users(
     ratings_df: pd.DataFrame,
     user2idx: Dict[int, int],
-    movies_df: Optional[pd.DataFrame] = None,
-) -> Dict[int, Dict]:
-    """
-    Compute user stats with indexed user IDs.
-
-    This is a convenience wrapper that maps user_id to user index
-    for direct use with the model.
-
-    Args:
-        ratings_df: DataFrame with ratings
-        user2idx: Mapping from user_id to index
-        movies_df: Optional DataFrame with movies for genre entropy
-
-    Returns:
-        Dictionary mapping user_idx to stats dict
-    """
-    raw_stats = compute_user_stats(ratings_df, movies_df)
-
-    # Map to user indices
-    indexed_stats = {}
-    for user_id, stats in raw_stats.items():
-        if user_id in user2idx:
-            user_idx = user2idx[user_id]
-            indexed_stats[user_idx] = stats
-
-    return indexed_stats
-
-
-def dirichlet_partition_users(
-    ratings_df: pd.DataFrame,
-    movies_df: pd.DataFrame,
-    num_clients: int,
-    alpha: float = 0.5,
-    min_ratings_per_client: int = 100,
-    seed: int = 42,
 ) -> Dict[int, pd.DataFrame]:
     """
-    Partition users across clients using Dirichlet distribution over genre preferences.
+    Cross-device partitioning: 1 user = 1 client.
 
-    This creates non-IID data distribution where clients have users with similar
-    genre preferences. Lower alpha means more non-IID (more skewed).
+    Each user becomes a separate partition, matching the standard
+    federated recommendation setup used by PFedRec, FedMF, FedNCF, etc.
 
-    Args:
-        ratings_df: DataFrame with ratings [user_id, movie_id, rating, timestamp]
-        movies_df: DataFrame with movies [movie_id, title, genres]
-        num_clients: Number of federated clients
-        alpha: Dirichlet concentration parameter (0.1-1.0, lower = more non-IID)
-        min_ratings_per_client: Minimum number of ratings per client
-        seed: Random seed for reproducibility
+    Parameters
+    ----------
+    ratings_df : pd.DataFrame
+        Full ratings with 'user_id' column.
+    user2idx : Dict[int, int]
+        Mapping from raw user_id to contiguous index (0..N-1).
 
-    Returns:
-        Dictionary mapping client_id -> DataFrame with ratings for that client
+    Returns
+    -------
+    Dict[int, pd.DataFrame]
+        {user_idx: DataFrame of that user's ratings}
     """
-    np.random.seed(seed)
-
-    # Get user genre preferences
-    print("Computing user genre preferences...")
-    user_genre_prefs = compute_user_genre_distribution(ratings_df, movies_df)
-    all_users = user_genre_prefs.index.tolist()
-    num_users = len(all_users)
-
-    # Sample from Dirichlet distribution for each genre
-    # This determines how genres are distributed across clients
-    num_genres = user_genre_prefs.shape[1]
-    print(f"Using Dirichlet(alpha={alpha}) to partition {num_users} users across {num_clients} clients...")
-
-    # For each client, sample genre preference distribution
-    client_genre_distributions = np.random.dirichlet([alpha] * num_genres, num_clients)
-
-    # Assign users to clients based on genre similarity
-    # Compute similarity between each user's genre preferences and client distributions
-    user_to_client = {}
-    users_remaining = set(all_users)
-
-    # Convert user preferences to numpy array
-    user_genre_matrix = user_genre_prefs.values
-
-    # Assign users greedily to maximize genre alignment
-    for user_id, user_prefs in zip(all_users, user_genre_matrix):
-        # Compute KL divergence or cosine similarity with each client
-        similarities = []
-        for client_dist in client_genre_distributions:
-            # Using negative KL divergence (higher is better)
-            # Add small epsilon to avoid log(0)
-            epsilon = 1e-10
-            kl_div = -np.sum(
-                user_prefs * np.log((user_prefs + epsilon) / (client_dist + epsilon))
-            )
-            similarities.append(kl_div)
-
-        # Assign to client with highest similarity
-        best_client = np.argmax(similarities)
-        user_to_client[user_id] = best_client
-
-    # Create partitions
-    print("Creating client partitions...")
-    client_partitions = {}
-    for client_id in range(num_clients):
-        # Get users assigned to this client
-        client_users = [uid for uid, cid in user_to_client.items() if cid == client_id]
-
-        # Get ratings for these users
-        client_ratings = ratings_df[ratings_df["user_id"].isin(client_users)].copy()
-
-        # Check minimum ratings constraint
-        if len(client_ratings) < min_ratings_per_client:
-            print(
-                f"Warning: Client {client_id} has only {len(client_ratings)} ratings "
-                f"(min: {min_ratings_per_client})"
-            )
-
-        client_partitions[client_id] = client_ratings
-
-        print(
-            f"Client {client_id}: {len(client_users)} users, "
-            f"{len(client_ratings)} ratings"
-        )
-
-    # Print statistics
-    print("\nPartitioning Statistics:")
-    print(f"Total users: {num_users}")
-    print(f"Total ratings: {len(ratings_df)}")
+    print(f"Natural partitioning: {len(user2idx)} users → {len(user2idx)} clients (1:1)")
+    partitions: Dict[int, pd.DataFrame] = {}
+    # Group by user_id for efficient partitioning
+    grouped = ratings_df.groupby("user_id")
+    for user_id, user_idx in user2idx.items():
+        if user_id in grouped.groups:
+            partitions[user_idx] = grouped.get_group(user_id).copy()
+        else:
+            partitions[user_idx] = pd.DataFrame(columns=ratings_df.columns)
     print(
-        f"Ratings per client: min={min(len(p) for p in client_partitions.values())}, "
-        f"max={max(len(p) for p in client_partitions.values())}, "
-        f"mean={np.mean([len(p) for p in client_partitions.values()]):.1f}"
+        f"Natural partitioning complete: "
+        f"min={min(len(p) for p in partitions.values())} ratings, "
+        f"max={max(len(p) for p in partitions.values())} ratings, "
+        f"mean={np.mean([len(p) for p in partitions.values()]):.1f}"
     )
+    return partitions
 
-    return client_partitions
+
+# --- Phase 4 Plan 02: foundation-backed adapters (D-17) ---
 
 
-def create_train_test_split(
-    ratings_df: pd.DataFrame,
-    test_ratio: float = 0.2,
-    seed: int = 42,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _load_foundation_bundle(data_dir: Optional[str] = None) -> Dict[str, Any]:
+    """Load mapping / split / exclusion from the committed ``data/derived/`` bundle.
+
+    Calls ``verify_bundle`` first -- a tampered or incomplete bundle raises
+    ``RuntimeError`` at load time (fail-loud per Phase 1 Plan 02 N-3).
+
+    Parameters
+    ----------
+    data_dir : Optional[str]
+        If provided, overrides the default ``<repo>/data/`` location. Uses
+        ``fedrec_foundation.paths.data_derived()`` as the canonical default.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A dict with keys:
+        - ``mapping`` (CanonicalMapping)
+        - ``split_manifest`` (SplitManifest) -- carries ``train_user_stats``
+          (Phase 1 Plan 02 CR-5) with per-user PerUserStats fields
+          (n_interactions, genre_entropy, n_unique_items, rating_std, user_group).
+        - ``exclusion`` (ExclusionTable) -- DO NOT close; module-level cache.
+        - ``foundation_contract_sha256`` (str)
     """
-    Split ratings into train and test sets.
+    if data_dir is not None:
+        derived = Path(data_dir).resolve() / "derived"
+    else:
+        derived = data_derived()
 
-    Args:
-        ratings_df: DataFrame with ratings
-        test_ratio: Fraction of ratings to use for testing
-        seed: Random seed
+    idx = verify_bundle(derived)  # raises on mismatch/missing
+    contract_key = idx.foundation_contract_sha256
+    if contract_key in _foundation_cache:
+        return _foundation_cache[contract_key]
 
-    Returns:
-        Tuple of (train_df, test_df)
+    bundle: Dict[str, Any] = {
+        "mapping": load_mapping(str(derived / "mapping.json")),
+        "split_manifest": load_split_manifest(derived / "split_manifest.json"),
+        "exclusion": load_exclusion(derived / "exclusion_items.npz"),
+        "foundation_contract_sha256": contract_key,
+    }
+    _foundation_cache[contract_key] = bundle
+    return bundle
+
+
+def _per_user_stats_to_dict(stats: PerUserStats) -> Dict[str, Any]:
+    """Translate foundation PerUserStats -> adaptive user_stats dict.
+
+    Adaptive module's ``compute_client_alpha`` / ``compute_per_user_alpha``
+    expect a dict with ``n_interactions``, ``genre_entropy``, ``n_unique_items``,
+    ``rating_std`` keys. PerUserStats already carries all four (CR-5 train-only
+    computation) so the translation is a lossless field rename. ``user_group``
+    is also forwarded for downstream per-group metrics.
     """
-    np.random.seed(seed)
-
-    # Shuffle and split
-    shuffled = ratings_df.sample(frac=1, random_state=seed)
-    split_idx = int(len(shuffled) * (1 - test_ratio))
-
-    train_df = shuffled.iloc[:split_idx].copy()
-    test_df = shuffled.iloc[split_idx:].copy()
-
-    print(f"Train: {len(train_df)} ratings, Test: {len(test_df)} ratings")
-    return train_df, test_df
-
-
-def create_global_mappings(ratings_df: pd.DataFrame) -> Tuple[Dict, Dict, Dict, Dict]:
-    """
-    Create global user and item ID mappings.
-
-    Args:
-        ratings_df: DataFrame with all ratings
-
-    Returns:
-        Tuple of (user2idx, idx2user, item2idx, idx2item)
-    """
-    unique_users = sorted(ratings_df["user_id"].unique())
-    unique_items = sorted(ratings_df["movie_id"].unique())
-
-    user2idx = {uid: idx for idx, uid in enumerate(unique_users)}
-    idx2user = {idx: uid for uid, idx in user2idx.items()}
-
-    item2idx = {iid: idx for idx, iid in enumerate(unique_items)}
-    idx2item = {idx: iid for iid, idx in item2idx.items()}
-
-    print(f"Created mappings: {len(user2idx)} users, {len(item2idx)} items")
-    return user2idx, idx2user, item2idx, idx2item
+    return {
+        "n_interactions": int(stats.n_interactions),
+        "genre_entropy": float(stats.genre_entropy),
+        "n_unique_items": int(stats.n_unique_items),
+        "rating_std": float(stats.rating_std),
+        "user_group": stats.user_group,
+    }
 
 
 def load_partition_data(
@@ -436,66 +303,138 @@ def load_partition_data(
     batch_size: int = 32,
     data_dir: Optional[str] = None,
     compute_stats: bool = True,
+    split_mode: str = "leave-one-out",
+    partition_mode: str = "natural",
 ):
-    """
-    Load and partition MovieLens 1M data for federated learning.
+    """Load one client's partition backed by the foundation bundle.
 
-    Args:
-        partition_id: ID of this client partition
-        num_partitions: Total number of client partitions
-        alpha: Dirichlet concentration parameter
-        test_ratio: Ratio of test data
-        batch_size: Batch size for DataLoader
-        data_dir: Directory for data (defaults to project root data/)
-        compute_stats: Whether to compute user stats for adaptive alpha
+    Post-Phase-4 callers (``client_app.py::@app.train()``, ``@app.evaluate()``,
+    ``task.py::load_data``) pass ``partition_id`` and expect the same 7-tuple
+    as before (including ``user_stats``). The ``alpha`` / ``test_ratio`` /
+    ``split_mode`` parameters are retained for backwards compatibility but
+    under the benchmark path (``partition_mode="natural"``) they are unused
+    — the bundle's deterministic LOO split is the authoritative split.
 
-    Returns:
-        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
-        user_stats is None if compute_stats=False
+    Parameters
+    ----------
+    partition_id : int
+        Client's partition index. Under ``partition_mode="natural"`` this
+        is the ``user_idx`` in ``[0, num_users)``.
+    num_partitions : int
+        Total partitions. Under ``partition_mode="natural"`` this should
+        equal ``bundle["mapping"].num_users``.
+    alpha : float
+        Dirichlet concentration (unused; kept for API parity).
+    test_ratio : float
+        Random-split ratio (unused under LOO split mode).
+    batch_size : int
+        DataLoader batch size.
+    data_dir : Optional[str]
+        Override the default ``<repo>/data/`` location.
+    compute_stats : bool
+        When True, populate the returned ``user_stats`` dict from
+        ``SplitManifest.train_user_stats[partition_id]``. When False,
+        ``user_stats`` is ``None``.
+    split_mode : str
+        ``"leave-one-out"``; passing ``"random"`` raises ``ValueError``.
+    partition_mode : str
+        ``"natural"`` (cross-device). ``"dirichlet"`` raises
+        ``NotImplementedError`` per D-02.
+
+    Returns
+    -------
+    Tuple[DataLoader, DataLoader, int, int, Dict[int,int], Dict[int,int], Optional[Dict[int, Dict]]]
+        ``(trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)``.
+        ``user_stats`` is ``None`` when ``compute_stats=False``.
     """
     from torch.utils.data import DataLoader
 
-    if data_dir is None:
-        data_dir = str(_DEFAULT_DATA_DIR)
+    if partition_mode == "dirichlet":
+        raise NotImplementedError(
+            "Adaptive cross-device migration removed multi-user-per-client support per D-02. "
+            "Check out a pre-Phase-4 commit (see "
+            ".planning/phases/04-adaptive-migration-bug-fixes/04-CONTEXT.md §Deferred) "
+            "to reproduce legacy cross-silo numbers."
+        )
+    if partition_mode != "natural":
+        raise ValueError(f"Unknown partition_mode={partition_mode!r}")
 
-    # Download and load data (only once)
+    if split_mode == "random":
+        raise ValueError(
+            "split_mode='random' is no longer supported — the foundation's "
+            "leave-one-out split is authoritative. Use split_mode='leave-one-out'."
+        )
+    if split_mode != "leave-one-out":
+        raise ValueError(
+            f"split_mode={split_mode!r} not supported post-Phase-4 foundation "
+            f"migration; use 'leave-one-out' (NCF protocol)."
+        )
+
+    bundle = _load_foundation_bundle(data_dir)
+    mapping: CanonicalMapping = bundle["mapping"]
+    split: SplitManifest = bundle["split_manifest"]
+    user2idx = mapping.user2idx
+    item2idx = mapping.item2idx
+    num_users = mapping.num_users
+    num_items = mapping.num_items
+
+    # Cross-device: 1 user = 1 client.
+    # Download + parse raw ratings once (cached inside download_movielens_1m).
     download_movielens_1m(data_dir)
-    ratings_df, movies_df, _ = load_movielens_1m(data_dir)
+    ratings_df, _, _ = load_movielens_1m(data_dir)
+    # Partition by user_idx so partition_id == user_idx.
+    partitions = natural_partition_users(ratings_df, user2idx)
+    if partition_id not in partitions:
+        raise ValueError(
+            f"partition_id={partition_id} not in natural partition keyspace "
+            f"[0, {num_users}); did num-supernodes match num_users at federation init?"
+        )
+    client_ratings = partitions[partition_id].copy()
+    client_ratings["user_idx"] = client_ratings["user_id"].map(user2idx).astype(int)
+    client_ratings["item_idx"] = client_ratings["movie_id"].map(item2idx).astype(int)
 
-    # Create global mappings
-    user2idx, _, item2idx, _ = create_global_mappings(ratings_df)
+    # Build train + test split using the foundation's test_item_per_user map.
+    test_item = split.test_item_per_user.get(int(partition_id))
+    if test_item is not None:
+        test_mask = client_ratings["item_idx"] == int(test_item)
+        test_df = client_ratings[test_mask].copy()
+        train_df = client_ratings[~test_mask].copy()
+    else:
+        # User has < 2 interactions -- no held-out test item.
+        test_df = client_ratings.iloc[0:0].copy()
+        train_df = client_ratings.copy()
 
-    # Partition data using Dirichlet
-    partitions = dirichlet_partition_users(
-        ratings_df,
-        movies_df,
-        num_clients=num_partitions,
-        alpha=alpha,
-    )
-
-    # Get this client's partition
-    client_ratings = partitions[partition_id]
-
-    # Compute user stats for adaptive alpha (before train/test split)
-    user_stats = None
+    # Compute user_stats from foundation train_user_stats (PerUserStats). The
+    # adaptive module's compute_client_alpha / compute_per_user_alpha expect
+    # the dict keyed by user_idx with n_interactions / genre_entropy /
+    # n_unique_items / rating_std fields. Foundation's CR-5 train-only stats
+    # provide all four, so this is a straight field rename.
+    user_stats: Optional[Dict[int, Dict]] = None
     if compute_stats:
-        user_stats = compute_partition_user_stats(client_ratings, user2idx, movies_df)
-        print(f"Computed stats for {len(user_stats)} users in partition {partition_id}")
+        pid = int(partition_id)
+        per_user: Optional[PerUserStats] = split.train_user_stats.get(pid)
+        if per_user is not None:
+            user_stats = {pid: _per_user_stats_to_dict(per_user)}
+        else:
+            # User absent from foundation stats (e.g., <2 interactions) — emit
+            # a zero-interactions stats row so alpha computation degrades
+            # gracefully (sparse-user penalty path).
+            user_stats = {
+                pid: {
+                    "n_interactions": int(len(train_df)),
+                    "genre_entropy": 0.0,
+                    "n_unique_items": int(train_df["item_idx"].nunique()) if len(train_df) else 0,
+                    "rating_std": 0.0,
+                    "user_group": "sparse",
+                }
+            }
 
-    # Split into train/test
-    train_df, test_df = create_train_test_split(client_ratings, test_ratio=test_ratio)
-
-    # Create datasets
+    # Build PyTorch Datasets + DataLoaders (shuffle generator threaded by the
+    # client in Plan 03 via torch_gen(run_seed, user_idx, round_num, 'dataloader')).
     train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
     test_dataset = MovieLensDataset(test_df, user2idx, item2idx)
-
-    # Create dataloaders
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    num_users = len(user2idx)
-    num_items = len(item2idx)
-
     return trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats
 
 
@@ -504,54 +443,87 @@ def load_full_data(
     batch_size: int = 256,
     data_dir: Optional[str] = None,
     compute_stats: bool = True,
+    split_mode: str = "leave-one-out",
+    partition_mode: str = "natural",
 ):
-    """
-    Load full MovieLens 1M dataset for server-side evaluation.
+    """Load the full (non-partitioned) dataset for server-side centralized evaluation.
 
-    This function loads the entire dataset (not partitioned) for centralized
-    evaluation of the federated model. Used by the server to compute final
-    metrics after training.
+    Same 7-tuple return shape as :func:`load_partition_data` but across ALL users.
+    Consumed by ``server_app.py`` for the end-of-training centralized eval
+    (though note: split-learning modules typically cannot run server-side
+    model forward — retained for API parity with baseline).
 
-    Args:
-        test_ratio: Ratio of test data (default: 0.2)
-        batch_size: Batch size for DataLoader
-        data_dir: Directory for data (defaults to project root data/)
-        compute_stats: Whether to compute user stats for adaptive alpha
+    Parameters
+    ----------
+    test_ratio : float
+        Unused under ``split_mode="leave-one-out"`` (kept for API parity).
+    batch_size : int
+        DataLoader batch size.
+    data_dir : Optional[str]
+        Override default data path.
+    compute_stats : bool
+        When True, populate the returned ``user_stats`` dict from all
+        ``SplitManifest.train_user_stats`` rows. When False, ``user_stats`` is ``None``.
+    split_mode : str
+        ``"leave-one-out"``; ``"random"`` raises ``ValueError``.
+    partition_mode : str
+        ``"natural"``; ``"dirichlet"`` raises ``NotImplementedError`` per D-02.
+        (Phase-3 D-02 tightening: BOTH entry points raise.)
 
-    Returns:
-        Tuple of (trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)
-        user_stats is None if compute_stats=False
+    Returns
+    -------
+    Tuple[DataLoader, DataLoader, int, int, Dict[int,int], Dict[int,int], Optional[Dict[int, Dict]]]
+        ``(trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats)``
+        -- identical shape to ``load_partition_data``.
     """
     from torch.utils.data import DataLoader
 
-    if data_dir is None:
-        data_dir = str(_DEFAULT_DATA_DIR)
+    if partition_mode == "dirichlet":
+        raise NotImplementedError(
+            "Adaptive cross-device migration removed multi-user-per-client support per D-02. "
+            "Check out a pre-Phase-4 commit (see "
+            ".planning/phases/04-adaptive-migration-bug-fixes/04-CONTEXT.md §Deferred) "
+            "to reproduce legacy cross-silo numbers."
+        )
+    if partition_mode != "natural":
+        raise ValueError(f"Unknown partition_mode={partition_mode!r}")
 
-    # Download and load data
+    if split_mode != "leave-one-out":
+        raise ValueError(
+            f"split_mode={split_mode!r} not supported post-Phase-4 foundation "
+            f"migration; use 'leave-one-out'."
+        )
+
+    bundle = _load_foundation_bundle(data_dir)
+    mapping: CanonicalMapping = bundle["mapping"]
+    split: SplitManifest = bundle["split_manifest"]
+    user2idx = mapping.user2idx
+    item2idx = mapping.item2idx
+    num_users = mapping.num_users
+    num_items = mapping.num_items
+
     download_movielens_1m(data_dir)
-    ratings_df, movies_df, _ = load_movielens_1m(data_dir)
+    ratings_df, _, _ = load_movielens_1m(data_dir)
+    ratings_df["user_idx"] = ratings_df["user_id"].map(user2idx).astype(int)
+    ratings_df["item_idx"] = ratings_df["movie_id"].map(item2idx).astype(int)
 
-    # Create global mappings
-    user2idx, _, item2idx, _ = create_global_mappings(ratings_df)
+    # Build test mask: one row per user matching test_item_per_user.
+    # Users without a held-out test item (single-interaction users) map to NaN
+    # which never equals an item_idx, so they stay entirely in train.
+    test_item_series = ratings_df["user_idx"].map(split.test_item_per_user)
+    test_mask = ratings_df["item_idx"] == test_item_series
+    test_df = ratings_df[test_mask].copy()
+    train_df = ratings_df[~test_mask].copy()
 
-    # Compute user stats for adaptive alpha
-    user_stats = None
+    user_stats: Optional[Dict[int, Dict]] = None
     if compute_stats:
-        user_stats = compute_partition_user_stats(ratings_df, user2idx, movies_df)
-        print(f"Computed stats for {len(user_stats)} users (full dataset)")
+        user_stats = {
+            int(uidx): _per_user_stats_to_dict(stats)
+            for uidx, stats in split.train_user_stats.items()
+        }
 
-    # Split into train/test (using all data, not partitioned)
-    train_df, test_df = create_train_test_split(ratings_df, test_ratio=test_ratio)
-
-    # Create datasets
     train_dataset = MovieLensDataset(train_df, user2idx, item2idx)
     test_dataset = MovieLensDataset(test_df, user2idx, item2idx)
-
-    # Create dataloaders
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    num_users = len(user2idx)
-    num_items = len(item2idx)
-
     return trainloader, testloader, num_users, num_items, user2idx, item2idx, user_stats
