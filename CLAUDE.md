@@ -45,6 +45,20 @@ All run-config knobs live in each module's `pyproject.toml` under `[tool.flwr.ap
 
 **Config quoting rule:** `flwr --run-config` parses values as TOML. **String values must be double-quoted** inside the outer string: use `'key="string-val" int-key=42'` (single quotes outside, double inside). Numbers and booleans don't need quotes. Unquoted strings fail with `TOMLDecodeError: Invalid value`.
 
+## Three-machine workflow (since 2026-10)
+
+| Machine | Role | Rule |
+|---|---|---|
+| **Laptop** (MSI, RTX 3060) | Code, debug, smoke tests, analysis — **all Claude work** | Smoke-test numbers are never cited |
+| **Workstation** (RTX 5090, shared, someone else's Claude account) | **Train only** via `scripts/remote/start_run.sh` / `finish_run.sh` | Never edit code there; `git pull --ff-only` only |
+| **MacBook** | Terminal that ssh-es into the other two | — |
+
+Loop: laptop pre-flight → commit a **portable wrapper** in `.bug-investigation/` → push → workstation `scripts/remote/start_run.sh <wrapper> <tmux-name>` → watch W&B (email/Slack alert at the end) → workstation `scripts/remote/finish_run.sh <module> <run_id> --archive-cache` (only for runs that will be cited) → laptop `git pull` → analyze. Use the **`/train-remote`** skill for the whole loop.
+
+- **git** carries code + small result JSONs; **W&B/Forge** (entity `vinh-federated-learning`, project `federated-cf-cross-device`) carries live metrics. No rsync; heavy files (`global_state_*.pt`, `.embedding_cache/`) stay on the workstation — run reeval there.
+- Workstation NVMe is shared and near-full: finished-run caches go to the HDD archive `/mnt/nfs-data/vinh_dataset/movie-rec/` (symlinked back). Never put a **running** federation's cache on the HDD.
+- One federation at a time on the GPU; no slow test suites while one runs (`FEDREC_SKIP_SLOW=1`).
+
 ## Evaluation Protocol (locked)
 
 - **Partition mode**: `natural` (cross-device, 1 user = 1 client, N=6040). `dirichlet` (cross-silo) remains as an opt-in for reproducing old runs only.
