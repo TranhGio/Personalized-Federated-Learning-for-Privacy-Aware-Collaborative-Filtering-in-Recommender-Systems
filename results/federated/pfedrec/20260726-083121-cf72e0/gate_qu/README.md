@@ -1,6 +1,6 @@
 # Thí nghiệm cổng: client giữ bảng phim riêng Q_u (Giai đoạn 1, Việc 2)
 
-**Trạng thái: ĐĂNG KÝ TRƯỚC, CHƯA CHẠY.** Phiên bản 1.1, ngày 03/11/2026.
+**Trạng thái: ĐĂNG KÝ TRƯỚC, CHƯA CHẠY.** Phiên bản 1.2, ngày 03/11/2026.
 Mọi cấu hình, lưới tham số, ngưỡng và dự đoán dưới đây được ghi trước khi chạy bất kỳ ô nào.
 Sau khi chạy, kết quả được điền vào `DECISION.md` cùng thư mục; README này không sửa số đã đăng ký
 (thay đổi, nếu có, ghi vào mục 14 kèm ngày và lý do).
@@ -19,7 +19,7 @@ Thư mục kết quả: `results/federated/pfedrec/20260726-083121-cf72e0/gate_q
   tập ứng viên D-06 (phim test + 99 phim âm, giống hệt từng phim với số 0.3447118); chỉ các hàng của Q_u được huấn luyện,
   tốc độ học hàng phim lr_item = 29 648. (mục 2, 3, 5)
 - **Dự đoán đăng ký trước:** KHÔNG QUA CỔNG (P1–P5, P7; mục 8).
-- **Chi phí:** chỉ CPU, ước 15–40 phút tinh chỉnh + dưới 1 phút chấm điểm; GPU = 0. (mục 11)
+- **Chi phí:** chỉ CPU, khoảng 3–5 phút cho toàn bộ 6040 user (đo trên dữ liệu tổng hợp cùng kích thước); GPU = 0. (mục 11)
 
 ---
 
@@ -259,7 +259,7 @@ Tất cả nằm trong thư mục này, được commit vào git (JSON, CSV, MD 
 
 | Hạng mục | Ước lượng |
 |---|---|
-| Tinh chỉnh | mỗi epoch đi qua 5 × 994 169 ≈ 5.0 triệu dòng (toàn bộ user), batch 256, một lần backward vào bảng phim; E = 3 ≈ 15 triệu dòng. Trên CPU ước 15–40 phút; đo trước bằng `--limit-users 200` và ghi vào `DECISION.md` |
+| Tinh chỉnh + chấm 8 ô | mỗi epoch đi qua 5 × 994 169 ≈ 5.0 triệu dòng (toàn bộ user), batch 256, một lần backward vào bảng phim; E = 3 ≈ 15 triệu dòng. Đo trên CPU laptop (6 luồng) với run tổng hợp đúng kích thước (3706 phim, dim 32, 99 phim âm, 200 user lấy ngẫu nhiên theo phân bố n_u thật): 33 ms/user, ngoại suy theo tổng n_u ≈ 3.1 phút cho 6040 user. Vẫn đo lại bằng `--limit-users 200` trên dữ liệu thật và ghi vào `DECISION.md` |
 | Chấm điểm | 8 ô × 6040 user; mỗi lượt toàn bộ user khoảng 3–4 giây theo nhật ký các biến thể cũ của run này |
 | Bộ nhớ | tối đa hai bản sao Q_u (474 KB mỗi bản: trạng thái sau epoch 1 và bản đang huấn luyện) cộng một bản trộn Q_u^α tạm và `global_snapshot` tại một thời điểm; không lưu Q_u của mọi user |
 | GPU | 0 |
@@ -335,7 +335,7 @@ Tất cả nằm trong thư mục này, được commit vào git (JSON, CSV, MD 
      `test -f federated-pfedrec/.embedding_cache/20260726-083121-cf72e0/manifest.json`;
   2. đo thời gian: `python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/20260726-083121-cf72e0 --module pfedrec --globals best --local-variant qu_grid --device cpu --limit-users 200 --no-json --no-per-user`;
   3. chạy thật: `python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/20260726-083121-cf72e0 --module pfedrec --globals best --local-variant qu_grid --device cpu --out-dir results/federated/pfedrec/20260726-083121-cf72e0/gate_qu`;
-  4. kiểm định: `python scripts/thesis/gate_stats.py --grid results/federated/pfedrec/20260726-083121-cf72e0/gate_qu/reeval_qu_grid_best_per_user.csv --baseline results/federated/pfedrec/20260726-083121-cf72e0/reeval_cached_best_per_user.csv --out results/federated/pfedrec/20260726-083121-cf72e0/gate_qu/stats_wilcoxon.json`;
+  4. kiểm định: `python scripts/thesis/gate_stats.py --grid results/federated/pfedrec/20260726-083121-cf72e0/gate_qu/reeval_qu_grid_best_per_user.csv --baseline results/federated/pfedrec/20260726-083121-cf72e0/reeval_cached_best_per_user.csv --grid-json results/federated/pfedrec/20260726-083121-cf72e0/gate_qu/reeval_qu_grid_best.json --out results/federated/pfedrec/20260726-083121-cf72e0/gate_qu/stats_wilcoxon.json` (`--grid-json` để điều kiện 1 dùng NDCG@10 tổng hợp theo công thức mục 5, không tính lại từ CSV);
   5. điền `DECISION.md`, commit.
 
 ## 14. Nhật ký thay đổi README
@@ -344,3 +344,4 @@ Tất cả nằm trong thư mục này, được commit vào git (JSON, CSV, MD 
 |---|---|---|
 | 2026-11-03 | 1 | Đăng ký trước: cấu hình, lưới 4 × 2, ngưỡng, kiểm định, dự đoán, biến thể chẩn đoán đề xuất |
 | 2026-11-03 | 1.1 | Sau vòng phản biện (41 điểm, trước khi chạy): thêm Tóm tắt; trộn chỉ trên U_u (float32 không trùng bit khi trộn mọi hàng); quy tắc ô thắng; ngưỡng ràng buộc = 0.3547; khai báo chiều/phạm vi kiểm định, tập hàng trộn, cố định E (mục 12, điểm 7–10); P1 hai kịch bản, P2/P5 có biên (P3 theo biên chung 0.001 ở mục 8), thêm P7, P6 có tiêu chí số; sửa 10.8 → 9.9 điểm với cf72e0; thêm kiểm tra tin cậy (Q_u hữu hạn, hàng chưa chạm sau trộn, bất biến d_u, n_hit) và ghi nhận lần chạy bị hủy; kế hoạch cài đặt chi tiết hơn; thứ Sáu 06/11. Không đổi lưới, ngưỡng, seed, lr_item |
+| 2026-11-03 | 1.2 | Sau khi cài đặt (`qu_grid`/`qu_diag` trong `reeval.py`, `gate_stats.py`): thêm `--grid-json` vào lệnh kiểm định (mục 13); thay ước lượng chi phí bằng số đo trên dữ liệu tổng hợp (mục 11, Tóm tắt). Không đổi lưới, ngưỡng, kiểm định, seed, lr_item, dự đoán |

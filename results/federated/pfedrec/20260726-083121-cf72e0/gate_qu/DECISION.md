@@ -1,6 +1,6 @@
 # Kết quả và quyết định cổng Q_u (điền SAU khi chạy)
 
-**Trạng thái: CHƯA CHẠY.** Mẫu này được tạo cùng README phiên bản 1.1 (03/11/2026) để kết quả chỉ được điền vào
+**Trạng thái: CHƯA CHẠY.** Mẫu này được tạo cùng README phiên bản 1.2 (03/11/2026) để kết quả chỉ được điền vào
 các ô đã định sẵn. Không thêm chỉ số, ô hay tiêu chí mới sau khi xem số liệu.
 
 | Hạng mục | Giá trị |
