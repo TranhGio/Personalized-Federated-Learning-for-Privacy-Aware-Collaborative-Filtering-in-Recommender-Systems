@@ -1,6 +1,12 @@
 # Thí nghiệm cổng: client giữ bảng phim riêng Q_u (Giai đoạn 1, Việc 2)
 
-**Trạng thái: ĐĂNG KÝ TRƯỚC, CHƯA CHẠY.** Phiên bản 1.2, ngày 03/11/2026.
+**Trạng thái: ĐÃ RÚT, CHƯA CHẠY.** Phiên bản 1.3, ngày 04/11/2026.
+Thí nghiệm cổng này đã rút theo quyết định của GVHD ngày 04/11/2026: ý tưởng bảng phim riêng Q_u được đưa vào
+phần hướng phát triển của luận văn, không chạy lưới 8 ô và không áp dụng ngưỡng QUA / KHÔNG QUA CỔNG ở mục 7.
+README được giữ nguyên làm hồ sơ đăng ký trước (các mục 1–13 không sửa); phần cài đặt `qu_grid` / `qu_diag` trong
+`scripts/thesis/reeval.py` vẫn giữ: `qu_diag` (α = 0, mục 9) dùng cho việc chấm lại PFedRec có post-tuning,
+`qu_grid` để dành cho hướng phát triển.
+
 Mọi cấu hình, lưới tham số, ngưỡng và dự đoán dưới đây được ghi trước khi chạy bất kỳ ô nào.
 Sau khi chạy, kết quả được điền vào `DECISION.md` cùng thư mục; README này không sửa số đã đăng ký
 (thay đổi, nếu có, ghi vào mục 14 kèm ngày và lý do).
@@ -345,3 +351,4 @@ Tất cả nằm trong thư mục này, được commit vào git (JSON, CSV, MD 
 | 2026-11-03 | 1 | Đăng ký trước: cấu hình, lưới 4 × 2, ngưỡng, kiểm định, dự đoán, biến thể chẩn đoán đề xuất |
 | 2026-11-03 | 1.1 | Sau vòng phản biện (41 điểm, trước khi chạy): thêm Tóm tắt; trộn chỉ trên U_u (float32 không trùng bit khi trộn mọi hàng); quy tắc ô thắng; ngưỡng ràng buộc = 0.3547; khai báo chiều/phạm vi kiểm định, tập hàng trộn, cố định E (mục 12, điểm 7–10); P1 hai kịch bản, P2/P5 có biên (P3 theo biên chung 0.001 ở mục 8), thêm P7, P6 có tiêu chí số; sửa 10.8 → 9.9 điểm với cf72e0; thêm kiểm tra tin cậy (Q_u hữu hạn, hàng chưa chạm sau trộn, bất biến d_u, n_hit) và ghi nhận lần chạy bị hủy; kế hoạch cài đặt chi tiết hơn; thứ Sáu 06/11. Không đổi lưới, ngưỡng, seed, lr_item |
 | 2026-11-03 | 1.2 | Sau khi cài đặt (`qu_grid`/`qu_diag` trong `reeval.py`, `gate_stats.py`): thêm `--grid-json` vào lệnh kiểm định (mục 13); thay ước lượng chi phí bằng số đo trên dữ liệu tổng hợp (mục 11, Tóm tắt). Không đổi lưới, ngưỡng, kiểm định, seed, lr_item, dự đoán |
+| 2026-11-04 | 1.3 | Đã rút theo quyết định của GVHD ngày 04/11: ý tưởng bảng phim riêng Q_u chuyển sang phần hướng phát triển; không chạy lưới 8 ô, không áp dụng ngưỡng mục 7. Chỉ đổi trạng thái ở đầu README; các mục 1–13 giữ nguyên làm hồ sơ đăng ký trước. `qu_diag` (mục 9) được dùng lại cho việc chấm lại PFedRec có post-tuning |

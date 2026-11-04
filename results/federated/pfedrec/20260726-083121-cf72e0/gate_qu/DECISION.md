@@ -1,7 +1,8 @@
 # Kết quả và quyết định cổng Q_u (điền SAU khi chạy)
 
-**Trạng thái: CHƯA CHẠY.** Mẫu này được tạo cùng README phiên bản 1.2 (03/11/2026) để kết quả chỉ được điền vào
-các ô đã định sẵn. Không thêm chỉ số, ô hay tiêu chí mới sau khi xem số liệu.
+**Trạng thái: ĐÃ RÚT, CHƯA CHẠY.** Thí nghiệm cổng đã rút theo quyết định của GVHD ngày 04/11/2026 (README
+phiên bản 1.3); mẫu này giữ nguyên, không điền. Mẫu được tạo cùng README phiên bản 1.2 (03/11/2026) để kết quả chỉ
+được điền vào các ô đã định sẵn. Không thêm chỉ số, ô hay tiêu chí mới sau khi xem số liệu.
 
 | Hạng mục | Giá trị |
 |---|---|
