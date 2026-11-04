@@ -73,3 +73,6 @@ wandb/
 
 # Loose run/debug logs at repo root (large). Per-module .bug-investigation/*.log already ignored.
 /*.log
+
+# Advisor feedback files (private)
+Vinh_lv.docx
