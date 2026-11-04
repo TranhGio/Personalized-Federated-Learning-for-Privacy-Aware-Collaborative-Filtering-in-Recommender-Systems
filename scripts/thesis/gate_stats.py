@@ -18,6 +18,11 @@ one-sided p, Holm over the α < 1 cells, rank-biserial r, mean Δ with a paired
 bootstrap 95% CI (10 000 resamples, seed 42). The test measures variation
 BETWEEN USERS, not across training seeds.
 
+``--contrast A B`` (repeatable) adds a paired cell-vs-cell contrast A − B on
+the same users (H1: A > B), used by the PFedRec post-tuning re-score
+(``<run>/posttune/README.md`` §6, leaky vs clean pool). The GO/NO-GO
+``verdict`` is still emitted but is only meaningful for the gate.
+
 Usage
 -----
     python scripts/thesis/gate_stats.py \\
@@ -36,7 +41,7 @@ import os
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -66,14 +71,26 @@ class GateStatsConfig:
         Destination ``stats_wilcoxon.json``.
     grid_json : Optional[Path]
         ``reeval_qu_*.json`` with ``metrics_by_cell`` (binding NDCG means).
+    contrasts : List[Tuple[str, str]]
+        Paired cell-vs-cell contrasts ``(A, B)`` tested as ``A > B`` on the
+        same users (posttune README §6, e.g. ``("a0.00_E1_leaky",
+        "a0.00_E1_clean")``). Cell names are checked against the CSV when
+        the stats are computed. Empty by default.
     """
 
     grid_csv: Path
     baseline_csv: Path
     out_path: Path
     grid_json: Optional[Path] = None
+    contrasts: List[Tuple[str, str]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        norm: List[Tuple[str, str]] = []
+        for pair in self.contrasts:
+            if len(pair) != 2 or pair[0] == pair[1]:
+                raise ValueError(f"contrast must be two distinct cell names, got {pair!r}")
+            norm.append((str(pair[0]), str(pair[1])))
+        self.contrasts = norm
         for name in ("grid_csv", "baseline_csv"):
             p = Path(getattr(self, name))
             if not p.is_file():
@@ -241,6 +258,67 @@ def select_winner(candidates: List[Dict[str, Any]]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+def contrast_cells(
+    cells: Dict[str, Dict[int, Dict[str, float]]],
+    baseline: Dict[int, Dict[str, Any]],
+    cell_a: str,
+    cell_b: str,
+) -> Dict[str, Any]:
+    """Paired contrast ``cell_a − cell_b`` per user (H1: A > B), overall and per group.
+
+    Parameters
+    ----------
+    cells : Dict[str, Dict[int, Dict[str, float]]]
+        ``load_grid`` output (``cell -> pid -> {ndcg, hr}``).
+    baseline : Dict[int, Dict[str, Any]]
+        ``load_baseline`` output; only its ``group`` field is used.
+    cell_a, cell_b : str
+        Cell names as they appear in the CSV-derived keys.
+
+    Returns
+    -------
+    Dict[str, Any]
+        ``{"cell_a", "cell_b", "mean_ndcg_a", "mean_ndcg_b", "by_scope"}`` where each
+        scope holds the Wilcoxon bundle and bootstrap CI of ``wilcoxon_block`` /
+        ``paired_bootstrap_ci``.
+
+    Raises
+    ------
+    KeyError
+        If a cell is absent from the CSV.
+    ValueError
+        If the two cells do not cover the same users.
+    """
+    for name in (cell_a, cell_b):
+        if name not in cells:
+            raise KeyError(f"contrast cell {name!r} not in grid CSV; have {sorted(cells)}")
+    pids_a, pids_b = set(cells[cell_a]), set(cells[cell_b])
+    if pids_a != pids_b:
+        raise ValueError(
+            f"contrast {cell_a} vs {cell_b}: user sets differ ({len(pids_a ^ pids_b)} pid(s) not shared)"
+        )
+    pids = sorted(pids_a)
+    groups = np.asarray([baseline[p]["group"] for p in pids])
+    d_ndcg = np.asarray([cells[cell_a][p]["ndcg"] - cells[cell_b][p]["ndcg"] for p in pids])
+    d_hr = np.asarray([cells[cell_a][p]["hr"] - cells[cell_b][p]["hr"] for p in pids])
+    out: Dict[str, Any] = {
+        "cell_a": cell_a,
+        "cell_b": cell_b,
+        "hypothesis": "one-sided, A > B, zero_method=wilcox, approx",
+        "mean_ndcg_a": float(np.mean([cells[cell_a][p]["ndcg"] for p in pids])),
+        "mean_ndcg_b": float(np.mean([cells[cell_b][p]["ndcg"] for p in pids])),
+        "by_scope": {},
+    }
+    scopes: Dict[str, np.ndarray] = {"overall": np.ones(len(pids), dtype=bool)}
+    scopes.update({g: groups == g for g in USER_GROUPS})
+    for scope, mask in scopes.items():
+        block: Dict[str, Any] = {"n": int(mask.sum())}
+        block.update(wilcoxon_block(d_ndcg[mask]))
+        block.update(paired_bootstrap_ci(d_ndcg[mask], d_hr[mask]))
+        out["by_scope"][scope] = block
+    return out
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -309,6 +387,9 @@ def compute_gate_stats(cfg: GateStatsConfig) -> Dict[str, Any]:
     raw = _verdict("p_one_sided")
     holm_v = _verdict("p_holm_one_sided")
     reproduction = {k: per_cell[k]["by_scope"]["overall"]["n_nonzero"] for k in per_cell if not per_cell[k]["tested"]}
+    contrasts = {
+        f"{a}__minus__{b}": contrast_cells(cells, baseline, a, b) for a, b in cfg.contrasts
+    }
     return {
         "tool": "scripts/thesis/gate_stats.py",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -327,6 +408,7 @@ def compute_gate_stats(cfg: GateStatsConfig) -> Dict[str, Any]:
             "note": "tests measure between-user variation, not seed variation",
         },
         "cells": per_cell,
+        "contrasts": contrasts,
         "verdict": raw,
         "verdict_if_holm": holm_v,
         "holm_flips": raw["decision"] != holm_v["decision"] or raw["winner"] != holm_v["winner"],
@@ -357,8 +439,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--baseline", type=Path, required=True, help="reeval_cached_best_per_user.csv")
     parser.add_argument("--grid-json", type=Path, default=None, help="reeval_qu_grid_best.json (binding NDCG)")
     parser.add_argument("--out", type=Path, required=True, help="destination stats_wilcoxon.json")
+    parser.add_argument(
+        "--contrast", nargs=2, action="append", default=[], metavar=("CELL_A", "CELL_B"),
+        help="paired contrast A > B on the same users (repeatable), e.g. a0.00_E1_leaky a0.00_E1_clean",
+    )
     args = parser.parse_args(argv)
-    cfg = GateStatsConfig(args.grid, args.baseline, args.out, args.grid_json)
+    cfg = GateStatsConfig(args.grid, args.baseline, args.out, args.grid_json, contrasts=args.contrast)
     payload = compute_gate_stats(cfg)
     write_json_atomic(cfg.out_path, payload)
 
@@ -373,6 +459,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"{k:<18}{c['ndcg_binding']:>10.5f}{o['mean_delta_ndcg']:>+10.5f}{o['n_nonzero']:>7}"
             f"{fmt(o['p_one_sided']):>11}{fmt(o['p_two_sided']):>11}{fmt(o.get('p_holm_one_sided')):>11}"
             f"{fmt(o['rank_biserial_r']):>8}"
+        )
+    for name, c in payload["contrasts"].items():
+        o = c["by_scope"]["overall"]
+        p1 = f"{o['p_one_sided']:.3g}" if isinstance(o["p_one_sided"], float) else "—"
+        print(
+            f"contrast {c['cell_a']} − {c['cell_b']}: Δndcg {o['mean_delta_ndcg']:+.5f} "
+            f"CI95 [{o['ci95_ndcg'][0]:+.5f}, {o['ci95_ndcg'][1]:+.5f}] p1 {p1} n_nz {o['n_nonzero']}"
         )
     v = payload["verdict"]
     print(f"\nverdict: {v['decision']} | passing={v['passing_cells']} | winner={v['winner']} "

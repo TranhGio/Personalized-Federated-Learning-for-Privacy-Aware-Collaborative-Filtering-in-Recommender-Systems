@@ -287,6 +287,29 @@ def test_qu_diag_pools(synth):
     assert set(metrics) == {"a0.00_E1_clean", "a0.00_E3_clean", "a0.00_E1_leaky", "a0.00_E3_leaky"}
     assert checks["n_hit"]["leaky"] == 0 and checks["n_hit"]["clean"] > 0
     assert {r["pool"] for r in rows} == {"clean", "leaky"}
+    # posttune README §7: leaky cells never fall below the cached baseline for any user.
+    assert set(checks["leaky_monotonicity_violations"]) == {"a0.00_E1_leaky", "a0.00_E3_leaky"}
+    assert all(v == 0 for v in checks["leaky_monotonicity_violations"].values())
+    base_by_pid = {r["pid"]: (r["sampled_ndcg@10"], r["sampled_hr@10"]) for r in base_rows}
+    for r in rows:
+        if r["pool"] == "leaky":
+            b = base_by_pid[r["pid"]]
+            assert r["sampled_ndcg@10"] >= b[0] - 1e-9 and r["sampled_hr@10"] >= b[1] - 1e-9
+    # And leaky actually helps someone (negatives pushed below the test item).
+    assert any(r["sampled_ndcg@10"] > base_by_pid[r["pid"]][0] for r in rows if r["pool"] == "leaky")
+
+
+def test_leaky_monotonicity_check_fails_on_inflated_baseline(synth):
+    """Feed a baseline that is impossibly high -> the check must trip and FAIL the run."""
+    cfg, adapter, run_data, global_state, _ = synth
+    _, base_rows = run_reeval(adapter, cfg, run_data, global_state, "cached")
+    inflated = [dict(r, **{"sampled_ndcg@10": 1.0, "sampled_hr@10": 1.0}) for r in base_rows]
+    _, _, checks = run_qu_variant(
+        "qu_diag", adapter, cfg, run_data, global_state, baseline_rows=inflated,
+    )
+    assert checks["status"] == "FAIL"
+    assert any("leaky cell below cached baseline" in f for f in checks["failures"])
+    assert sum(checks["leaky_monotonicity_violations"].values()) > 0
 
 
 def test_suite_writes_to_out_dir_and_leaves_run_dir_untouched(synth, tmp_path):

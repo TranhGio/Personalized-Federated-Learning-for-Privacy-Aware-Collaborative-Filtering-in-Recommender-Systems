@@ -134,6 +134,75 @@ def test_reproduction_cell_mismatch_is_flagged(tmp_path):
     assert payload["reproduction_ok"] is False
 
 
+def _write_diag_grid(path: Path, cells: Dict[str, np.ndarray]) -> None:
+    """Long CSV for a qu_diag-style grid: keys like ``a0.00_E1_leaky``."""
+    fields = ["pid", "user_group", "n_interactions", "staleness_at_best", "alpha_table", "epochs", "pool",
+              "n_touched_rows", "n_touched_candidates", "test_row_touched", "mean_row_shift",
+              "sampled_ndcg@10", "sampled_hr@10", "sampled_mrr", "eval_loss"]
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(fields)
+        for key, ndcg in cells.items():
+            a, rest = float(key[1:5]), key.split("_E")[1]
+            e, pool = int(rest.split("_")[0]), rest.split("_")[1]
+            for pid, v in enumerate(ndcg):
+                w.writerow([pid, GROUPS[pid % 3], 50, 3, a, e, pool, 10, 1, 0, 0.1,
+                            repr(float(v)), 1.0 if v > 0 else 0.0, 0.2, 0.1])
+
+
+def test_contrast_leaky_vs_clean(tmp_path):
+    base = _planted(seed=7)
+    clean = base.copy()
+    leaky = base.copy()
+    rng = np.random.default_rng(8)
+    for i in rng.choice(len(base), size=len(base) // 3, replace=False):
+        lvl = NDCG_LEVELS.index(base[i]) if base[i] in NDCG_LEVELS else 0
+        leaky[i] = 1.0 if lvl in (0, 1) else NDCG_LEVELS[lvl - 1]
+    _write_baseline(tmp_path / "base.csv", base)
+    _write_diag_grid(tmp_path / "grid.csv", {"a0.00_E1_clean": clean, "a0.00_E1_leaky": leaky})
+    cfg = GateStatsConfig(
+        tmp_path / "grid.csv", tmp_path / "base.csv", tmp_path / "out.json",
+        contrasts=[("a0.00_E1_leaky", "a0.00_E1_clean")],
+    )
+    payload = compute_gate_stats(cfg)
+    assert set(payload["cells"]) == {"a0.00_E1_clean", "a0.00_E1_leaky"}
+    c = payload["contrasts"]["a0.00_E1_leaky__minus__a0.00_E1_clean"]
+    o = c["by_scope"]["overall"]
+    assert c["mean_ndcg_a"] > c["mean_ndcg_b"]
+    assert o["mean_delta_ndcg"] == pytest.approx(leaky.mean() - clean.mean())
+    assert o["p_one_sided"] < 1e-6 and o["rank_biserial_r"] == 1.0
+    assert set(c["by_scope"]) == {"overall", "sparse", "medium", "dense"}
+    # Reverse direction is not significant one-sided.
+    cfg_rev = GateStatsConfig(
+        tmp_path / "grid.csv", tmp_path / "base.csv", tmp_path / "out2.json",
+        contrasts=[("a0.00_E1_clean", "a0.00_E1_leaky")],
+    )
+    rev = compute_gate_stats(cfg_rev)["contrasts"]["a0.00_E1_clean__minus__a0.00_E1_leaky"]
+    assert rev["by_scope"]["overall"]["p_one_sided"] > 0.5
+    # Unknown cell -> KeyError; identical cells -> ValueError at config time.
+    with pytest.raises(KeyError):
+        compute_gate_stats(GateStatsConfig(tmp_path / "grid.csv", tmp_path / "base.csv", tmp_path / "o.json",
+                                           contrasts=[("a0.00_E3_leaky", "a0.00_E1_clean")]))
+    with pytest.raises(ValueError):
+        GateStatsConfig(tmp_path / "grid.csv", tmp_path / "base.csv", tmp_path / "o.json",
+                        contrasts=[("a0.00_E1_clean", "a0.00_E1_clean")])
+
+
+def test_contrast_cli_flag(tmp_path):
+    base = _planted(seed=9)
+    _write_baseline(tmp_path / "base.csv", base)
+    _write_diag_grid(tmp_path / "grid.csv", {"a0.00_E1_clean": base, "a0.00_E1_leaky": base})
+    out = tmp_path / "stats.json"
+    rc = gate_stats.main([
+        "--grid", str(tmp_path / "grid.csv"), "--baseline", str(tmp_path / "base.csv"), "--out", str(out),
+        "--contrast", "a0.00_E1_leaky", "a0.00_E1_clean",
+    ])
+    assert rc == 0
+    payload = json.loads(out.read_text())
+    c = payload["contrasts"]["a0.00_E1_leaky__minus__a0.00_E1_clean"]
+    assert c["by_scope"]["overall"]["n_nonzero"] == 0 and c["by_scope"]["overall"]["p_one_sided"] is None
+
+
 def test_end_to_end_with_qu_grid_output(tmp_path):
     """Pipe the synthetic qu_grid run (test_reeval_qu fixture) through gate_stats."""
     import argparse

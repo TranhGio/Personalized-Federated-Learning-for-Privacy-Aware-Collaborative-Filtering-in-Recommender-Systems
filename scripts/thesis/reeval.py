@@ -2055,6 +2055,10 @@ QU_ROUND_OFFSET = 200
 # Users (lowest pids) on which the "untouched rows stay bit-identical after
 # the blend" check is run for every alpha (README §7.2).
 QU_UNTOUCHED_CHECK_USERS = 50
+# Tolerance for the leaky-pool monotonicity check (posttune README §7): the
+# metrics are float64 means of exact 1/log2 terms, so anything below −1e-9 is a
+# genuine rank regression, not rounding.
+QU_MONOTONE_TOL = 1e-9
 QU_VARIANT_SPECS: Dict[str, Dict[str, Any]] = {
     "qu_grid": {"alphas": QU_GRID_ALPHAS, "pools": ("clean",), "suffix_pool": False},
     "qu_diag": {"alphas": QU_DIAG_ALPHAS, "pools": ("clean", "leaky"), "suffix_pool": True},
@@ -2271,6 +2275,13 @@ def run_qu_variant(
         "nonfinite_users": [],
         "untouched_row_violations": {},
         "d_u_invariant_violations": {k: 0 for k in stats},
+        # posttune README §7 "đơn điệu ở leaky": with a frozen linear head a
+        # candidate row can only be drawn as a NEGATIVE (score goes down) and the
+        # test row is never drawn, so NDCG_u / HR_u must not fall below the
+        # cached baseline for ANY user in a leaky cell.
+        "leaky_monotonicity_violations": {
+            qu_cell_key(a, e, pool, suffix_pool): 0 for pool, e, a in cells if pool == "leaky"
+        },
         "alpha1_mismatch_vs_inprocess": {k: 0 for k in stats if k.startswith("a1.00")},
         "alpha1_mismatch_vs_csv": {k: 0 for k in stats if k.startswith("a1.00")},
         "negatives_in_train": {p: 0 for p in pools},
@@ -2375,6 +2386,10 @@ def run_qu_variant(
                     base = baseline_by_pid.get(pid)
                     if base is not None and n_touched_cand == 0 and (ndcg, hr) != base:
                         counters["d_u_invariant_violations"][key] += 1
+                    if pool == "leaky" and base is not None and (
+                        ndcg < base[0] - QU_MONOTONE_TOL or hr < base[1] - QU_MONOTONE_TOL
+                    ):
+                        counters["leaky_monotonicity_violations"][key] += 1
                     if a == 1.0:
                         if base is None or (ndcg, hr) != base:
                             counters["alpha1_mismatch_vs_inprocess"][key] += 1
@@ -2415,6 +2430,10 @@ def run_qu_variant(
         failures.append(f"untouched rows changed after blend: {counters['untouched_row_violations']}")
     if any(counters["d_u_invariant_violations"].values()):
         failures.append(f"d_u != 0 with no touched candidate: {counters['d_u_invariant_violations']}")
+    if any(counters["leaky_monotonicity_violations"].values()):
+        failures.append(
+            f"leaky cell below cached baseline for some user: {counters['leaky_monotonicity_violations']}"
+        )
     if any(counters["alpha1_mismatch_vs_inprocess"].values()):
         failures.append(f"alpha=1 cells != cached replay: {counters['alpha1_mismatch_vs_inprocess']}")
     if baseline_file is not None and any(counters["alpha1_mismatch_vs_csv"].values()):
@@ -2440,6 +2459,7 @@ def run_qu_variant(
         "nonfinite_users": counters["nonfinite_users"][:50],
         "untouched_row_violations": counters["untouched_row_violations"],
         "d_u_invariant_violations": counters["d_u_invariant_violations"],
+        "leaky_monotonicity_violations": counters["leaky_monotonicity_violations"],
         "alpha1_mismatch_vs_inprocess": counters["alpha1_mismatch_vs_inprocess"],
         "alpha1_mismatch_vs_csv": counters["alpha1_mismatch_vs_csv"] if baseline_file is not None else None,
         "negatives_in_train": counters["negatives_in_train"],
