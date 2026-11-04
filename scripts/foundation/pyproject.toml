@@ -15,6 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+# Q_u gate statistics (scripts/thesis/gate_stats.py): Wilcoxon / rankdata.
+stats = ["scipy>=1.11"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["fedrec_foundation"]

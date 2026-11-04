@@ -35,6 +35,20 @@ The pfedrec module additionally supports the Stage-A head-blend suite
 aborts (exit 3) on mismatch — no variant number is trustworthy unless the
 replay reproduces the run's own eval.
 
+Q_u gate (pfedrec only; pre-registered in ``<run>/gate_qu/README.md`` v1.1):
+
+- ``qu_grid`` : per user, copy the global item table into Q_u, fine-tune ONLY
+                its rows for 3 epochs (head frozen, BCE, 4 negatives from the
+                CLEAN pool = all items minus train positives, SGD at the run's
+                item LR), snapshot after epochs 1 and 3, blend touched rows
+                ``a*q + (1-a)*Q_u`` for a in {0.3, 0.5, 0.7, 1.0} and score.
+                a = 1.0 must reproduce the cached replay per user.
+- ``qu_diag`` : a = 0 with CLEAN vs LEAKY (test item excluded) negative pools
+                — diagnostic only, never a gate quantity.
+
+Both run the cached replay + trust gate in-process, add their own trust checks
+(README §7.2) and write ``reeval_qu_*`` artifacts into ``--out-dir``.
+
 Usage
 -----
     python scripts/thesis/reeval.py --self-test
@@ -100,6 +114,8 @@ PFEDREC_VARIANTS = (
     "cached", "random", "shuffled", "calibrated",
     "global_head", "global_head_weighted", "global_head_cold",
     "alpha_grid", "alpha_oracle_group", "alpha_oracle_user", "alpha_policy_hc",
+    # Q_u gate (private per-user item table, head frozen) — README gate_qu/.
+    "qu_grid", "qu_diag",
 )
 # Pre-registered alpha grid — NOT a CLI knob (Stage A pre-registration).
 ALPHA_GRID = tuple(round(0.05 * i, 2) for i in range(21))
@@ -1972,14 +1988,17 @@ def dump_json(
     limit_users: Optional[int],
     cache_dir: Optional[Path],
     extra: Optional[Dict[str, Any]] = None,
+    out_dir: Optional[Path] = None,
 ) -> Path:
-    """Write ``<run-dir>/reeval_<variant>_<globals>.json`` with full provenance.
+    """Write ``<out_dir or run-dir>/reeval_<variant>_<globals>.json`` with full provenance.
 
     ``schema_version`` 2 (additive over 1): optional keys ``trust_gate``,
     ``alpha`` / ``alpha_policy``, ``w_global_spec``, ``metrics_by_alpha``,
     ``bucket_tables``, ``verdict``, ``per_user_csv`` may appear via ``extra``.
     """
-    out_path = cfg.run_dir / f"reeval_{variant}_{globals_kind}.json"
+    base_dir = Path(out_dir) if out_dir is not None else cfg.run_dir
+    base_dir.mkdir(parents=True, exist_ok=True)
+    out_path = base_dir / f"reeval_{variant}_{globals_kind}.json"
     payload = {
         "tool": "scripts/thesis/reeval.py",
         "schema_version": 2,
@@ -2008,7 +2027,7 @@ def dump_json(
     }
     if extra:
         payload.update(extra)
-    tmp_fd, tmp_name = tempfile.mkstemp(prefix="reeval_tmp_", suffix=".json", dir=str(cfg.run_dir))
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix="reeval_tmp_", suffix=".json", dir=str(base_dir))
     os.close(tmp_fd)
     try:
         with open(tmp_name, "w") as f:
@@ -2020,6 +2039,546 @@ def dump_json(
         raise
     print(f"[reeval] wrote {out_path}")
     return out_path
+
+
+# ===========================================================================
+# Q_u gate (Giai đoạn 1, Việc 2): per-user private item table, head frozen
+# Pre-registration: results/federated/pfedrec/<run>/gate_qu/README.md (v1.1)
+# ===========================================================================
+
+# Pre-registered grids — NOT CLI knobs (README §4 / §9).
+QU_GRID_ALPHAS = (0.3, 0.5, 0.7, 1.0)
+QU_DIAG_ALPHAS = (0.0,)
+QU_EPOCH_SNAPSHOTS = (1, 3)
+# Seed namespace offset for the fine-tune epochs: round_num = 200 + e (README §3).
+QU_ROUND_OFFSET = 200
+# Users (lowest pids) on which the "untouched rows stay bit-identical after
+# the blend" check is run for every alpha (README §7.2).
+QU_UNTOUCHED_CHECK_USERS = 50
+# Tolerance for the leaky-pool monotonicity check (posttune README §7): the
+# metrics are float64 means of exact 1/log2 terms, so anything below −1e-9 is a
+# genuine rank regression, not rounding.
+QU_MONOTONE_TOL = 1e-9
+QU_VARIANT_SPECS: Dict[str, Dict[str, Any]] = {
+    "qu_grid": {"alphas": QU_GRID_ALPHAS, "pools": ("clean",), "suffix_pool": False},
+    "qu_diag": {"alphas": QU_DIAG_ALPHAS, "pools": ("clean", "leaky"), "suffix_pool": True},
+}
+_QU_PER_USER_FIELDS = (
+    "pid", "user_group", "n_interactions", "staleness_at_best",
+    "alpha_table", "epochs", "pool",
+    "n_touched_rows", "n_touched_candidates", "test_row_touched", "mean_row_shift",
+    "sampled_ndcg@10", "sampled_hr@10", "sampled_mrr", "eval_loss",
+)
+
+
+def qu_cell_key(alpha: float, epochs: int, pool: str, suffix_pool: bool) -> str:
+    """Stable cell id, e.g. ``a0.30_E1`` (grid) or ``a0.00_E3_leaky`` (diag)."""
+    key = f"a{float(alpha):.2f}_E{int(epochs)}"
+    return f"{key}_{pool}" if suffix_pool else key
+
+
+def finetune_item_table_one_epoch(
+    model: torch.nn.Module,
+    items: List[int],
+    ratings: List[float],
+    lr_item: float,
+    batch_size: int,
+    generator: torch.Generator,
+    device: str = "cpu",
+) -> float:
+    """One epoch of head-frozen item-table fine-tuning (README §3, step 2).
+
+    Unlike ``train_pfedrec_single_user`` (two passes per batch, always steps
+    the head, unseeded shuffle), this does ONE forward/backward per batch and
+    updates ONLY ``embedding_item`` with plain SGD (no momentum, no weight
+    decay), so rows that never appear in a batch keep a bit-identical value.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        ``PFedRecMLP`` already loaded with the starting table and the user's
+        head. ``affine_output`` is frozen here (``requires_grad=False``).
+    items, ratings : List[int], List[float]
+        BCE batch from ``prepare_user_train_data`` (1 positive + negatives).
+    lr_item : float
+        Item-row learning rate (``lr * num_items * lr_eta`` of the run).
+    batch_size : int
+        Mini-batch size (run default 256).
+    generator : torch.Generator
+        Seeds the DataLoader shuffle (``torch_gen(seed, pid, 200+e, "dataloader")``).
+    device : str
+        Torch device.
+
+    Returns
+    -------
+    float
+        Sample-weighted mean BCE over the epoch (diagnostic only).
+    """
+    from torch.utils.data import DataLoader, TensorDataset
+
+    if not items:
+        return 0.0
+    model.to(device)
+    model.train()
+    for p in model.affine_output.parameters():
+        p.requires_grad_(False)
+    model.embedding_item.weight.requires_grad_(True)
+    optimizer = torch.optim.SGD(
+        model.embedding_item.parameters(), lr=float(lr_item), momentum=0.0, weight_decay=0.0,
+    )
+    criterion = torch.nn.BCELoss()
+    dataset = TensorDataset(
+        torch.tensor(items, dtype=torch.long),
+        torch.tensor(ratings, dtype=torch.float32),
+    )
+    loader = DataLoader(dataset, batch_size=int(batch_size), shuffle=True, generator=generator)
+    total, n = 0.0, 0
+    for batch_items, batch_ratings in loader:
+        batch_items = batch_items.to(device)
+        batch_ratings = batch_ratings.to(device)
+        optimizer.zero_grad()
+        pred = model(batch_items).view(-1)
+        loss = criterion(pred, batch_ratings)
+        loss.backward()
+        optimizer.step()
+        total += float(loss.item()) * len(batch_items)
+        n += len(batch_items)
+    model.eval()
+    return total / n if n else 0.0
+
+
+def blend_item_table(
+    q_global: torch.Tensor,
+    q_user: torch.Tensor,
+    touched: torch.Tensor,
+    alpha: float,
+) -> torch.Tensor:
+    """Masked blend (README §3, step 4): only rows in ``touched`` are mixed.
+
+    ``Q^α[i] = α·q_i + (1-α)·Q_u[i]`` for ``i ∈ touched``; every other row is
+    copied verbatim from ``q_global``. Blending all rows is NOT equivalent in
+    float32: ``α·q + (1-α)·q`` drifts by 1 ulp for α ∈ {0.3, 0.7}.
+    """
+    out = q_global.clone()
+    if touched.numel():
+        a = float(alpha)
+        out[touched] = a * q_global[touched] + (1.0 - a) * q_user[touched]
+    return out
+
+
+def write_qu_per_user_csv(path: Path, rows: List[Dict[str, Any]]) -> Path:
+    """Long-format Q_u per-user CSV with exactly :data:`_QU_PER_USER_FIELDS`.
+
+    Kept separate from :func:`write_per_user_csv` on purpose: that writer
+    uses ``extrasaction="ignore"`` with a fixed 9-column header and would
+    silently drop every Q_u column.
+    """
+    import csv
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(_QU_PER_USER_FIELDS), extrasaction="raise")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row[k] for k in _QU_PER_USER_FIELDS})
+    print(f"[reeval] wrote {path} ({len(rows)} rows)")
+    return path
+
+
+def _load_baseline_csv(path: Path) -> Dict[int, Tuple[float, float]]:
+    """``pid -> (ndcg@10, hr@10)`` parsed from a committed cached per-user CSV."""
+    import csv
+
+    out: Dict[int, Tuple[float, float]] = {}
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            out[int(row["pid"])] = (float(row["sampled_ndcg@10"]), float(row["sampled_hr@10"]))
+    return out
+
+
+def run_qu_variant(
+    variant: str,
+    adapter: "PfedrecAdapter",
+    cfg: ReevalConfig,
+    run_data: RunData,
+    global_state: Dict[str, torch.Tensor],
+    *,
+    baseline_rows: List[Dict[str, Any]],
+    device: str = "cpu",
+    staleness_map: Optional[Dict[int, int]] = None,
+    baseline_csv: Optional[Path] = None,
+) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Any]], Dict[str, Any]]:
+    """Driver for ``qu_grid`` / ``qu_diag`` (README §3, §5, §7.2).
+
+    Per user: load the cached head (frozen) and the global table, fine-tune
+    the item table for 3 epochs (snapshot after epoch 1), then score every
+    (pool, E, α) cell with the module's own ``evaluate_pfedrec_sampled``.
+    Does NOT go through :func:`run_reeval` (one evaluation per user only).
+
+    Parameters
+    ----------
+    variant : str
+        ``"qu_grid"`` or ``"qu_diag"``.
+    adapter, cfg, run_data, global_state
+        As for :func:`run_reeval`; ``global_state`` is the restored best table.
+    baseline_rows : List[Dict[str, Any]]
+        Per-user rows of the trust-gated ``cached`` pass (same process).
+    device : str
+        Torch device.
+    staleness_map : Optional[Dict[int, int]]
+        Per-pid staleness covariate.
+    baseline_csv : Optional[Path]
+        Committed ``reeval_cached_<globals>_per_user.csv``; when given, α = 1
+        cells are also compared per user against it (parsed floats).
+
+    Returns
+    -------
+    Tuple[Dict[str, Dict[str, float]], List[Dict[str, Any]], Dict[str, Any]]
+        ``metrics_by_cell``, long-format per-user rows, ``trust_checks``
+        (``status`` is ``"PASS"`` or ``"FAIL"`` with ``failures``).
+    """
+    from federated_pfedrec.task import prepare_user_train_data
+
+    spec = QU_VARIANT_SPECS[variant]
+    alphas: Tuple[float, ...] = tuple(spec["alphas"])
+    pools: Tuple[str, ...] = tuple(spec["pools"])
+    suffix_pool = bool(spec["suffix_pool"])
+    max_epochs = max(QU_EPOCH_SNAPSHOTS)
+    num_items = int(run_data.num_items)
+    lr_item = float(cfg.lr) * num_items * float(cfg.lr_eta)
+    pids = sorted(run_data.users.keys())
+
+    # Fail-closed cache pre-scan (same contract as the cached variant).
+    adapter.verify_cache_signature(run_data)
+    missing = [p for p in pids if not adapter.cached_local_path(p).exists()]
+    if missing:
+        raise RuntimeError(
+            f"variant={variant!r} FAIL CLOSED: {len(missing)} missing cache payload(s) "
+            f"under {adapter.resolve_cache_dir(run_data)} (first: {missing[:10]})"
+        )
+
+    q_global = global_state["embedding_item.weight"].detach().cpu().clone()
+    bias = global_state["affine_output.bias"].detach().cpu().clone()
+    global_snapshot = OrderedDict((k, v.detach().cpu().clone()) for k, v in global_state.items())
+    row_norm_median = float(q_global.norm(dim=1).median().item())
+
+    baseline_by_pid = {
+        int(r["pid"]): (float(r["sampled_ndcg@10"]), float(r["sampled_hr@10"])) for r in baseline_rows
+    }
+    baseline_file = _load_baseline_csv(baseline_csv) if baseline_csv is not None else None
+
+    cells: List[Tuple[str, int, float]] = [
+        (pool, e, a) for pool in pools for e in QU_EPOCH_SNAPSHOTS for a in alphas
+    ]
+    stats = {qu_cell_key(a, e, pool, suffix_pool): SuffStats() for pool, e, a in cells}
+    counters: Dict[str, Any] = {
+        "nonfinite_users": [],
+        "untouched_row_violations": {},
+        "d_u_invariant_violations": {k: 0 for k in stats},
+        # posttune README §7 "đơn điệu ở leaky": with a frozen linear head a
+        # candidate row can only be drawn as a NEGATIVE (score goes down) and the
+        # test row is never drawn, so NDCG_u / HR_u must not fall below the
+        # cached baseline for ANY user in a leaky cell.
+        "leaky_monotonicity_violations": {
+            qu_cell_key(a, e, pool, suffix_pool): 0 for pool, e, a in cells if pool == "leaky"
+        },
+        "alpha1_mismatch_vs_inprocess": {k: 0 for k in stats if k.startswith("a1.00")},
+        "alpha1_mismatch_vs_csv": {k: 0 for k in stats if k.startswith("a1.00")},
+        "negatives_in_train": {p: 0 for p in pools},
+        "n_hit": {p: 0 for p in pools},
+        "n_hit_expected_clean": 0.0,
+        "candidate_list_errors": 0,
+    }
+    shift_by_snapshot: Dict[str, List[float]] = {f"{p}_E{e}": [] for p in pools for e in QU_EPOCH_SNAPSHOTS}
+
+    model = adapter.build_model(run_data)
+    model.to(device)
+    rows: List[Dict[str, Any]] = []
+    t0 = time.time()
+    for i, pid in enumerate(pids):
+        user = run_data.users[pid]
+        train_set = {int(x) for x in user.train_items.tolist()}
+        n_train = len(train_set)
+        head = adapter.load_cached_local(pid)
+        u_stats = run_data.user_stats.get(pid, {})
+        candidates: Optional[List[int]] = None
+
+        for pool in pools:
+            exclude = None if pool == "clean" else user.exclude_items
+            adapter.set_globals(model, global_snapshot)
+            adapter.set_local(model, head)
+            touched: set = set()
+            snapshots: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
+            for e in range(1, max_epochs + 1):
+                items, ratings = prepare_user_train_data(
+                    user_idx=pid,
+                    user_train_items=sorted(train_set),
+                    num_items=num_items,
+                    num_negatives=cfg.num_train_negatives,
+                    run_seed=cfg.run_seed,
+                    round_num=QU_ROUND_OFFSET + e,
+                    exclude_items=exclude,
+                )
+                negs = [it for it, r in zip(items, ratings) if r == 0.0]
+                counters["negatives_in_train"][pool] += sum(1 for it in negs if it in train_set)
+                if user.test_item is not None:
+                    counters["n_hit"][pool] += sum(1 for it in negs if it == int(user.test_item))
+                touched.update(int(x) for x in items)
+                finetune_item_table_one_epoch(
+                    model, items, ratings, lr_item, cfg.batch_size,
+                    torch_gen(cfg.run_seed, pid, QU_ROUND_OFFSET + e, "dataloader"), device,
+                )
+                if e in QU_EPOCH_SNAPSHOTS:
+                    q_user = model.embedding_item.weight.detach().cpu().clone()
+                    idx = torch.tensor(sorted(touched), dtype=torch.long)
+                    snapshots[e] = (q_user, idx)
+            if pool == "clean" and n_train:
+                counters["n_hit_expected_clean"] += (
+                    cfg.num_train_negatives * n_train * max_epochs / float(num_items - n_train)
+                )
+
+            for e in QU_EPOCH_SNAPSHOTS:
+                q_user, idx = snapshots[e]
+                if not bool(torch.isfinite(q_user).all()):
+                    counters["nonfinite_users"].append(int(pid))
+                touched_e = set(idx.tolist())
+                shift = (
+                    float((q_user[idx] - q_global[idx]).norm(dim=1).mean().item()) if idx.numel() else 0.0
+                )
+                shift_by_snapshot[f"{pool}_E{e}"].append(shift)
+                for a in alphas:
+                    key = qu_cell_key(a, e, pool, suffix_pool)
+                    q_alpha = blend_item_table(q_global, q_user, idx, a)
+                    if i < QU_UNTOUCHED_CHECK_USERS:
+                        mask = torch.ones(num_items, dtype=torch.bool)
+                        if idx.numel():
+                            mask[idx] = False
+                        if not torch.equal(q_alpha[mask], q_global[mask]):
+                            counters["untouched_row_violations"][key] = (
+                                counters["untouched_row_violations"].get(key, 0) + 1
+                            )
+                    adapter.set_globals(model, {"embedding_item.weight": q_alpha, "affine_output.bias": bias})
+                    hook = None
+                    captured: List[List[int]] = []
+                    if candidates is None:
+                        hook = model.register_forward_pre_hook(
+                            lambda _m, args: captured.append([int(x) for x in args[0].detach().cpu().tolist()])
+                        )
+                    try:
+                        sampled = adapter.evaluate_user(model, user, cfg, device)
+                    finally:
+                        if hook is not None:
+                            hook.remove()
+                    if candidates is None and captured:
+                        candidates = [c for chunk in captured for c in chunk]
+                        expected_len = 1 + int(cfg.num_eval_negatives)
+                        bad = (
+                            user.test_item is None
+                            or len(candidates) != expected_len
+                            or candidates[0] != int(user.test_item)
+                            or any(c in train_set or c == int(user.test_item) for c in candidates[1:])
+                        )
+                        counters["candidate_list_errors"] += int(bad)
+                    stats[key].add_user(sampled, user.user_group)
+                    n_touched_cand = sum(1 for c in (candidates or []) if c in touched_e)
+                    ndcg = float(sampled.get("sampled_ndcg@10", 0.0))
+                    hr = float(sampled.get("sampled_hr@10", 0.0))
+                    base = baseline_by_pid.get(pid)
+                    if base is not None and n_touched_cand == 0 and (ndcg, hr) != base:
+                        counters["d_u_invariant_violations"][key] += 1
+                    if pool == "leaky" and base is not None and (
+                        ndcg < base[0] - QU_MONOTONE_TOL or hr < base[1] - QU_MONOTONE_TOL
+                    ):
+                        counters["leaky_monotonicity_violations"][key] += 1
+                    if a == 1.0:
+                        if base is None or (ndcg, hr) != base:
+                            counters["alpha1_mismatch_vs_inprocess"][key] += 1
+                        if baseline_file is not None:
+                            ref = baseline_file.get(pid)
+                            if ref is None or (ndcg, hr) != ref:
+                                counters["alpha1_mismatch_vs_csv"][key] += 1
+                    rows.append({
+                        "pid": pid,
+                        "user_group": user.user_group,
+                        "n_interactions": int(u_stats.get("n_interactions", n_train)),
+                        "staleness_at_best": staleness_map.get(pid) if staleness_map is not None else None,
+                        "alpha_table": float(a),
+                        "epochs": int(e),
+                        "pool": pool,
+                        "n_touched_rows": int(idx.numel()),
+                        "n_touched_candidates": int(n_touched_cand),
+                        "test_row_touched": int(user.test_item is not None and int(user.test_item) in touched_e),
+                        "mean_row_shift": shift,
+                        "sampled_ndcg@10": ndcg,
+                        "sampled_hr@10": hr,
+                        "sampled_mrr": float(sampled.get("sampled_mrr", 0.0)),
+                        "eval_loss": float(sampled.get("eval_loss", float("nan"))),
+                    })
+
+        if (i + 1) % PROGRESS_EVERY == 0:
+            elapsed = time.time() - t0
+            print(f"[reeval:{variant}] {i + 1}/{len(pids)} users ({(i + 1) / max(elapsed, 1e-9):.1f} u/s)")
+
+    elapsed = time.time() - t0
+    print(f"[reeval:{variant}] done: {len(pids)} pids x {len(cells)} cells in {elapsed:.1f}s")
+    metrics_by_cell = {k: s.to_metrics() for k, s in stats.items()}
+
+    failures: List[str] = []
+    if counters["nonfinite_users"]:
+        failures.append(f"non-finite Q_u for {len(counters['nonfinite_users'])} user(s)")
+    if counters["untouched_row_violations"]:
+        failures.append(f"untouched rows changed after blend: {counters['untouched_row_violations']}")
+    if any(counters["d_u_invariant_violations"].values()):
+        failures.append(f"d_u != 0 with no touched candidate: {counters['d_u_invariant_violations']}")
+    if any(counters["leaky_monotonicity_violations"].values()):
+        failures.append(
+            f"leaky cell below cached baseline for some user: {counters['leaky_monotonicity_violations']}"
+        )
+    if any(counters["alpha1_mismatch_vs_inprocess"].values()):
+        failures.append(f"alpha=1 cells != cached replay: {counters['alpha1_mismatch_vs_inprocess']}")
+    if baseline_file is not None and any(counters["alpha1_mismatch_vs_csv"].values()):
+        failures.append(f"alpha=1 cells != committed per-user CSV: {counters['alpha1_mismatch_vs_csv']}")
+    if any(counters["negatives_in_train"].values()):
+        failures.append(f"sampled negatives inside T_u: {counters['negatives_in_train']}")
+    if "leaky" in counters["n_hit"] and counters["n_hit"]["leaky"] != 0:
+        failures.append(f"leaky pool drew the test item {counters['n_hit']['leaky']} time(s)")
+    if "clean" in counters["n_hit"] and counters["n_hit"]["clean"] == 0 and len(pids) >= 20:
+        failures.append("clean pool never drew the test item (pool not clean?)")
+    if counters["candidate_list_errors"]:
+        failures.append(f"candidate-list capture errors: {counters['candidate_list_errors']}")
+    for k, m in metrics_by_cell.items():
+        if int(m["evaluated_users"]) != len(pids):
+            failures.append(f"cell {k}: evaluated_users {m['evaluated_users']} != {len(pids)}")
+
+    trust_checks: Dict[str, Any] = {
+        "status": "FAIL" if failures else "PASS",
+        "failures": failures,
+        "n_users": len(pids),
+        "untouched_check_users": min(QU_UNTOUCHED_CHECK_USERS, len(pids)),
+        "baseline_csv": str(baseline_csv) if baseline_csv is not None else None,
+        "nonfinite_users": counters["nonfinite_users"][:50],
+        "untouched_row_violations": counters["untouched_row_violations"],
+        "d_u_invariant_violations": counters["d_u_invariant_violations"],
+        "leaky_monotonicity_violations": counters["leaky_monotonicity_violations"],
+        "alpha1_mismatch_vs_inprocess": counters["alpha1_mismatch_vs_inprocess"],
+        "alpha1_mismatch_vs_csv": counters["alpha1_mismatch_vs_csv"] if baseline_file is not None else None,
+        "negatives_in_train": counters["negatives_in_train"],
+        "n_hit": counters["n_hit"],
+        "n_hit_expected_clean": counters["n_hit_expected_clean"] if "clean" in pools else None,
+        "candidate_list_errors": counters["candidate_list_errors"],
+        "lr_item": lr_item,
+        "global_row_norm_median": row_norm_median,
+        "mean_row_shift_median": {k: float(np.median(v)) if v else None for k, v in shift_by_snapshot.items()},
+        "elapsed_sec": elapsed,
+    }
+    return metrics_by_cell, rows, trust_checks
+
+
+def _run_qu_suite_variant(
+    variant: str,
+    args: argparse.Namespace,
+    cfg: ReevalConfig,
+    adapter: "PfedrecAdapter",
+    run_data: RunData,
+    global_state: Dict[str, torch.Tensor],
+    globals_path: Path,
+    *,
+    best_block: Dict[str, Any],
+    final_eval_round_index: Optional[int],
+    staleness_map: Optional[Dict[int, int]],
+) -> Dict[str, Dict[str, float]]:
+    """Run one Q_u variant end-to-end: cached replay + trust gate, cells, artifacts.
+
+    The ``cached`` replay is run in-process (its files are NOT re-emitted, so
+    the Stage-A ``reeval_cached_*`` artifacts in the run dir are untouched).
+    Raises ``SystemExit(3)`` when the trust gate or any Q_u trust check fails;
+    in that case no cell metrics or per-user rows are written (README §7.2).
+    """
+    out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) is not None else cfg.run_dir
+    base_metrics, base_rows = run_reeval(
+        adapter, cfg, run_data, global_state, "cached",
+        device=args.device, staleness_map=staleness_map, label=f"{variant}:cached",
+    )
+    gate: Dict[str, Any] = {"status": "SKIPPED", "reason": "--skip-trust-gate"}
+    if not args.skip_trust_gate:
+        gate = trust_gate(
+            base_metrics, best_block,
+            limit_users=args.limit_users, globals_kind=args.globals,
+            eval_round_num=cfg.eval_round_num,
+            final_eval_round_index=final_eval_round_index,
+        )
+        print(f"[reeval:{variant}] TRUST GATE (cached replay): {gate['status']}")
+        if gate["status"] == "FAIL":
+            print(
+                f"[reeval:{variant}] trust gate FAILED — no Q_u cell is reported. Aborting.",
+                file=sys.stderr,
+            )
+            raise SystemExit(3)
+
+    baseline_csv: Optional[Path] = None
+    candidate_csv = cfg.run_dir / f"reeval_cached_{args.globals}_per_user.csv"
+    if args.globals == "best" and candidate_csv.exists():
+        baseline_csv = candidate_csv
+
+    metrics_by_cell, rows, checks = run_qu_variant(
+        variant, adapter, cfg, run_data, global_state,
+        baseline_rows=base_rows, device=args.device,
+        staleness_map=staleness_map, baseline_csv=baseline_csv,
+    )
+    spec = QU_VARIANT_SPECS[variant]
+    extra: Dict[str, Any] = {
+        "trust_gate": gate,
+        "trust_checks": checks,
+        "grid": {
+            "alpha_table": list(spec["alphas"]),
+            "epochs": list(QU_EPOCH_SNAPSHOTS),
+            "pools": list(spec["pools"]),
+            "alpha_convention": "Q^a[i] = a*q_global[i] + (1-a)*Q_u[i] on touched rows only (a = weight of the GLOBAL table)",
+        },
+        "pool": spec["pools"][0] if len(spec["pools"]) == 1 else list(spec["pools"]),
+        "lr_item": checks["lr_item"],
+        "train_round_num": [QU_ROUND_OFFSET + e for e in range(1, max(QU_EPOCH_SNAPSHOTS) + 1)],
+        "baseline_metrics": base_metrics,
+        "preregistration": "results/federated/pfedrec/<run>/gate_qu/README.md v1.1",
+    }
+    if checks["status"] == "FAIL":
+        for msg in checks["failures"]:
+            print(f"  FAIL {msg}", file=sys.stderr)
+        if not args.no_json:
+            dump_json(
+                cfg, "pfedrec", variant, args.globals, globals_path, base_metrics,
+                device=args.device, limit_users=args.limit_users,
+                cache_dir=adapter.resolve_cache_dir(run_data), extra=extra, out_dir=out_dir,
+            )
+        print(
+            f"[reeval:{variant}] Q_u trust checks FAILED — no cell is reported (README §7.2). Aborting.",
+            file=sys.stderr,
+        )
+        raise SystemExit(3)
+
+    for key, m in metrics_by_cell.items():
+        print_table(f"{variant}:{key}", args.globals, cfg, m)
+    print(f"[reeval:{variant}] trust checks: PASS | mean_row_shift median {checks['mean_row_shift_median']} "
+          f"| global row-norm median {checks['global_row_norm_median']:.4f} | n_hit {checks['n_hit']}")
+
+    csv_path: Optional[Path] = None
+    if not args.no_per_user:
+        csv_path = write_qu_per_user_csv(out_dir / f"reeval_{variant}_{args.globals}_per_user.csv", rows)
+    if not args.no_json:
+        extra["metrics_by_cell"] = metrics_by_cell
+        if csv_path is not None:
+            extra["per_user_csv"] = str(csv_path)
+        # Top-level ``metrics`` is ALWAYS the reproduction cell (README §10),
+        # never the best cell; qu_diag has no alpha=1 cell -> cached baseline.
+        top_key = qu_cell_key(1.0, 1, "clean", bool(spec["suffix_pool"]))
+        top = metrics_by_cell.get(top_key, base_metrics)
+        extra["metrics_source"] = top_key if top_key in metrics_by_cell else "cached_replay"
+        dump_json(
+            cfg, "pfedrec", variant, args.globals, globals_path, top,
+            device=args.device, limit_users=args.limit_users,
+            cache_dir=adapter.resolve_cache_dir(run_data), extra=extra, out_dir=out_dir,
+        )
+    return metrics_by_cell
 
 
 # ===========================================================================
@@ -2325,6 +2884,15 @@ def run_pfedrec_suite(
                 },
             })
             summary[variant] = metrics
+
+        elif variant in QU_VARIANT_SPECS:
+            metrics_by_cell = _run_qu_suite_variant(
+                variant, args, cfg, adapter, run_data, global_state, globals_path,
+                best_block=best_block, final_eval_round_index=final_eval_round_index,
+                staleness_map=staleness_map,
+            )
+            for key, m in metrics_by_cell.items():
+                summary[f"{variant}:{key}"] = m
 
         else:  # pragma: no cover — guarded by the choices validation above
             raise ValueError(f"unhandled pfedrec variant {variant!r}")
@@ -2784,8 +3352,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--local-variant", nargs="+",
         choices=sorted(set(VARIANTS) | set(PFEDREC_VARIANTS)), default=["cached"],
         help=(
-            "local-state variant(s) to evaluate; the alpha/global_head suite is "
-            "pfedrec-only, 'zero' is personalized-only (degenerate for pfedrec)"
+            "local-state variant(s) to evaluate; the alpha/global_head suite and the "
+            "Q_u gate (qu_grid/qu_diag) are pfedrec-only, 'zero' is personalized-only "
+            "(degenerate for pfedrec)"
         ),
     )
     parser.add_argument(
@@ -2815,6 +3384,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-json", action="store_true",
         help="skip writing reeval_<variant>_<globals>.json into the run dir",
+    )
+    parser.add_argument(
+        "--out-dir", type=Path, default=None,
+        help=(
+            "directory for qu_grid/qu_diag outputs (JSON + long per-user CSV); "
+            "defaults to the run dir. Stage-A variants always write to the run dir"
+        ),
     )
     parser.add_argument(
         "--self-test", action="store_true",
