@@ -1,0 +1,43 @@
+diff --git a/data.py b/data.py
+index 69a8567..3a91c57 100644
+--- a/data.py
++++ b/data.py
+@@ -59,7 +59,7 @@ class SampleGenerator(object):
+     def _binarize(self, ratings):
+         """binarize into 0 or 1, imlicit feedback"""
+         ratings = deepcopy(ratings)
+-        ratings['rating'][ratings['rating'] > 0] = 1.0
++        ratings.loc[ratings['rating'] > 0, 'rating'] = 1.0
+         return ratings
+ 
+     def _split_loo(self, ratings):
+@@ -77,7 +77,7 @@ class SampleGenerator(object):
+         interact_status = ratings.groupby('userId')['itemId'].apply(set).reset_index().rename(
+             columns={'itemId': 'interacted_items'})
+         interact_status['negative_items'] = interact_status['interacted_items'].apply(lambda x: self.item_pool - x)
+-        interact_status['negative_samples'] = interact_status['negative_items'].apply(lambda x: random.sample(x, 198))
++        interact_status['negative_samples'] = interact_status['negative_items'].apply(lambda x: random.sample(list(x), 198))
+         return interact_status[['userId', 'negative_items', 'negative_samples']]
+ 
+     def store_all_train_data(self, num_negatives):
+@@ -85,7 +85,7 @@ class SampleGenerator(object):
+         information, where each sub-list stores a user's positives and negatives"""
+         users, items, ratings = [], [], []
+         train_ratings = pd.merge(self.train_ratings, self.negatives[['userId', 'negative_items']], on='userId')
+-        train_ratings['negatives'] = train_ratings['negative_items'].apply(lambda x: random.sample(x,
++        train_ratings['negatives'] = train_ratings['negative_items'].apply(lambda x: random.sample(list(x),
+                                                                                                    num_negatives))  # include userId, itemId, rating, negative_items and negatives five columns.
+         single_user = []
+         user_item = []
+diff --git a/engine.py b/engine.py
+index e103d74..dbf6919 100644
+--- a/engine.py
++++ b/engine.py
+@@ -1,6 +1,6 @@
+ import torch
+ from torch.autograd import Variable
+-from tensorboardX import SummaryWriter
++# from tensorboardX import SummaryWriter  # not used
+ 
+ from utils import *
+ from metrics import MetronAtK
