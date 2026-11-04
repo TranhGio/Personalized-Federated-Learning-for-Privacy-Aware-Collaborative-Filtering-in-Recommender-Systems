@@ -122,7 +122,11 @@ dòng 2 trở thành số PFedRec mạnh hơn trong luận văn. Hai trường h
 Chi phí: 2 quỹ đạo tinh chỉnh × 6040 user, đo trên dữ liệu tổng hợp cùng kích thước ≈ 3 phút CPU mỗi pool
 (mục 11 README cổng); tổng dưới 15 phút, xa dưới giới hạn 3 ngày. GPU = 0.
 
-Các bước, trên máy giữ đầu vào, nhánh `feat/gate-qu-reeval` sau khi merge:
+Toàn bộ các bước dưới đây được gói trong wrapper đã commit `.bug-investigation/run_pfedrec_posttune_a.sh`
+(dừng ngay khi tiền kiểm hoặc kiểm tra tin cậy hỏng; không bao giờ ghi đè kết quả đã có; cuối cùng commit ba file
+đầu ra nhỏ và push). Trên máy giữ đầu vào, sau khi merge vào `master`:
+`MIN_FREE_GB=5 scripts/remote/start_run.sh .bug-investigation/run_pfedrec_posttune_a.sh posttune-a`.
+Các lệnh tương đương khi chạy tay:
 
 ```bash
 # 0. (đã cài 04/11, cùng commit với README này) cờ --contrast trong gate_stats.py và kiểm tra "đơn điệu ở leaky"
@@ -155,3 +159,4 @@ python scripts/thesis/gate_stats.py \
 | Ngày | Phiên bản | Thay đổi |
 |---|---|---|
 | 2026-11-04 | 1 | Đăng ký trước theo góp ý GVHD 04/11 (cách (a)): 4 ô, quy tắc 3 dòng báo cáo, khác biệt K1–K5, kiểm tra tin cậy, dự đoán A1–A5 |
+| 2026-11-04 | 1.1 | Thêm wrapper `run_pfedrec_posttune_a.sh` và mẫu `RESULT.md` (mục 9). Không đổi lưới, quy tắc báo cáo, kiểm định, dự đoán |
