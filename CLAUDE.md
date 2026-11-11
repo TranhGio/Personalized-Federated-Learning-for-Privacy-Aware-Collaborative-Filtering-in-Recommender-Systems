@@ -113,6 +113,17 @@ When compacting, always preserve:
 - Current branch name + recent commits
 - Key metric values discussed (NDCG@10, HR@K)
 
+## Harness: thesis research team
+
+**Goal:** every number that reaches the advisor or the thesis comes from a pre-registered experiment, a trust-checked re-score, and an audited table.
+
+**When to use:** for multi-step research work — pre-registering or reviewing an experiment, implementing analysis tooling for one, analysing results that came back from a run, writing or revising advisor-facing documents (Friday report, status summary, replies, thesis sections), related-work mapping — use the `fl-thesis-orchestrator` skill. Launching runs stays with `train-remote`; sweeps with `sweep`; one-line questions are answered directly.
+
+**Change log:**
+| Date | Change | Scope | Reason |
+| --- | --- | --- | --- |
+| 2026-11-11 | First Harness v2 setup: 7 agents (`.claude/agents/`), orchestrator + 5 skills, `analyze-results` rewritten, `_workspace/` ignored | all | advisor's 4-contribution plan needs repeatable register → review → tool → analyse → report cycles |
+
 ## Module Docs
 
 - @federated-baseline-cf/claude.md
