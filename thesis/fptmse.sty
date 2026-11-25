@@ -116,6 +116,12 @@
 \newcommand{\thesisministry}[1]{\gdef\@thesisministry{#1}}
 \newcommand{\thethesisyear}{\@thesisyear}
 \newcommand{\thethesisauthor}{\@thesisauthor}
+\newcommand{\thesiscity}[1]{\gdef\@thesiscity{#1}}     % signature line of the acknowledgements
+\newcommand{\thesismonth}[1]{\gdef\@thesismonth{#1}}
+\newcommand{\thethesiscity}{\@thesiscity}
+\newcommand{\thethesismonth}{\@thesismonth}
+\thesiscity{}
+\thesismonth{}
 \thesiscosupervisor{}
 \thesisministry{MINISTRY OF EDUCATION AND TRAINING}
 \thesisuniversity{FPT UNIVERSITY}
@@ -149,8 +155,10 @@
     \vspace{1.2cm}
     {\normalsize Supervisor:\par}
     \vspace{0.2cm}
-    {\normalsize 1.\ \@thesissupervisor\par}
-    {\normalsize 2.\ \@thesiscosupervisor\par}
+    \ifdefempty{\@thesiscosupervisor}{%
+      {\normalsize \@thesissupervisor\par}}{%
+      {\normalsize 1.\ \@thesissupervisor\par}
+      {\normalsize 2.\ \@thesiscosupervisor\par}}%
   }%
 }
 

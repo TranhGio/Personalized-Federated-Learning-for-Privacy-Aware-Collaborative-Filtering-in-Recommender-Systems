@@ -368,6 +368,10 @@ def table_main(runs: Dict[str, RunData], nocal: RunData, centralized: dict, num:
     num.add("GainPersonalizedVsBaselineSparsePct",
             f"{100.0 * (metric(runs['personalized'].best, 'ndcg@10', 'sparse') - metric(runs['baseline'].best, 'ndcg@10', 'sparse')) / metric(runs['baseline'].best, 'ndcg@10', 'sparse'):.1f}",
             "sparse group, percent")
+    common = sorted(set(runs["pfedrec"].history) & set(nocal.history))
+    num.add("DeltaInLoopNocalMax",
+            f4(max(abs(runs["pfedrec"].history[r]["sampled_ndcg@10"] - nocal.history[r]["sampled_ndcg@10"]) for r in common)),
+            "max |in-loop NDCG@10(cf72e0) - in-loop NDCG@10(ef41ab)| over common rounds (same client sequence)")
     num.add("DeltaPfedrecCalibration", signed(metric(runs["pfedrec"].best, "ndcg@10") - metric(nocal.best, "ndcg@10")),
             "cf72e0 - ef41ab NDCG@10 (confounded by best round and code version)")
 
@@ -783,6 +787,87 @@ def staleness_numbers(runs: Dict[str, RunData], cached: List[Dict[str, str]], nu
         vals = [h[r]["sampled_ndcg@10"] for r in sorted(h)]
         infl = max(vals) - statistics.mean(vals[-10:])
         num.add(f"Inflation{macro_name(key)}", f"{100 * infl:.1f}", "in-loop max minus mean of last 10 rounds, NDCG@10 points")
+    # NDCG@10 by "staleness at the best round" bucket on the calibrated run.
+    # k = rounds between the best round r* and the user's last participation up to r* (reeval
+    # staleness_at_best). Caveats recorded as macros: the k = 0 bucket is exactly the in-loop
+    # sample on which r* was selected, and most users participated again after r*, so k is
+    # not the age of the cached private part for them (caches are written until the last round,
+    # best-round restore resets only the shared table).
+    import numpy as np
+    rng = np.random.default_rng(42)
+    sel = runs["pfedrec"].results["selected_clients_per_round"]
+    best_round = runs["pfedrec"].best_round
+    k_zero = {int(r["pid"]) for r in cached if int(r["staleness_at_best"]) == 0}
+    assert k_zero == {int(x) for x in sel[best_round - 1]}, "k=0 bucket must equal the clients of the best round"
+    last_part = {}
+    visits_to_best = {pid: 0 for pid in range(len(cached))}
+    for rnd, ids in enumerate(sel, start=1):
+        for pid in ids:
+            last_part[int(pid)] = rnd
+            if rnd <= best_round:
+                visits_to_best[int(pid)] += 1
+    after_best = sum(1 for pid, r in last_part.items() if r > best_round)
+    num.add("StaleAfterBestPct", f"{100.0 * after_best / len(cached):.1f}",
+            "percent of users whose last participation in the whole run is after the best round (selected_clients_per_round)")
+    num.add("StaleInLoopAtBest", f4(runs["pfedrec"].history[best_round]["sampled_ndcg@10"]),
+            "in-loop NDCG@10 of the 604 clients of the best round (eval_metrics_history)")
+
+    def boot_ci(vals: List[float]) -> Tuple[float, float]:
+        arr = np.asarray(vals)
+        means = [arr[rng.integers(0, len(arr), len(arr))].mean() for _ in range(10000)]
+        return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+    buckets = [("0 (clients of the best round)", "Zero", lambda k: k == 0),
+               ("1--5", "OneFive", lambda k: 1 <= k <= 5), ("6--10", "SixTen", lambda k: 6 <= k <= 10),
+               ("11--20", "ElevenTwenty", lambda k: 11 <= k <= 20), (">20", "OverTwenty", lambda k: k > 20),
+               ("All $k \\geq 1$", "KOne", lambda k: k >= 1), ("All", "All", lambda k: True)]
+    body = [r"\begin{tabular}{lrrrrc}", r"\toprule",
+            r"$k$ (rounds since last participation up to $r^\ast$) & Users & Interactions & Visits $\leq r^\ast$ & NDCG@10 & 95\% CI \\",
+            r"\midrule"]
+    bucket_ndcg: Dict[str, float] = {}
+    for label, mk, pred in buckets:
+        rows = [r for r in cached if pred(int(r["staleness_at_best"]))]
+        vals = [float(r["sampled_ndcg@10"]) for r in rows]
+        nd = statistics.mean(vals)
+        lo, hi = boot_ci(vals)
+        ni = statistics.mean(float(r["n_interactions"]) for r in rows)
+        vis = statistics.mean(visits_to_best[int(r["pid"])] for r in rows)
+        bucket_ndcg[mk] = nd
+        if mk == "KOne":
+            body.append(r"\midrule")
+        body.append(f"{label} & {len(rows):,} & {ni:.0f} & {vis:.1f} & {f4(nd)} & \\mbox{{[{f4(lo)}, {f4(hi)}]}} \\\\")
+        num.add(f"StaleBucket{mk}N", f"{len(rows):,}", f"users with staleness_at_best in {label} (cf72e0 cached per-user CSV)")
+        num.add(f"StaleBucket{mk}Ndcg", f4(nd), f"mean sampled_ndcg@10 of users with staleness_at_best in {label}")
+        num.add(f"StaleBucket{mk}Ci", f"\\mbox{{[{f4(lo)}, {f4(hi)}]}}", "percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)")
+        num.add(f"StaleBucket{mk}Visits", f"{vis:.1f}", f"mean participations up to the best round, staleness bucket {label}")
+    body += [r"\bottomrule", r"\end{tabular}"]
+    write_table("tab_staleness_buckets.tex", "\n".join(body),
+                "cf72e0 reeval_cached_best_per_user.csv + selected_clients_per_round: NDCG@10 by staleness_at_best bucket (calibrated heads)")
+    num.add("StaleBucketSpread", f"{100 * (bucket_ndcg['Zero'] - bucket_ndcg['OverTwenty']):.1f}",
+            "NDCG@10 points, staleness bucket 0 minus bucket >20")
+    num.add("StaleKZeroMinusRest", signed(bucket_ndcg["Zero"] - bucket_ndcg["KOne"]),
+            "NDCG@10, bucket 0 minus all users with k >= 1")
+    num.add("StaleSpreadKOne", f"{100 * (bucket_ndcg['OneFive'] - bucket_ndcg['OverTwenty']):.1f}",
+            "NDCG@10 points, bucket 1-5 minus bucket >20")
+    num.add("StaleSpreadKOneDelta", signed(bucket_ndcg["OneFive"] - bucket_ndcg["OverTwenty"]), "NDCG@10, bucket 1-5 minus bucket >20")
+    g1 = np.asarray([float(r["sampled_ndcg@10"]) for r in cached if 1 <= int(r["staleness_at_best"]) <= 5])
+    g2 = np.asarray([float(r["sampled_ndcg@10"]) for r in cached if int(r["staleness_at_best"]) > 20])
+    diffs = [g1[rng.integers(0, len(g1), len(g1))].mean() - g2[rng.integers(0, len(g2), len(g2))].mean() for _ in range(10000)]
+    num.add("StaleSpreadKOneCi", f"\\mbox{{[{float(np.percentile(diffs, 2.5)):+.4f}, {float(np.percentile(diffs, 97.5)):+.4f}]}}",
+            "percentile bootstrap 95% CI of (mean 1-5 minus mean >20), independent resampling, 10000 resamples, seed 42")
+
+    def pearson(pairs: List[Tuple[float, float]]) -> float:
+        xs = [a for a, _ in pairs]; ys = [b for _, b in pairs]
+        mx, my = statistics.mean(xs), statistics.mean(ys)
+        cov = sum((x - mx) * (y - my) for x, y in pairs)
+        return cov / (sum((x - mx) ** 2 for x in xs) * sum((y - my) ** 2 for y in ys)) ** 0.5
+
+    def rfmt(r: float) -> str:
+        return f"$-{abs(r):.3f}$" if r < 0 else f"{r:.3f}"
+
+    all_pairs = [(float(r["staleness_at_best"]), float(r["sampled_ndcg@10"])) for r in cached]
+    num.add("StaleCorr", rfmt(pearson(all_pairs)), "Pearson r(staleness_at_best, sampled_ndcg@10), all users")
+    num.add("StaleCorrKOne", rfmt(pearson([pr for pr in all_pairs if pr[0] >= 1])), "Pearson r(staleness_at_best, sampled_ndcg@10), users with k >= 1")
     return stale
 
 

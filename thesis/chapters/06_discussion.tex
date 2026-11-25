@@ -63,10 +63,17 @@ deviations K1--K3 of Table~\ref{tab:posttune-deviations}; the official code run 
 machine (\OfficialCodeNdcg) bounds the sum of those effects if its configuration is confirmed
 to be the official default (\pending{confirmation}). The thesis therefore reports PFedRec at
 \NdcgPfedrec{} with the shared table as its number, lists the two post-tuning rows next to it,
-and states the limitation with the measured cause. \decision{final wording of the limitation
-paragraph: (A) two measured causes, $C$ unmeasured but bounded, and the negative-pool leak with
-its size; or (B) keep ``no post-tuning at evaluation'' as the cause with a footnote giving the
-measurement that has the opposite sign}.
+and states the limitation with its measured causes: (a) the official inference protocol
+post-tunes the item table on the client with the test item excluded from the training negatives,
+and that exclusion alone is worth \PtContrastEOne{} \ndcg{} at $E=1$, carried by
+\PtContrastEOneNonZero{} users; (b) post-tuning with honest negatives is not a cause of the gap
+but a cost (\PtDeltaEOneClean); (c) the participation fraction ($C=\ParticipationC$ against
+$C=1$) is not measured and is bounded only indirectly by the official-code run on the same
+machine; (d) K1--K3 remain declared deviations, so the official-code row is still
+\GapLeakyEOneToPublished{} below the published number. Deviation K1 (the head is frozen while
+the reference alternates head and item updates) is kept as a declared deviation rather than
+removed by a re-run: the experiment isolates the negative pool, which the contrast shows to be
+the decisive factor, and the head had already been calibrated to the restored table.
 
 A point on statistics. In the clean cells the mean and the rank test disagree
 (Table~\ref{tab:posttune-wilcoxon}): under Pratt's treatment of ties the test almost reduces to
@@ -86,10 +93,11 @@ $d=\DimMf$. Only PFedRec has a final calibration of its private part. The best r
 and all are selected on the test item. These asymmetries limit the comparison to the reading
 ``each method at its own, author-faithful configuration'': the placement study is clean only
 within the BPR family (Baseline against Personalized), and the PFedRec margin should be read as
-a design-level result rather than as a controlled effect of the head alone. \decision{(A) keep
-the author-faithful configurations and present Table~\ref{tab:asymmetries} as the reading
-guide, or (B) first calibrate the Personalized and Adaptive runs offline to remove the
-calibration asymmetry}.
+a design-level result rather than as a controlled effect of the head alone. The thesis keeps the author-faithful default configurations and uses
+Table~\ref{tab:asymmetries} as the reading guide; the calibration asymmetry is not removed by
+re-running. A separate calibrated re-score of the Adaptive run against its best-round table
+would give its score after one calibration epoch; for the Personalized run this needs a new run
+with saved state (Section~\ref{sec:res-staleness}).
 
 \begin{table}[htbp]
   \caption{Configuration asymmetries between the four cited runs.}
@@ -123,7 +131,9 @@ comparator is untuned. The paired tests, where available, describe users, not se
 \paragraph{Construct.} Sampled metrics with 99 negatives are known to disagree with exhaustive
 ones \cite{krichene2020sampled}; the comparison is valid because every method ranks the same
 candidates, but the absolute numbers are protocol-specific. The ``sparse'' group of MovieLens 1M
-is not a cold-start group.
+is not a cold-start group. The $E=3$ official-code cell of Appendix~\ref{app:posttune}
+(\NdcgEThreeLeaky) shows that the leaky protocol can exceed the published number already at
+$C=\ParticipationC$; it is a property of the protocol and is not used as a result.
 
 \paragraph{External.} One dataset, one domain (films), one participation fraction. The leak
 mechanism of Section~\ref{sec:disc-posttune} applies to any method that fine-tunes a per-user
