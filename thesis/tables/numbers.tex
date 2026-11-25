@@ -86,6 +86,7 @@
 \newcommand{\CentralBprNeg}{1}  % centralized params
 \newcommand{\GainPersonalizedVsBaselinePct}{20.9}  % (personalized - baseline)/baseline, percent
 \newcommand{\GainPersonalizedVsBaselineSparsePct}{10.4}  % sparse group, percent
+\newcommand{\DeltaInLoopNocalMax}{0.0275}  % max |in-loop NDCG@10(cf72e0) - in-loop NDCG@10(ef41ab)| over common rounds (same client sequence)
 \newcommand{\DeltaPfedrecCalibration}{+0.0095}  % cf72e0 - ef41ab NDCG@10 (confounded by best round and code version)
 \newcommand{\NdcgEOneClean}{0.3181}  % metrics_by_cell.a0.00_E1_clean
 \newcommand{\HrEOneClean}{0.5584}  % metrics_by_cell.a0.00_E1_clean
@@ -116,9 +117,9 @@
 \newcommand{\PtRowShiftMedianEOne}{16.32}  % trust_checks.mean_row_shift_median.clean_E1
 \newcommand{\PtRowShiftMedianEThree}{13.55}  % trust_checks.mean_row_shift_median.clean_E3
 \newcommand{\PtGlobalsSha}{279459ba7298\ldots}  % globals_sha256 (prefix)
-\newcommand{\PtDeltaEOneClean}{-0.0266}  % stats_wilcoxon cells.a0.00_E1_clean.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtCiEOneClean}{[-0.0315, -0.0217]}  % cells.a0.00_E1_clean.by_scope.overall.ci95_ndcg
-\newcommand{\PtDeltaHrEOneClean}{-0.0526}  % cells.a0.00_E1_clean.by_scope.overall.mean_delta_hr
+\newcommand{\PtDeltaEOneClean}{\mbox{-0.0266}}  % stats_wilcoxon cells.a0.00_E1_clean.by_scope.overall.mean_delta_ndcg
+\newcommand{\PtCiEOneClean}{\mbox{[-0.0315, -0.0217]}}  % cells.a0.00_E1_clean.by_scope.overall.ci95_ndcg
+\newcommand{\PtDeltaHrEOneClean}{\mbox{-0.0526}}  % cells.a0.00_E1_clean.by_scope.overall.mean_delta_hr
 \newcommand{\PtPOneEOneClean}{1.0}  % cells.a0.00_E1_clean.p_one_sided
 \newcommand{\PtPTwoEOneClean}{$9.5\times10^{-4}$}  % cells.a0.00_E1_clean.p_two_sided
 \newcommand{\PtPPrattEOneClean}{$<10^{-10}$}  % cells.a0.00_E1_clean.p_pratt_one_sided
@@ -130,11 +131,11 @@
 \newcommand{\PtWPlusEOneClean}{503,966}  % cells.a0.00_E1_clean.w_plus
 \newcommand{\PtWMinusEOneClean}{614,294}  % cells.a0.00_E1_clean.w_minus
 \newcommand{\PtDeltaEOneLeaky}{+0.0342}  % stats_wilcoxon cells.a0.00_E1_leaky.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtCiEOneLeaky}{[+0.0318, +0.0366]}  % cells.a0.00_E1_leaky.by_scope.overall.ci95_ndcg
+\newcommand{\PtCiEOneLeaky}{\mbox{[+0.0318, +0.0366]}}  % cells.a0.00_E1_leaky.by_scope.overall.ci95_ndcg
 \newcommand{\PtDeltaHrEOneLeaky}{+0.0531}  % cells.a0.00_E1_leaky.by_scope.overall.mean_delta_hr
-\newcommand{\PtPOneEOneLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E1_leaky.p_one_sided
-\newcommand{\PtPTwoEOneLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E1_leaky.p_two_sided
-\newcommand{\PtPPrattEOneLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E1_leaky.p_pratt_one_sided
+\newcommand{\PtPOneEOneLeaky}{W$^-$=0}  % cells.a0.00_E1_leaky.p_one_sided
+\newcommand{\PtPTwoEOneLeaky}{W$^-$=0}  % cells.a0.00_E1_leaky.p_two_sided
+\newcommand{\PtPPrattEOneLeaky}{W$^-$=0}  % cells.a0.00_E1_leaky.p_pratt_one_sided
 \newcommand{\PtREOneLeaky}{+1.000}  % cells.a0.00_E1_leaky.rank_biserial_r
 \newcommand{\PtNPosEOneLeaky}{1,329}  % per-user CSV: users with d_u > 0
 \newcommand{\PtNNegEOneLeaky}{0}  % per-user CSV: users with d_u < 0
@@ -142,9 +143,9 @@
 \newcommand{\PtZeroLosersEOneLeaky}{0}  % losers whose NDCG is exactly 0 and whose test row was drawn
 \newcommand{\PtWPlusEOneLeaky}{883,785}  % cells.a0.00_E1_leaky.w_plus
 \newcommand{\PtWMinusEOneLeaky}{0}  % cells.a0.00_E1_leaky.w_minus
-\newcommand{\PtDeltaEThreeClean}{-0.0685}  % stats_wilcoxon cells.a0.00_E3_clean.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtCiEThreeClean}{[-0.0757, -0.0613]}  % cells.a0.00_E3_clean.by_scope.overall.ci95_ndcg
-\newcommand{\PtDeltaHrEThreeClean}{-0.1407}  % cells.a0.00_E3_clean.by_scope.overall.mean_delta_hr
+\newcommand{\PtDeltaEThreeClean}{\mbox{-0.0685}}  % stats_wilcoxon cells.a0.00_E3_clean.by_scope.overall.mean_delta_ndcg
+\newcommand{\PtCiEThreeClean}{\mbox{[-0.0757, -0.0613]}}  % cells.a0.00_E3_clean.by_scope.overall.ci95_ndcg
+\newcommand{\PtDeltaHrEThreeClean}{\mbox{-0.1407}}  % cells.a0.00_E3_clean.by_scope.overall.mean_delta_hr
 \newcommand{\PtPOneEThreeClean}{1.0}  % cells.a0.00_E3_clean.p_one_sided
 \newcommand{\PtPTwoEThreeClean}{$<10^{-10}$}  % cells.a0.00_E3_clean.p_two_sided
 \newcommand{\PtPPrattEThreeClean}{0.996}  % cells.a0.00_E3_clean.p_pratt_one_sided
@@ -156,11 +157,11 @@
 \newcommand{\PtWPlusEThreeClean}{955,530}  % cells.a0.00_E3_clean.w_plus
 \newcommand{\PtWMinusEThreeClean}{2,024,931}  % cells.a0.00_E3_clean.w_minus
 \newcommand{\PtDeltaEThreeLeaky}{+0.1073}  % stats_wilcoxon cells.a0.00_E3_leaky.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtCiEThreeLeaky}{[+0.1026, +0.1122]}  % cells.a0.00_E3_leaky.by_scope.overall.ci95_ndcg
+\newcommand{\PtCiEThreeLeaky}{\mbox{[+0.1026, +0.1122]}}  % cells.a0.00_E3_leaky.by_scope.overall.ci95_ndcg
 \newcommand{\PtDeltaHrEThreeLeaky}{+0.1394}  % cells.a0.00_E3_leaky.by_scope.overall.mean_delta_hr
-\newcommand{\PtPOneEThreeLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E3_leaky.p_one_sided
-\newcommand{\PtPTwoEThreeLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E3_leaky.p_two_sided
-\newcommand{\PtPPrattEThreeLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E3_leaky.p_pratt_one_sided
+\newcommand{\PtPOneEThreeLeaky}{W$^-$=0}  % cells.a0.00_E3_leaky.p_one_sided
+\newcommand{\PtPTwoEThreeLeaky}{W$^-$=0}  % cells.a0.00_E3_leaky.p_two_sided
+\newcommand{\PtPPrattEThreeLeaky}{W$^-$=0}  % cells.a0.00_E3_leaky.p_pratt_one_sided
 \newcommand{\PtREThreeLeaky}{+1.000}  % cells.a0.00_E3_leaky.rank_biserial_r
 \newcommand{\PtNPosEThreeLeaky}{2,502}  % per-user CSV: users with d_u > 0
 \newcommand{\PtNNegEThreeLeaky}{0}  % per-user CSV: users with d_u < 0
@@ -169,23 +170,23 @@
 \newcommand{\PtWPlusEThreeLeaky}{3,131,253}  % cells.a0.00_E3_leaky.w_plus
 \newcommand{\PtWMinusEThreeLeaky}{0}  % cells.a0.00_E3_leaky.w_minus
 \newcommand{\PtPHolmEOneClean}{1.0}  % cells.a0.00_E1_clean.p_holm_one_sided
-\newcommand{\PtPHolmEOneLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E1_leaky.p_holm_one_sided
+\newcommand{\PtPHolmEOneLeaky}{W$^-$=0}  % cells.a0.00_E1_leaky.p_holm_one_sided
 \newcommand{\PtPHolmEThreeClean}{1.0}  % cells.a0.00_E3_clean.p_holm_one_sided
-\newcommand{\PtPHolmEThreeLeaky}{$<10^{-10}$\,(W$^-$=0)}  % cells.a0.00_E3_leaky.p_holm_one_sided
-\newcommand{\PtDeltaEOneCleanSparse}{-0.0105}  % E1_clean by_scope.sparse
+\newcommand{\PtPHolmEThreeLeaky}{W$^-$=0}  % cells.a0.00_E3_leaky.p_holm_one_sided
+\newcommand{\PtDeltaEOneCleanSparse}{\mbox{-0.0105}}  % E1_clean by_scope.sparse
 \newcommand{\PtDeltaEOneLeakySparse}{+0.0036}  % E1_leaky by_scope.sparse
-\newcommand{\PtDeltaEOneCleanMedium}{-0.0191}  % E1_clean by_scope.medium
+\newcommand{\PtDeltaEOneCleanMedium}{\mbox{-0.0191}}  % E1_clean by_scope.medium
 \newcommand{\PtDeltaEOneLeakyMedium}{+0.0090}  % E1_leaky by_scope.medium
-\newcommand{\PtDeltaEOneCleanDense}{-0.0371}  % E1_clean by_scope.dense
+\newcommand{\PtDeltaEOneCleanDense}{\mbox{-0.0371}}  % E1_clean by_scope.dense
 \newcommand{\PtDeltaEOneLeakyDense}{+0.0629}  % E1_leaky by_scope.dense
 \newcommand{\PtContrastEOne}{+0.0608}  % contrasts.a0.00_E1_leaky__minus__a0.00_E1_clean.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtContrastEOneCi}{[+0.0558, +0.0658]}  % contrasts.a0.00_E1_leaky__minus__a0.00_E1_clean.by_scope.overall.ci95_ndcg
+\newcommand{\PtContrastEOneCi}{\mbox{[+0.0558, +0.0658]}}  % contrasts.a0.00_E1_leaky__minus__a0.00_E1_clean.by_scope.overall.ci95_ndcg
 \newcommand{\PtContrastEOneNonZero}{639}  % users whose two trajectories differ (per-user CSV)
 \newcommand{\PtContrastEOnePerUser}{0.58}  % overall delta spread over the affected users only
 \newcommand{\PtContrastEOneSparse}{+0.0141}  % contrasts.a0.00_E1_leaky__minus__a0.00_E1_clean.by_scope.sparse
 \newcommand{\PtContrastEOneDense}{+0.1000}  % contrasts.a0.00_E1_leaky__minus__a0.00_E1_clean.by_scope.dense
 \newcommand{\PtContrastEThree}{+0.1758}  % contrasts.a0.00_E3_leaky__minus__a0.00_E3_clean.by_scope.overall.mean_delta_ndcg
-\newcommand{\PtContrastEThreeCi}{[+0.1677, +0.1838]}  % contrasts.a0.00_E3_leaky__minus__a0.00_E3_clean.by_scope.overall.ci95_ndcg
+\newcommand{\PtContrastEThreeCi}{\mbox{[+0.1677, +0.1838]}}  % contrasts.a0.00_E3_leaky__minus__a0.00_E3_clean.by_scope.overall.ci95_ndcg
 \newcommand{\PtContrastEThreeNonZero}{1,694}  % users whose two trajectories differ (per-user CSV)
 \newcommand{\PtContrastEThreePerUser}{0.63}  % overall delta spread over the affected users only
 \newcommand{\NdcgHeadCached}{0.3447}  % reeval_cached_best.json metrics.sampled_ndcg@10
@@ -195,7 +196,7 @@
 \newcommand{\NdcgHeadCachedMedium}{0.3802}  % reeval_cached_best.json /medium
 \newcommand{\NdcgHeadCachedDense}{0.2935}  % reeval_cached_best.json /dense
 \newcommand{\NdcgHeadAlphaPolicyHc}{0.3061}  % reeval_alpha_policy_hc_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadAlphaPolicyHc}{-0.0386}  % reeval_alpha_policy_hc_best.json minus cached
+\newcommand{\DeltaHeadAlphaPolicyHc}{\mbox{-0.0386}}  % reeval_alpha_policy_hc_best.json minus cached
 \newcommand{\AbsDeltaHeadAlphaPolicyHc}{0.0386}  % |reeval_alpha_policy_hc_best.json minus cached|
 \newcommand{\NdcgHeadAlphaPolicyHcSparse}{0.3483}  % reeval_alpha_policy_hc_best.json /sparse
 \newcommand{\NdcgHeadAlphaPolicyHcMedium}{0.3188}  % reeval_alpha_policy_hc_best.json /medium
@@ -204,31 +205,31 @@
 \newcommand{\HeadAlphaMin}{0.100}  % alpha_summary.min
 \newcommand{\HeadAlphaMax}{0.904}  % alpha_summary.max
 \newcommand{\NdcgHeadGlobalHead}{0.2510}  % reeval_global_head_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadGlobalHead}{-0.0937}  % reeval_global_head_best.json minus cached
+\newcommand{\DeltaHeadGlobalHead}{\mbox{-0.0937}}  % reeval_global_head_best.json minus cached
 \newcommand{\AbsDeltaHeadGlobalHead}{0.0937}  % |reeval_global_head_best.json minus cached|
 \newcommand{\NdcgHeadGlobalHeadSparse}{0.3113}  % reeval_global_head_best.json /sparse
 \newcommand{\NdcgHeadGlobalHeadMedium}{0.2678}  % reeval_global_head_best.json /medium
 \newcommand{\NdcgHeadGlobalHeadDense}{0.2208}  % reeval_global_head_best.json /dense
 \newcommand{\NdcgHeadGlobalHeadWeighted}{0.2375}  % reeval_global_head_weighted_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadGlobalHeadWeighted}{-0.1072}  % reeval_global_head_weighted_best.json minus cached
+\newcommand{\DeltaHeadGlobalHeadWeighted}{\mbox{-0.1072}}  % reeval_global_head_weighted_best.json minus cached
 \newcommand{\AbsDeltaHeadGlobalHeadWeighted}{0.1072}  % |reeval_global_head_weighted_best.json minus cached|
 \newcommand{\NdcgHeadGlobalHeadWeightedSparse}{0.2874}  % reeval_global_head_weighted_best.json /sparse
 \newcommand{\NdcgHeadGlobalHeadWeightedMedium}{0.2550}  % reeval_global_head_weighted_best.json /medium
 \newcommand{\NdcgHeadGlobalHeadWeightedDense}{0.2097}  % reeval_global_head_weighted_best.json /dense
 \newcommand{\NdcgHeadShuffled}{0.1973}  % reeval_shuffled_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadShuffled}{-0.1474}  % reeval_shuffled_best.json minus cached
+\newcommand{\DeltaHeadShuffled}{\mbox{-0.1474}}  % reeval_shuffled_best.json minus cached
 \newcommand{\AbsDeltaHeadShuffled}{0.1474}  % |reeval_shuffled_best.json minus cached|
 \newcommand{\NdcgHeadShuffledSparse}{0.2476}  % reeval_shuffled_best.json /sparse
 \newcommand{\NdcgHeadShuffledMedium}{0.2126}  % reeval_shuffled_best.json /medium
 \newcommand{\NdcgHeadShuffledDense}{0.1711}  % reeval_shuffled_best.json /dense
 \newcommand{\NdcgHeadRandom}{0.0741}  % reeval_random_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadRandom}{-0.2706}  % reeval_random_best.json minus cached
+\newcommand{\DeltaHeadRandom}{\mbox{-0.2706}}  % reeval_random_best.json minus cached
 \newcommand{\AbsDeltaHeadRandom}{0.2706}  % |reeval_random_best.json minus cached|
 \newcommand{\NdcgHeadRandomSparse}{0.0725}  % reeval_random_best.json /sparse
 \newcommand{\NdcgHeadRandomMedium}{0.0808}  % reeval_random_best.json /medium
 \newcommand{\NdcgHeadRandomDense}{0.0692}  % reeval_random_best.json /dense
 \newcommand{\NdcgHeadGlobalHeadCold}{0.0150}  % reeval_global_head_cold_best.json metrics.sampled_ndcg@10
-\newcommand{\DeltaHeadGlobalHeadCold}{-0.3297}  % reeval_global_head_cold_best.json minus cached
+\newcommand{\DeltaHeadGlobalHeadCold}{\mbox{-0.3297}}  % reeval_global_head_cold_best.json minus cached
 \newcommand{\AbsDeltaHeadGlobalHeadCold}{0.3297}  % |reeval_global_head_cold_best.json minus cached|
 \newcommand{\NdcgHeadGlobalHeadColdSparse}{0.0070}  % reeval_global_head_cold_best.json /sparse
 \newcommand{\NdcgHeadGlobalHeadColdMedium}{0.0135}  % reeval_global_head_cold_best.json /medium
@@ -268,3 +269,40 @@
 \newcommand{\InflationPersonalized}{2.9}  % in-loop max minus mean of last 10 rounds, NDCG@10 points
 \newcommand{\InflationPfedrec}{1.9}  % in-loop max minus mean of last 10 rounds, NDCG@10 points
 \newcommand{\InflationAdaptive}{2.1}  % in-loop max minus mean of last 10 rounds, NDCG@10 points
+\newcommand{\StaleAfterBestPct}{83.7}  % percent of users whose last participation in the whole run is after the best round (selected_clients_per_round)
+\newcommand{\StaleInLoopAtBest}{0.3562}  % in-loop NDCG@10 of the 604 clients of the best round (eval_metrics_history)
+\newcommand{\StaleBucketZeroN}{604}  % users with staleness_at_best in 0 (clients of the best round) (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketZeroNdcg}{0.3581}  % mean sampled_ndcg@10 of users with staleness_at_best in 0 (clients of the best round)
+\newcommand{\StaleBucketZeroCi}{\mbox{[0.3303, 0.3864]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketZeroVisits}{9.2}  % mean participations up to the best round, staleness bucket 0 (clients of the best round)
+\newcommand{\StaleBucketOneFiveN}{2,242}  % users with staleness_at_best in 1--5 (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketOneFiveNdcg}{0.3469}  % mean sampled_ndcg@10 of users with staleness_at_best in 1--5
+\newcommand{\StaleBucketOneFiveCi}{\mbox{[0.3330, 0.3616]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketOneFiveVisits}{8.9}  % mean participations up to the best round, staleness bucket 1--5
+\newcommand{\StaleBucketSixTenN}{1,327}  % users with staleness_at_best in 6--10 (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketSixTenNdcg}{0.3425}  % mean sampled_ndcg@10 of users with staleness_at_best in 6--10
+\newcommand{\StaleBucketSixTenCi}{\mbox{[0.3243, 0.3610]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketSixTenVisits}{8.5}  % mean participations up to the best round, staleness bucket 6--10
+\newcommand{\StaleBucketElevenTwentyN}{1,242}  % users with staleness_at_best in 11--20 (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketElevenTwentyNdcg}{0.3442}  % mean sampled_ndcg@10 of users with staleness_at_best in 11--20
+\newcommand{\StaleBucketElevenTwentyCi}{\mbox{[0.3253, 0.3638]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketElevenTwentyVisits}{7.7}  % mean participations up to the best round, staleness bucket 11--20
+\newcommand{\StaleBucketOverTwentyN}{625}  % users with staleness_at_best in >20 (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketOverTwentyNdcg}{0.3297}  % mean sampled_ndcg@10 of users with staleness_at_best in >20
+\newcommand{\StaleBucketOverTwentyCi}{\mbox{[0.3040, 0.3555]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketOverTwentyVisits}{6.1}  % mean participations up to the best round, staleness bucket >20
+\newcommand{\StaleBucketKOneN}{5,436}  % users with staleness_at_best in All $k \geq 1$ (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketKOneNdcg}{0.3432}  % mean sampled_ndcg@10 of users with staleness_at_best in All $k \geq 1$
+\newcommand{\StaleBucketKOneCi}{\mbox{[0.3341, 0.3521]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketKOneVisits}{8.2}  % mean participations up to the best round, staleness bucket All $k \geq 1$
+\newcommand{\StaleBucketAllN}{6,040}  % users with staleness_at_best in All (cf72e0 cached per-user CSV)
+\newcommand{\StaleBucketAllNdcg}{0.3447}  % mean sampled_ndcg@10 of users with staleness_at_best in All
+\newcommand{\StaleBucketAllCi}{\mbox{[0.3359, 0.3532]}}  % percentile bootstrap 95% CI of the bucket mean (10000 resamples, seed 42)
+\newcommand{\StaleBucketAllVisits}{8.3}  % mean participations up to the best round, staleness bucket All
+\newcommand{\StaleBucketSpread}{2.8}  % NDCG@10 points, staleness bucket 0 minus bucket >20
+\newcommand{\StaleKZeroMinusRest}{+0.0149}  % NDCG@10, bucket 0 minus all users with k >= 1
+\newcommand{\StaleSpreadKOne}{1.7}  % NDCG@10 points, bucket 1-5 minus bucket >20
+\newcommand{\StaleSpreadKOneDelta}{+0.0172}  % NDCG@10, bucket 1-5 minus bucket >20
+\newcommand{\StaleSpreadKOneCi}{\mbox{[-0.0127, +0.0470]}}  % percentile bootstrap 95% CI of (mean 1-5 minus mean >20), independent resampling, 10000 resamples, seed 42
+\newcommand{\StaleCorr}{$-0.009$}  % Pearson r(staleness_at_best, sampled_ndcg@10), all users
+\newcommand{\StaleCorrKOne}{$-0.006$}  % Pearson r(staleness_at_best, sampled_ndcg@10), users with k >= 1

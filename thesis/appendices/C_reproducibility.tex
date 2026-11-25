@@ -4,15 +4,20 @@
 
 \section{Repository and Result Files}
 
-All code, result files and this document live in one repository. The four federated methods are
-the packages \code{federated-baseline-cf}, \code{federated-personalized-cf}, \code{federated-pfedrec}
-and \code{federated-adaptive-personalized-cf}; the shared foundation library is
-\code{scripts/foundation/fedrec\_foundation}; the offline re-scoring tool is
-\code{scripts/thesis/reeval.py} and the paired statistics are \code{scripts/thesis/gate\_stats.py}.
-Each cited run has a directory \code{results/federated/<module>/<run\_id>/} with
-\code{results.json}, \code{manifest.json} and \code{EVAL\_VALIDITY.json}; the PFedRec run also
-holds the per-user scores of every re-scoring variant (\code{reeval\_*\_best\_per\_user.csv}) and
-the \code{posttune/} directory with the registered experiment.
+All code, result files and this document live in one repository:
+\begin{itemize}[nosep]\raggedright
+  \item \path{federated-baseline-cf}, \path{federated-personalized-cf}, \path{federated-pfedrec}
+        and \path{federated-adaptive-personalized-cf}: the four federated methods;
+  \item \path{scripts/foundation/fedrec_foundation}: the shared foundation library (data loading,
+        partitioning, evaluation);
+  \item \path{scripts/thesis/reeval.py} and \path{scripts/thesis/gate_stats.py}: the offline
+        re-scoring tool and the paired statistics;
+  \item \path{results/federated/<module>/<run_id>/}: one directory per cited run with
+        \code{results.json}, \code{manifest.json} and \code{EVAL\_VALIDITY.json}; the PFedRec run
+        also holds the per-user scores of every re-scoring variant
+        (\path{reeval_*_best_per_user.csv}) and the \code{posttune/} directory with the
+        registered experiment.
+\end{itemize}
 
 \begin{table}[htbp]
   \caption{Identifiers of the cited runs.}
@@ -32,11 +37,11 @@ the \code{posttune/} directory with the registered experiment.
 
 \section{Regenerating the Tables and Figures}
 
-Every table and number in this document is produced by
-\code{thesis/scripts/build\_assets.py} from the files above:
+The script \path{thesis/scripts/build_assets.py} produces every table, figure and number
+macro in this document from the files above:
 \begin{verbatim}
-python thesis/scripts/build_assets.py   # writes thesis/tables/*.tex and thesis/figures/*.pdf
-cd thesis && latexmk -xelatex main.tex  # builds the thesis
+python thesis/scripts/build_assets.py   # tables, numbers, figures
+cd thesis && latexmk -xelatex main.tex  # the PDF
 \end{verbatim}
 The script fails if a result file is missing or has an unexpected shape, so a successful build
 is evidence that the numbers in the text correspond to the committed results.
@@ -47,12 +52,15 @@ The re-scoring variants require the run's saved global parameters and its per-cl
 which are kept on the training machine (they are large and are not committed). With those in
 place:
 \begin{verbatim}
-python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/<run> \
-    --module pfedrec --globals best --local-variant cached global_head random
-python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/<run> \
-    --module pfedrec --globals best --local-variant qu_diag --out-dir posttune
-python scripts/thesis/gate_stats.py --grid <posttune/reeval_qu_diag_best.json> \
-    --contrast a0.00_E1_leaky a0.00_E1_clean --contrast a0.00_E3_leaky a0.00_E3_clean
+RUN=results/federated/pfedrec/<run_id>
+python scripts/thesis/reeval.py --run-dir $RUN --module pfedrec \
+    --globals best --local-variant cached global_head random
+python scripts/thesis/reeval.py --run-dir $RUN --module pfedrec \
+    --globals best --local-variant qu_diag --out-dir posttune
+python scripts/thesis/gate_stats.py \
+    --grid $RUN/posttune/reeval_qu_diag_best.json \
+    --contrast a0.00_E1_leaky a0.00_E1_clean \
+    --contrast a0.00_E3_leaky a0.00_E3_clean
 \end{verbatim}
 The first command aborts unless its \code{cached} replay matches the run's recorded evaluation.
 

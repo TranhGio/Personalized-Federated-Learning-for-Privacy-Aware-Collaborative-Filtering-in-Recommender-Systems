@@ -3,8 +3,9 @@
 \label{app:posttune}
 
 The experiment is described in Section~\ref{sec:method-posttune} and its pre-registration is the
-file \code{results/federated/pfedrec/\RunPfedrecId/posttune/README.md} (version 1.1, 4 November
-2026); the filled result file is \code{RESULT.md} in the same directory. Inputs: the restored
+file \path{posttune/README.md} in the directory of run \RunPfedrecShort{} under
+\path{results/federated/pfedrec/} (version 1.1, 4 November 2026); the filled result file is
+\path{RESULT.md} in the same directory. Inputs: the restored
 best-round item table (SHA-256 \PtGlobalsSha), the \DsUsers{} calibrated heads, and the
 candidate lists of the run's own evaluation. The run took \PtElapsedSec{} s on a CPU for the
 four cells. Trust checks: the replay of the reference matched the run bit-exactly; no
@@ -21,7 +22,7 @@ $\Qtab$.
   \caption{\ndcg{} / \hr{} / \mrr{} of the reference and the four cells, overall and by group.}
   \label{tab:posttune-cells}
   \centering\scriptsize
-  \input{tables/tab_posttune_cells}
+  \fittable{\input{tables/tab_posttune_cells}}
 \end{table}
 
 \section{Per-group Paired Tests}
@@ -32,7 +33,7 @@ $\Qtab$.
   value is printed.}
   \label{tab:posttune-groups}
   \centering\scriptsize
-  \input{tables/tab_posttune_groups}
+  \fittable{\input{tables/tab_posttune_groups}}
 \end{table}
 
 \section{Registered Predictions and Outcome}
@@ -43,7 +44,7 @@ $\Qtab$.
   the other way (Section~\ref{sec:res-pfedrec}).}
   \label{tab:predictions}
   \centering\small
-  \input{tables/tab_predictions}
+  \fittable{\input{tables/tab_predictions}}
 \end{table}
 
 \section{Reporting Rule}

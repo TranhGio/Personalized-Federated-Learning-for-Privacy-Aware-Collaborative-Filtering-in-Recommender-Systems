@@ -20,7 +20,7 @@ through the rest of the chapter.
   claimed.}
   \label{tab:main}
   \centering\small
-  \input{tables/tab_main}
+  \fittable{\input{tables/tab_main}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -62,7 +62,7 @@ the other three peak at round 83 and are close to their last-round value.
   requires a re-score from the round-\NRounds{} checkpoint.}
   \label{tab:last-round}
   \centering\scriptsize
-  \input{tables/tab_last_round}
+  \fittable{\input{tables/tab_last_round}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -73,7 +73,7 @@ the other three peak at round 83 and are close to their last-round value.
   \label{fig:training-curves}
 \end{figure}
 
-\section{Where Does the Value of Personalisation Live? Counterfactual Heads}
+\section{Counterfactual Heads: Where Does Personalisation Live?}
 \label{sec:res-placement}
 
 Table~\ref{tab:head-counterfactuals} and Figure~\ref{fig:head-counterfactuals} re-score the
@@ -87,7 +87,7 @@ the head replaced (Section~\ref{sec:method-reeval}).
   range \HeadAlphaMin--\HeadAlphaMax).}
   \label{tab:head-counterfactuals}
   \centering\small
-  \input{tables/tab_head_counterfactuals}
+  \fittable{\input{tables/tab_head_counterfactuals}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -129,7 +129,7 @@ registered experiment of Section~\ref{sec:method-posttune}.
   $E=3$ cells are in Appendix~\ref{app:posttune}.}
   \label{tab:pfedrec-rows}
   \centering\small
-  \input{tables/tab_pfedrec_rows}
+  \fittable{\input{tables/tab_pfedrec_rows}}
 \end{table}
 
 Table~\ref{tab:pfedrec-rows} gives the registered three-row report. With clean negatives,
@@ -146,7 +146,7 @@ Appendix~\ref{app:posttune}.
   and the evidence is the confidence interval.}
   \label{tab:posttune-wilcoxon}
   \centering\scriptsize
-  \input{tables/tab_posttune_wilcoxon}
+  \fittable{\input{tables/tab_posttune_wilcoxon}}
 \end{table}
 
 \paragraph{Mechanism.} The candidates are items the user never interacted with, so their rows
@@ -158,9 +158,9 @@ row, while \PtNPosEOneClean{} users gained a little because some of their 99 neg
 pushed down. The mean therefore falls (\PtDeltaEOneClean, CI \PtCiEOneClean) while the rank
 test under Pratt's rule, which weighs the many small gains, points the other way
 (\PtPPrattEOneClean); the registered one-sided test (\PtPOneEOneClean) and the two-sided test
-(\PtPTwoEOneClean) agree with the mean. Both are reported; the thesis uses the mean with the
-mechanism stated. \decision{whether the thesis criterion for ``clean post-tuning hurts'' is the
-mean with CI, or the rank test; recommendation: report both, conclude on the mean}.
+(\PtPTwoEOneClean) agree with the mean. Both views are reported in every post-tuning table (the mean with its confidence interval,
+and the counts $n_+$/$n_-$ with the Pratt test); the conclusion ``clean post-tuning hurts'' is
+drawn on the mean, with the mechanism stated.
 
 With the official-code negatives the test item is never drawn, so no user can lose
 ($n_-=\PtNNegEOneLeaky$) and every touched candidate helps. Figure~\ref{fig:posttune-delta}
@@ -188,7 +188,7 @@ The effect is concentrated in dense users (\PtContrastEOneDense{} against
   post-tuning epochs; $n_{\neq 0}$ is the number of users whose two trajectories differ.}
   \label{tab:posttune-contrasts}
   \centering\small
-  \input{tables/tab_posttune_contrasts}
+  \fittable{\input{tables/tab_posttune_contrasts}}
 \end{table}
 
 \paragraph{Consequence for the limitation statement.} The registered rule selected the
@@ -197,11 +197,11 @@ the test item from the training negatives during post-tuning}. Post-tuning itsel
 negatives, does not close the gap; it widens it. The row with the official-code negatives
 (\NdcgEOneLeaky) is still \GapLeakyEOneToPublished{} below the published number, a residue
 not separated between $C$ and the deviations K1--K3 of
-Table~\ref{tab:posttune-deviations}. The $E=3$ cell with official-code negatives reaches
-\NdcgEThreeLeaky, above the published \PublishedPfedrecNdcg{} already at $C=\ParticipationC$;
-it refuted prediction A5 and is reported only as a diagnostic of the protocol, not as a result
-of the method. \decision{cite the $E=3$ official-code cell in the appendix and limitations only
-(recommended) or omit it}.
+Table~\ref{tab:posttune-deviations}. The $E=3$ cell with official-code negatives exceeds the published
+\PublishedPfedrecNdcg{} already at $C=\ParticipationC$; it refuted prediction A5 and appears
+only in Appendix~\ref{app:posttune} and in the threats to validity
+(Section~\ref{sec:disc-threats}), as a diagnostic of the evaluation protocol and not as a
+result of the method.
 
 \section{The Adaptive Method as a Negative Result}
 \label{sec:res-adaptive}
@@ -240,7 +240,7 @@ adaptive method uploads the global part plus the \ParamsAdaptiveUploadExtra{} fl
   size of the Flower messages is pending.}
   \label{tab:params-comm}
   \centering\small
-  \input{tables/tab_params_comm}
+  \fittable{\input{tables/tab_params_comm}}
 \end{table}
 
 \pending{byte-level table measured from the actual Flower messages (upload and download per
@@ -260,9 +260,68 @@ calibrates every head for one epoch against the restored item table before scori
 otherwise comparable run without calibration (\RunPfedrecNocalShort, best round
 \RunPfedrecNocalBestRound) scores \NdcgPfedrecNocal, a difference of \DeltaPfedrecCalibration{}
 that is confounded by the best round (\RunPfedrecBestRound{} against
-\RunPfedrecNocalBestRound) and by the code version. \decision{how to measure the stale-head
-cost: (i) per-user \ndcg{} of the calibrated run against rounds since last participation;
-(ii) re-score the Personalized run before and after one calibration epoch, paired, which
-measures the same phenomenon on the user vector; (iii) keep the confounded run pair with the
-confounds stated. Recommendation: (i) and (ii), with (ii) as the main measurement if the run's
-saved state is available}. \pending{the chosen measurement, pre-registered before it is run}.
+\RunPfedrecNocalBestRound), by the code version and by run-to-run training variation: the two
+runs share the same client sequence, yet their in-loop scores at the same round differ by up to
+\DeltaInLoopNocalMax{} (the local data order is not seeded).
+
+What the calibrated run can show is limited. Table~\ref{tab:staleness-buckets} groups its
+users by $k$, the number of rounds between the best round $r^\ast$ and the user's last
+participation up to $r^\ast$. Two caveats apply before reading it. First, the $k=0$ bucket is
+exactly the \ClientsPerRound{} clients of round $r^\ast$, the sample whose in-loop score
+(\StaleInLoopAtBest) selected the best round, so it is an upward-selected draw rather than a
+comparable bucket and is listed separately. Second, clients are sampled uniformly at random in
+every round, so for $k\geq1$ the bucket is independent of who the user is (the buckets have
+nearly the same mean number of interactions), but $k$ is tied to the number of visits by
+construction (\StaleBucketOneFiveVisits{} visits up to $r^\ast$ at $k\in[1,5]$ against
+\StaleBucketOverTwentyVisits{} at $k>20$), and $k$ is not the age of the cached head for most
+users: the cache is written at every participation until the last round while best-round restore
+resets only the shared table, and \StaleAfterBestPct\% of the users participated again after
+$r^\ast$. With these caveats, the table shows no detectable dependence of the calibrated score
+on $k$: the difference between $k\in[1,5]$ and $k>20$ is \StaleSpreadKOneDelta{}
+(\StaleSpreadKOne{} points) with a bootstrap 95\% CI of \StaleSpreadKOneCi{} that includes
+zero, and the correlation between $k$ and \ndcg{} over the users with $k\geq1$ is \StaleCorrKOne. The table cannot say how much the
+calibration epoch removed, because the run has no pre-calibration score of the same users.
+
+\begin{table}[htbp]
+  \caption{\ndcg{} of the calibrated PFedRec run by $k$, the rounds between the best round and
+  the user's last participation up to the best round. The $k=0$ bucket is the in-loop sample on
+  which the best round was selected; \StaleAfterBestPct\% of the users participated again after
+  the best round, so $k$ is not the age of their cached head. Interactions and visits are the
+  bucket means; CI: percentile bootstrap of the mean, 10\,000 resamples.}
+  \label{tab:staleness-buckets}
+  \centering\small
+  \fittable{\input{tables/tab_staleness_buckets}}
+\end{table}
+
+The cost of the stale private part itself therefore remains unmeasured, and the measurement has
+to be designed around the two caveats. The private part must be scored against the shared table
+of the last round, $r_g=\NRounds$, not of the best round: then the age of every cached part is
+$r_g$ minus the user's last participation, no bucket is a selection sample, and the clients of
+round $r_g$ form a control stratum of age zero. Three measurements are possible on that basis.
+(A)~A paired re-score of one run before and after one local epoch of its private part against
+the frozen table of round $r_g$, per user, stratified by age and by user group, with the
+age-zero stratum as a control so that the effect of one extra epoch on a fresh part is separated
+from the repair of a stale one (a difference in differences); the epoch must use the clean
+negative pool of Section~\ref{sec:method-posttune}. It needs the saved shared table of the run
+and a re-scoring adapter for the module. Of the cited runs, only the Adaptive run was trained
+with the code that saves the best-round and last-round tables (to be confirmed on the saved
+files, together with the absence of a calibration pass in its log); its saved population
+prototype is the one of the best round, so a replay at $r_g$ pairs the last-round table with
+the best-round prototype, a deviation to declare and to bound. The Personalized run and the
+PFedRec run without calibration predate that code, and the calibrated PFedRec run has
+overwritten its heads. The replay also needs its own trust check, because the existing gate
+compares with the best-round score: the clients of round $r_g$, scored with the caches written
+in that round, must reproduce the in-loop score of round $r_g$ recorded by the run. The offline tool has the calibration epoch for
+the Personalized and PFedRec models (the Personalized variant restores the table after the epoch
+instead of freezing it during the epoch, a deviation to declare; both use the official-code
+negative pool, so a clean-pool option has to be added) and no adapter yet for the Adaptive
+model. (B)~The observational reading of Table~\ref{tab:staleness-buckets} repeated on the
+per-user scores of a run without calibration against the last-round table, which needs the
+same saved state and comes out of the ``before'' arm of (A). (C)~Controlled ageing: re-fit the
+private part against the table of round $r_g-k$ and score against the table of round $r_g$ for
+$k\in\{0,5,10,20,40\}$, which needs the table of every round and therefore a new training run
+that saves it. \decision{choice among (A), (B) and (C); recommendation: (A) and (B) on the
+Adaptive run once its adapter is written and its saved tables are confirmed, and one new
+Personalized run that saves the table of every round, after that saving is added to the code
+and tested (the cited run took \RunPersonalizedHours{}~h), so that (A), (B) and (C) are all
+available for the user-vector placement}. \pending{the chosen measurement, pre-registered before it is run}.
