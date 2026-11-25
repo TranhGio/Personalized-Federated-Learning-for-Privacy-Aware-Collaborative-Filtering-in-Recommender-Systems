@@ -20,7 +20,7 @@ through the rest of the chapter.
   claimed.}
   \label{tab:main}
   \centering\small
-  \input{tables/tab_main}
+  \fittable{\input{tables/tab_main}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -62,7 +62,7 @@ the other three peak at round 83 and are close to their last-round value.
   requires a re-score from the round-\NRounds{} checkpoint.}
   \label{tab:last-round}
   \centering\scriptsize
-  \input{tables/tab_last_round}
+  \fittable{\input{tables/tab_last_round}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -73,7 +73,7 @@ the other three peak at round 83 and are close to their last-round value.
   \label{fig:training-curves}
 \end{figure}
 
-\section{Where Does the Value of Personalisation Live? Counterfactual Heads}
+\section{Counterfactual Heads: Where Does Personalisation Live?}
 \label{sec:res-placement}
 
 Table~\ref{tab:head-counterfactuals} and Figure~\ref{fig:head-counterfactuals} re-score the
@@ -87,7 +87,7 @@ the head replaced (Section~\ref{sec:method-reeval}).
   range \HeadAlphaMin--\HeadAlphaMax).}
   \label{tab:head-counterfactuals}
   \centering\small
-  \input{tables/tab_head_counterfactuals}
+  \fittable{\input{tables/tab_head_counterfactuals}}
 \end{table}
 
 \begin{figure}[htbp]
@@ -129,7 +129,7 @@ registered experiment of Section~\ref{sec:method-posttune}.
   $E=3$ cells are in Appendix~\ref{app:posttune}.}
   \label{tab:pfedrec-rows}
   \centering\small
-  \input{tables/tab_pfedrec_rows}
+  \fittable{\input{tables/tab_pfedrec_rows}}
 \end{table}
 
 Table~\ref{tab:pfedrec-rows} gives the registered three-row report. With clean negatives,
@@ -146,7 +146,7 @@ Appendix~\ref{app:posttune}.
   and the evidence is the confidence interval.}
   \label{tab:posttune-wilcoxon}
   \centering\scriptsize
-  \input{tables/tab_posttune_wilcoxon}
+  \fittable{\input{tables/tab_posttune_wilcoxon}}
 \end{table}
 
 \paragraph{Mechanism.} The candidates are items the user never interacted with, so their rows
@@ -188,7 +188,7 @@ The effect is concentrated in dense users (\PtContrastEOneDense{} against
   post-tuning epochs; $n_{\neq 0}$ is the number of users whose two trajectories differ.}
   \label{tab:posttune-contrasts}
   \centering\small
-  \input{tables/tab_posttune_contrasts}
+  \fittable{\input{tables/tab_posttune_contrasts}}
 \end{table}
 
 \paragraph{Consequence for the limitation statement.} The registered rule selected the
@@ -240,7 +240,7 @@ adaptive method uploads the global part plus the \ParamsAdaptiveUploadExtra{} fl
   size of the Flower messages is pending.}
   \label{tab:params-comm}
   \centering\small
-  \input{tables/tab_params_comm}
+  \fittable{\input{tables/tab_params_comm}}
 \end{table}
 
 \pending{byte-level table measured from the actual Flower messages (upload and download per

@@ -38,6 +38,9 @@ RES = ROOT / "results" / "federated"
 
 GROUPS = ("sparse", "medium", "dense")
 GROUP_LABEL = {"sparse": "Sparse", "medium": "Medium", "dense": "Dense"}
+# Strip the timestamps matplotlib writes into PDFs so that re-running the script on
+# unchanged results leaves the committed figures byte-identical.
+PDF_META = {"CreationDate": None, "ModDate": None}
 
 
 # ----------------------------------------------------------------------------
@@ -108,13 +111,15 @@ def f3(x: float) -> str:
 
 
 def signed(x: float, nd: int = 4) -> str:
-    return f"{x:+.{nd}f}"
+    """Signed number; negatives are boxed so that TeX never breaks a line after the minus."""
+    s = f"{x:+.{nd}f}"
+    return rf"\mbox{{{s}}}" if x < 0 else s
 
 
 def pfmt(p: float, structural: bool = False) -> str:
     """Format a p-value; structural W^- = 0 cases are labelled, not printed."""
     if structural:
-        return r"$<10^{-10}$\,(W$^-$=0)"
+        return r"W$^-$=0"
     if p is None or (isinstance(p, float) and math.isnan(p)):
         return "--"
     if p == 0.0:
@@ -130,7 +135,7 @@ def pfmt(p: float, structural: bool = False) -> str:
 
 
 def ci(lo: float, hi: float, nd: int = 4) -> str:
-    return f"[{lo:+.{nd}f}, {hi:+.{nd}f}]"
+    return rf"\mbox{{[{lo:+.{nd}f}, {hi:+.{nd}f}]}}"
 
 
 def macro_name(s: str) -> str:
@@ -309,7 +314,7 @@ def table_runs(runs: Dict[str, RunData], nocal: RunData, num: Numbers) -> None:
     num.add("RunPfedrecNocalShort", nocal.spec.short_id, "run id suffix")
     num.add("RunPfedrecNocalBestRound", str(nocal.best_round), "final_metrics.best_round")
     body = [r"\begin{tabular}{llllllr}", r"\toprule",
-            r"Method & Run & Commit & Best round & Final calibration & Validity & Wall-clock (h)$^{\dagger}$ \\",
+            r"Method & Run & Commit & Best round & Calibration & Validity & Hours$^{\dagger}$ \\",
             r"\midrule"]
     for r in rows:
         body.append(" & ".join(r) + r" \\")
@@ -345,7 +350,7 @@ def table_main(runs: Dict[str, RunData], nocal: RunData, centralized: dict, num:
     for g, v in zip(GROUPS, vals[1:4]):
         num.add(f"NdcgPfedrecNocal{GROUP_LABEL[g]}", f4(v), f"{nocal.spec.short_id} sampled_ndcg@10/{g}")
     cm = centralized["metrics"]
-    body.append(r"Centralized BPR-MF (untuned reference)$^{\ddagger}$ & -- & "
+    body.append(r"Centralized BPR-MF$^{\ddagger}$ & -- & "
                 f"{f4(cm['ndcg@10'])} & -- & -- & -- & {f4(cm['hr@10'])} & -- \\\\")
     num.add("NdcgCentralBpr", f4(cm["ndcg@10"]), "results/centralized/bpr_mf_centralized_results.json")
     num.add("HrCentralBpr", f4(cm["hr@10"]), "results/centralized/bpr_mf_centralized_results.json")
@@ -393,14 +398,14 @@ def table_main_groups(runs: Dict[str, RunData]) -> None:
 def table_last_round(runs: Dict[str, RunData]) -> None:
     """In-loop last-round metrics (604 sampled clients) next to the best-round full-population metrics."""
     body = [r"\begin{tabular}{lrrrrr}", r"\toprule",
-            r"Method & Best round & NDCG@10 best (6040 users) & In-loop NDCG@10 at best round (604) & In-loop NDCG@10 at round 100 (604) & Full-population NDCG@10 at round 100 \\",
+            r"Method & Best round & Best, 6040 users & In-loop at best (604) & In-loop at 100 (604) & Full pop.\ at 100 \\",
             r"\midrule"]
     for key in ("baseline", "personalized", "pfedrec", "adaptive"):
         rd = runs[key]
         inloop_best = rd.history[rd.best_round]["sampled_ndcg@10"]
         inloop_last = rd.history[max(rd.history)]["sampled_ndcg@10"]
         body.append(f"{rd.spec.label} & {rd.best_round} & {f4(metric(rd.best, 'ndcg@10'))} & "
-                    f"{f4(inloop_best)} & {f4(inloop_last)} & \\pending{{round-100 re-score}} \\\\")
+                    f"{f4(inloop_best)} & {f4(inloop_last)} & \\pending{{re-score}} \\\\")
     body += [r"\bottomrule", r"\end{tabular}"]
     write_table("tab_last_round.tex", "\n".join(body),
                 "eval_metrics_history (in-loop, sampled clients) vs final_metrics.best; full-pop round-100 column pending")
@@ -468,15 +473,15 @@ def table_posttune_wilcoxon(stats: dict, per_user: List[Dict[str, str]], cached:
         counts[(cell, r["user_group"])][key] += 1
         if d < 0 and float(r["sampled_ndcg@10"]) == 0.0 and r["test_row_touched"] == "1":
             zero_losers[cell] += 1
-    body = [r"\begin{tabular}{lrrrrrrr}", r"\toprule",
-            r"Cell & $\Delta$NDCG@10 [95\% CI] & $\Delta$HR@10 [95\% CI] & $n_+/n_-/n_0$ & $p$ one-sided & $p$ two-sided & $p$ Pratt & $r$ \\",
+    body = [r"\begin{tabular}{lrrrrrr}", r"\toprule",
+            r"Cell & $\Delta$NDCG@10 [95\% CI] & $n_+/n_-/n_0$ & $p$ one-sided & $p$ two-sided & $p$ Pratt & $r$ \\",
             r"\midrule"]
     for cell in cells:
         s = _scope(stats, cell, "overall")
         c = counts[(cell, "overall")]
         structural = s["w_minus"] == 0
         body.append(f"{label[cell]} & {signed(s['mean_delta_ndcg'])} {ci(*s['ci95_ndcg'])} & "
-                    f"{signed(s['mean_delta_hr'])} {ci(*s['ci95_hr'])} & {c['pos']}/{c['neg']}/{c['zero']} & "
+                    f"{c['pos']}/{c['neg']}/{c['zero']} & "
                     f"{pfmt(s['p_one_sided'], structural)} & {pfmt(s['p_two_sided'], structural)} & "
                     f"{pfmt(s['p_pratt_one_sided'], structural)} & {s['rank_biserial_r']:+.3f} \\\\")
         mk = macro_name(cell.replace("a0.00_", ""))
@@ -495,7 +500,7 @@ def table_posttune_wilcoxon(stats: dict, per_user: List[Dict[str, str]], cached:
         num.add(f"PtWMinus{mk}", f"{s['w_minus']:,.0f}", f"cells.{cell}.w_minus")
     body += [r"\bottomrule", r"\end{tabular}"]
     write_table("tab_posttune_wilcoxon.tex", "\n".join(body),
-                "stats_wilcoxon.json cells.<cell>.by_scope.overall; n+/n-/n0 recomputed from the two per-user CSVs")
+                "stats_wilcoxon.json cells.<cell>.by_scope.overall; n+/n-/n0 recomputed from the two per-user CSVs; W^-=0 marks p-values fixed by construction (< 1e-10); delta HR in the per-group table")
     # Holm (one-sided) values
     for cell in cells:
         s = _scope(stats, cell, "overall")
@@ -574,16 +579,17 @@ def table_posttune_cells(qu: dict) -> None:
     rows = [("Shared item table (reference)", base)] + [
         (lab, cells[c]) for c, lab in (("a0.00_E1_clean", "$E=1$, clean"), ("a0.00_E1_leaky", "$E=1$, official-code"),
                                        ("a0.00_E3_clean", "$E=3$, clean"), ("a0.00_E3_leaky", "$E=3$, official-code"))]
-    body = [r"\begin{tabular}{lrrrr}", r"\toprule",
-            r"Cell & Overall & Sparse & Medium & Dense \\", r"\midrule"]
+    body = [r"\begin{tabular}{llrrrr}", r"\toprule",
+            r"Cell & Metric & Overall & Sparse & Medium & Dense \\", r"\midrule"]
     for lab, m in rows:
-        cols = []
-        for g in (None,) + GROUPS:
-            cols.append(f"{f4(metric(m, 'ndcg@10', g))} / {f4(metric(m, 'hr@10', g))} / {f4(metric(m, 'mrr', g))}")
-        body.append(f"{lab} & " + " & ".join(cols) + r" \\")
-    body += [r"\bottomrule", r"\end{tabular}"]
+        for j, (name, met) in enumerate((("NDCG@10", "ndcg@10"), ("HR@10", "hr@10"), ("MRR", "mrr"))):
+            cols = [f4(metric(m, met, g)) for g in (None,) + GROUPS]
+            body.append(f"{lab if j == 0 else ''} & {name} & " + " & ".join(cols) + r" \\")
+        body.append(r"\midrule")
+    body[-1] = r"\bottomrule"
+    body.append(r"\end{tabular}")
     write_table("tab_posttune_cells.tex", "\n".join(body),
-                "posttune/reeval_qu_diag_best.json: NDCG@10 / HR@10 / MRR per cell and group")
+                "posttune/reeval_qu_diag_best.json: one row per cell and metric, columns = overall and groups")
 
 
 def table_head_counterfactuals(num: Numbers) -> None:
@@ -725,7 +731,7 @@ def table_asymmetries(runs: Dict[str, RunData]) -> None:
 
 
 def table_predictions(num: Numbers) -> None:
-    body = r"""\begin{tabular}{p{0.06\linewidth}p{0.44\linewidth}p{0.30\linewidth}p{0.12\linewidth}}
+    body = r"""\begin{tabular}{@{}p{0.04\linewidth}>{\raggedright\arraybackslash}p{0.40\linewidth}>{\raggedright\arraybackslash}p{0.36\linewidth}>{\raggedright\arraybackslash}p{0.13\linewidth}@{}}
 \toprule
 \# & Prediction (registered before the run) & Observed & Verdict \\
 \midrule
@@ -807,7 +813,7 @@ def figures(runs: Dict[str, RunData], stale: List[int], per_user: List[Dict[str,
     ax.set_ylabel("In-loop NDCG@10 (sampled clients)")
     ax.legend(frameon=False, ncol=2)
     fig.tight_layout()
-    fig.savefig(FIGURES / "fig_training_curves.pdf")
+    fig.savefig(FIGURES / "fig_training_curves.pdf", metadata=PDF_META)
     plt.close(fig)
 
     # 2. per-group bars
@@ -823,7 +829,7 @@ def figures(runs: Dict[str, RunData], stale: List[int], per_user: List[Dict[str,
     ax.set_ylabel("NDCG@10")
     ax.legend(frameon=False, ncol=4, fontsize=8)
     fig.tight_layout()
-    fig.savefig(FIGURES / "fig_group_bars.pdf")
+    fig.savefig(FIGURES / "fig_group_bars.pdf", metadata=PDF_META)
     plt.close(fig)
 
     # 3. head counterfactuals
@@ -839,7 +845,7 @@ def figures(runs: Dict[str, RunData], stale: List[int], per_user: List[Dict[str,
     ax.set_xlabel("NDCG@10 (run cf72e0, same item table and candidates)")
     ax.set_xlim(0, 0.42)
     fig.tight_layout()
-    fig.savefig(FIGURES / "fig_head_counterfactuals.pdf")
+    fig.savefig(FIGURES / "fig_head_counterfactuals.pdf", metadata=PDF_META)
     plt.close(fig)
 
     # 4. per-user delta of post-tuning (E=1): clean vs official-code negatives
@@ -856,7 +862,7 @@ def figures(runs: Dict[str, RunData], stale: List[int], per_user: List[Dict[str,
         ax.set_xlabel("ΔNDCG@10 per user (non-zero only)", fontsize=8)
     axes[0].set_ylabel("Users")
     fig.tight_layout()
-    fig.savefig(FIGURES / "fig_posttune_delta.pdf")
+    fig.savefig(FIGURES / "fig_posttune_delta.pdf", metadata=PDF_META)
     plt.close(fig)
 
     # 5. staleness at the best round (cf72e0) and first-participation curve
@@ -870,7 +876,7 @@ def figures(runs: Dict[str, RunData], stale: List[int], per_user: List[Dict[str,
     axes[1].set_xlabel("Round")
     axes[1].set_ylabel("Clients seen at least once")
     fig.tight_layout()
-    fig.savefig(FIGURES / "fig_staleness.pdf")
+    fig.savefig(FIGURES / "fig_staleness.pdf", metadata=PDF_META)
     plt.close(fig)
     print("  wrote 5 figures")
 

@@ -116,7 +116,7 @@ the table that is evaluated. Second, the reference implementation scores each us
 client's own post-tuned item table $\Qu$ from its last local epoch; the thesis number scores
 with the shared table $\Qtab$, and Section~\ref{sec:method-posttune} measures the difference.
 
-\subsection{Adaptive: dual-level personalisation with a hierarchical-conditional $\alpha$}
+\subsection{Adaptive: dual-level personalisation with a hierarchical-conditional \texorpdfstring{$\alpha$}{alpha}}
 \label{sec:method-adaptive}
 
 The adaptive method is the thesis's own design on top of the split-learning placement. It has
@@ -210,7 +210,8 @@ lists the known deviations from the reference implementation.
   their expected effect (registered before the run).}
   \label{tab:posttune-deviations}
   \centering\small
-  \begin{tabular}{p{0.05\linewidth}p{0.3\linewidth}p{0.28\linewidth}p{0.3\linewidth}}
+  \begin{tabular}{p{0.04\linewidth}>{\raggedright\arraybackslash}p{0.28\linewidth}
+                  >{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}p{0.29\linewidth}}
     \toprule
     \# & Reference code & This experiment & Consequence \\
     \midrule

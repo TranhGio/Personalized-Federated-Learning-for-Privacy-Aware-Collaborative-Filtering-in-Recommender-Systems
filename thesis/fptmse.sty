@@ -34,6 +34,7 @@
 \RequirePackage{etoolbox}
 \RequirePackage{microtype}
 \RequirePackage{tikz}
+\RequirePackage{adjustbox}
 \usetikzlibrary{positioning,arrows.meta,fit,calc,shapes.misc}
 
 % ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@
   \RequirePackage{unicode-math}
   \setmainfont{TeX Gyre Termes}
   \setsansfont{TeX Gyre Heros}
-  \setmonofont{Latin Modern Mono}[Scale=MatchLowercase]
+  \setmonofont{Latin Modern Mono}[Scale=MatchLowercase, HyphenChar=None]  % never hyphenate file and code names
   \setmathfont{TeX Gyre Termes Math}
 \fi
 
@@ -61,11 +62,15 @@
 \setstretch{1.15}
 \setlength{\parskip}{0.35em}
 \setlength{\parindent}{1.2em}
+% Times-like fonts have narrow interword spaces, so a justified line can end up with no
+% feasible break. Allow TeX's third line-breaking pass with extra stretch instead of letting
+% words run into the margin (only used for paragraphs that would otherwise overflow).
+\setlength{\emergencystretch}{2.5em}
 
 % Running header "Chapter N. Title" on the right, page number centred bottom
 \pagestyle{fancy}
 \fancyhf{}
-\renewcommand{\chaptermark}[1]{\markboth{\chaptername\ \thechapter.\ #1}{}}
+\renewcommand{\chaptermark}[1]{\markboth{\@chapapp\ \thechapter.\ #1}{}}
 \fancyhead[R]{\small\nouppercase{\leftmark}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -75,9 +80,10 @@
 \titleformat{\chapter}[display]
   {\normalfont\Large\bfseries\centering}{\chaptertitlename\ \thechapter}{0.6em}{\LARGE}
 \titlespacing*{\chapter}{0pt}{-10pt}{30pt}
-\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{1em}{}
-\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
-\titleformat{\subsubsection}{\normalfont\normalsize\itshape}{\thesubsubsection}{1em}{}
+% Long titles wrap ragged-right instead of being stretched or pushed into the margin
+\titleformat{\section}{\normalfont\large\bfseries\raggedright}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries\raggedright}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\itshape\raggedright}{\thesubsubsection}{1em}{}
 
 % Captions
 \captionsetup{font=small, labelfont=bf, labelsep=period, width=0.92\linewidth}
@@ -123,13 +129,13 @@
     \setstretch{1.3}
     {\large\bfseries \@thesisministry\par}
     {\large\bfseries \@thesisuniversity\par}
-    \vspace{5.5cm}
+    \vspace{4.2cm}
     {\Large\bfseries\MakeUppercase{\@thesistitle}\par}
-    \vspace{3.5cm}
+    \vspace{2.6cm}
     {\large By\par}
     \vspace{0.6cm}
     {\large\bfseries \@thesisauthor\par}
-    \vspace{2.5cm}
+    \vspace{1.8cm}
     {\normalsize A thesis submitted in conformity with the requirements\\
       for the degree of \@thesisdegree\par}
     #1
@@ -140,9 +146,9 @@
 \newcommand{\makecoverpages}{%
   \coverblock{}%
   \coverblock{%
-    \vspace{1.8cm}
+    \vspace{1.2cm}
     {\normalsize Supervisor:\par}
-    \vspace{0.3cm}
+    \vspace{0.2cm}
     {\normalsize 1.\ \@thesissupervisor\par}
     {\normalsize 2.\ \@thesiscosupervisor\par}
   }%
@@ -153,12 +159,12 @@
   \begin{center}
     \setstretch{1.3}
     {\large\bfseries\MakeUppercase{\@thesistitle}\par}
-    \vspace{0.5cm}
+    \vspace{0.3cm}
     {\normalsize \@thesisauthor\par}
     {\normalsize Degree \@thesisdegree\par}
     {\normalsize \@thesisschool\par}
     {\normalsize \@thesisyear\par}
-    \vspace{0.8cm}
+    \vspace{0.5cm}
     {\Large\bfseries Abstract\par}
   \end{center}
 }
@@ -176,12 +182,16 @@
 \finalmodefalse
 \definecolor{pendingbg}{RGB}{255,236,204}
 \definecolor{pendingfg}{RGB}{140,70,0}
+% The label sits in a colour box; the text itself is plain coloured sans-serif so that
+% long placeholders wrap across lines instead of overflowing the margin.
+\newcommand{\placeholderlabel}[1]{%
+  \colorbox{pendingbg}{\textcolor{pendingfg}{\small\sffamily\bfseries #1}}}
 \newcommand{\pending}[1]{%
   \iffinalmode\textcolor{red}{\textbf{??}}\else%
-  {\colorbox{pendingbg}{\textcolor{pendingfg}{\small\sffamily [PENDING: #1]}}}\fi}
+  {\placeholderlabel{PENDING}\ \textcolor{pendingfg}{\small\sffamily #1}}\fi}
 \newcommand{\decision}[1]{%
   \iffinalmode\textcolor{red}{\textbf{??}}\else%
-  {\colorbox{pendingbg}{\textcolor{pendingfg}{\small\sffamily [ADVISOR DECISION: #1]}}}\fi}
+  {\placeholderlabel{ADVISOR DECISION}\ \textcolor{pendingfg}{\small\sffamily #1}}\fi}
 
 % ---------------------------------------------------------------------------
 % Notation shortcuts
@@ -199,5 +209,7 @@
 \DeclareMathOperator*{\argmax}{arg\,max}
 \DeclareMathOperator*{\argmin}{arg\,min}
 \newcommand{\code}[1]{\texttt{#1}}
+% Shrink a table only when it is wider than the text block (generated tables vary in width)
+\newcommand{\fittable}[1]{\begin{adjustbox}{max width=\linewidth}#1\end{adjustbox}}
 
 \endinput

@@ -2,11 +2,11 @@
 % eval_metrics_history (in-loop, sampled clients) vs final_metrics.best; full-pop round-100 column pending
 \begin{tabular}{lrrrrr}
 \toprule
-Method & Best round & NDCG@10 best (6040 users) & In-loop NDCG@10 at best round (604) & In-loop NDCG@10 at round 100 (604) & Full-population NDCG@10 at round 100 \\
+Method & Best round & Best, 6040 users & In-loop at best (604) & In-loop at 100 (604) & Full pop.\ at 100 \\
 \midrule
-Baseline (all-global BPR-MF) & 83 & 0.1882 & 0.2112 & 0.1556 & \pending{round-100 re-score} \\
-Personalized (split learning) & 33 & 0.2275 & 0.2572 & 0.2482 & \pending{round-100 re-score} \\
-PFedRec (+ final calibration) & 83 & 0.3447 & 0.3562 & 0.3436 & \pending{round-100 re-score} \\
-Adaptive (dual-level, $\alpha$ blend) & 83 & 0.2144 & 0.2362 & 0.2342 & \pending{round-100 re-score} \\
+Baseline (all-global BPR-MF) & 83 & 0.1882 & 0.2112 & 0.1556 & \pending{re-score} \\
+Personalized (split learning) & 33 & 0.2275 & 0.2572 & 0.2482 & \pending{re-score} \\
+PFedRec (+ final calibration) & 83 & 0.3447 & 0.3562 & 0.3436 & \pending{re-score} \\
+Adaptive (dual-level, $\alpha$ blend) & 83 & 0.2144 & 0.2362 & 0.2342 & \pending{re-score} \\
 \bottomrule
 \end{tabular}

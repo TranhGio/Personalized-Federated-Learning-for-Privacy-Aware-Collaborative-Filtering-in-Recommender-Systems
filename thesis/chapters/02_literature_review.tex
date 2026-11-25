@@ -110,9 +110,9 @@ and by the aggregation rule, which is the organisation adopted in Chapter~\ref{c
   \code{Papers/digested/} before submission.}
   \label{tab:lit-numbers}
   \centering\small
-  \begin{tabular}{lrrllll}
+  \fittable{\begin{tabular}{lrrllll}
     \toprule
-    Method & \hr{} & \ndcg{} & $C$ & Own table & Validation item & Test excluded \\
+    Method & \hr{} & \ndcg{} & $C$ & Own table & Val.\ item & Test excl. \\
     \midrule
     NCF / NeuMF (centralised) \cite{he2017ncf} & 0.730 & 0.447 & -- & -- & yes & \pending{?} \\
     FedRecon (PFedRec re-run) \cite{singhal2021fedrecon,zhang2023pfedrec} & 0.633 & 0.366 & 1.0 & no & yes & yes \\
@@ -124,7 +124,7 @@ and by the aggregation rule, which is the organisation adopted in Chapter~\ref{c
     \midrule
     This thesis, PFedRec (Section~\ref{sec:res-pfedrec}) & \HrPfedrec & \NdcgPfedrec & \ParticipationC & no & no & no (clean) \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}}
 \end{table}
 
 \section{Privacy in Federated Recommendation}
