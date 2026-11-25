@@ -1,0 +1,58 @@
+% Appendix A -- full tables of the post-tuning re-score (registered experiment).
+\chapter{Post-tuning Re-score of PFedRec: Full Tables}
+\label{app:posttune}
+
+The experiment is described in Section~\ref{sec:method-posttune} and its pre-registration is the
+file \code{results/federated/pfedrec/\RunPfedrecId/posttune/README.md} (version 1.1, 4 November
+2026); the filled result file is \code{RESULT.md} in the same directory. Inputs: the restored
+best-round item table (SHA-256 \PtGlobalsSha), the \DsUsers{} calibrated heads, and the
+candidate lists of the run's own evaluation. The run took \PtElapsedSec{} s on a CPU for the
+four cells. Trust checks: the replay of the reference matched the run bit-exactly; no
+non-finite value in any $\Qu$; untouched rows bit-identical to $\Qtab$ on a sample of users;
+the test item was drawn at least once for \PtNHitClean{} users in the clean pool and for
+\PtNHitLeaky{} in the official-code pool; and no user's score decreased in the official-code
+cells (the registered monotonicity check). The median row shift was \PtRowShiftMedianEOne{} at
+$E=1$ and \PtRowShiftMedianEThree{} at $E=3$ against a median row norm of \PtRowNormMedian{} in
+$\Qtab$.
+
+\section{All Four Cells}
+
+\begin{table}[htbp]
+  \caption{\ndcg{} / \hr{} / \mrr{} of the reference and the four cells, overall and by group.}
+  \label{tab:posttune-cells}
+  \centering\scriptsize
+  \input{tables/tab_posttune_cells}
+\end{table}
+
+\section{Per-group Paired Tests}
+
+\begin{table}[htbp]
+  \caption{Paired tests against the shared-table reference by user group. Where $n_-=0$ the
+  one-sided $p$ follows from the construction; for groups with few changed users the computed
+  value is printed.}
+  \label{tab:posttune-groups}
+  \centering\scriptsize
+  \input{tables/tab_posttune_groups}
+\end{table}
+
+\section{Registered Predictions and Outcome}
+
+\begin{table}[htbp]
+  \caption{The five predictions registered before the run and their outcome. A1 was judged on
+  the mean with its confidence interval; under Pratt's treatment of ties the rank test points
+  the other way (Section~\ref{sec:res-pfedrec}).}
+  \label{tab:predictions}
+  \centering\small
+  \input{tables/tab_predictions}
+\end{table}
+
+\section{Reporting Rule}
+
+The README fixed, before the run, that the thesis table would contain three rows (reference;
+clean $E=1$; official-code $E=1$) with no selection of the highest cell, that the $E=3$ cells
+would appear only in this appendix, and that the limitation sentence would be chosen by the
+following rule: if official $-$ clean at $E=1$ is at least $+0.010$ with one-sided $p<0.05$,
+then ``part of the gap to the published number comes from the official code excluding the test
+item from the negatives during post-tuning''; otherwise ``the difference in the negative pool is
+negligible and the residual gap is not separated between $C$ and K1--K3''. The first branch
+applied (\PtContrastEOne, CI \PtContrastEOneCi).

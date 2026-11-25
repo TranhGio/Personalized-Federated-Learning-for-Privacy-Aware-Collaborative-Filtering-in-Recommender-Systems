@@ -1,0 +1,59 @@
+% Chapter 7 -- Conclusion and Future Work
+% Status: basic draft.
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+\label{sec:conc-conclusion}
+
+This thesis asked where personalisation should live in a cross-device federated recommender,
+what each placement costs in privacy, and how stateful clients must be evaluated. Under one
+locked protocol on MovieLens 1M (\NClients{} clients, $C=\ParticipationC$, \NRounds{} rounds,
+shared candidate lists), the placement of the personal part dominated every other design
+choice. Keeping the user vector on the device improved \ndcg{} by
+\GainPersonalizedVsBaselinePct\% over averaging it with nothing else changed; a private scoring
+head on a shared item table reached \NdcgPfedrec, and on that model the private head was worth
+\DeltaHeadGlobalHead{} against the population head, with no blend between the two recovering
+the loss. The thesis's own adaptive method, which blends the user vector with a population
+prototype and adds a per-user neural scorer, was reported as a negative result with three
+measured or identified causes: the blend pulls taste toward the mean where the prototype is
+least adequate, the private network is oversized for the data, and the upload of the user vector
+opens a leakage channel that the other placements do not have.
+
+The comparison with the published PFedRec number was treated as a measurement problem. A
+pre-registered re-score showed that client-side post-tuning of the item table lowers \ndcg{}
+under honest negative sampling and raises it only when the held-out item is excluded from the
+negatives as in the released code, a difference of \PtContrastEOne{} carried entirely by the
+\PtContrastEOneNonZero{} users whose test item was drawn. The thesis reports its number with
+the shared item table and states the measured cause in its limitations. Finally, the work
+established the safeguards without which none of these numbers could be trusted: a
+cold-evaluation error that reduced \ndcg{} \ColdEvalRatio-fold was found and fixed, cache-miss
+counters and validity sidecars were added to every run, and an offline re-scoring tool that
+reproduces the federated evaluation exactly became the basis of every analysis.
+\pending{one sentence on the privacy measurements and the stale-head cost once they are in}.
+
+\section{Future Work}
+\label{sec:conc-future}
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Private item table with row-wise blending.} A client-held item table
+        $\Qu$ that is blended with the global table only on the rows of items the user
+        interacted with was proposed during this work and withdrawn after analysis: the private
+        part would then live only on items the user has already seen and could not reach the
+        items to be recommended. A formulation that propagates the private adjustment to
+        unseen items (for example through item--item similarity) remains open, and its
+        evaluation must use the clean negative pool of Section~\ref{sec:method-posttune}.
+  \item \textbf{Secure aggregation and a measured privacy budget.} The item-table update
+        pattern is the leakage channel common to all placements; implementing secure
+        aggregation \cite{bonawitz2017secagg} in the framework and measuring what the server
+        can still infer would close the gap between the threat model and the deployment.
+  \item \textbf{Seeds and a validation item.} Two further seeds for the three close cells and a
+        protocol with a validation item would turn the single-seed point estimates into
+        intervals and remove the best-round inflation.
+  \item \textbf{Participation fraction.} A PFedRec run at $C=1$ under the thesis protocol
+        would separate the share of the reproduction gap due to participation from the share
+        due to the deviations K1--K3.
+  \item \textbf{A cold-start population.} The adaptive design should be re-evaluated where its
+        assumptions hold, on a dataset with genuinely cold users or with a train/test shift per
+        user, before it is abandoned.
+\end{itemize}

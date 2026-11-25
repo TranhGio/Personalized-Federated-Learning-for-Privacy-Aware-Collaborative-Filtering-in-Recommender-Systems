@@ -1,0 +1,26 @@
+% Appendix B -- configurations of the cited runs and per-group metrics.
+\chapter{Configurations and Per-group Metrics}
+\label{app:config}
+
+\begin{table}[htbp]
+  \caption{Configuration of the four cited runs, read from the \code{federated\_config} block of
+  each \code{results.json}. Values that the BPR-based modules take from the shared mode profile
+  (local epochs, optimiser, loss, training negatives) are included.}
+  \label{tab:hyperparams}
+  \centering\small
+  \input{tables/tab_hyperparams}
+\end{table}
+
+\begin{table}[htbp]
+  \caption{Full-population metrics of the four methods by user group at the best round.}
+  \label{tab:main-groups}
+  \centering\small
+  \input{tables/tab_main_groups}
+\end{table}
+
+\section*{Adaptive $\alpha$ rule}
+\label{app:alpha-rule}
+
+\pending{the exact hierarchical-conditional rule as implemented (factor definitions,
+normalisations, thresholds, penalties and the $[0.1, 0.95]$ clipping), copied from
+\code{adaptive\_alpha.py}; and the distribution of $\alpha_u$ by group on the cited run}.

@@ -1,0 +1,183 @@
+% Chapter 2 -- Literature Review
+% Status: basic draft built from Papers/digested/*.md. The comparison table of
+% published numbers (Table 2.1) must be checked cell by cell against the digests
+% before submission; cells marked \pending were not verified.
+\chapter{Literature Review}
+\label{ch:literature}
+
+\section{Collaborative Filtering with Implicit Feedback}
+\label{sec:lit-cf}
+
+Matrix factorisation (MF) represents user $u$ and item $i$ by vectors $\pu, \qi \in
+\mathbb{R}^d$ and predicts $\hat{s}_{ui} = \pu^\top \qi$ plus bias terms. With implicit feedback
+(clicks, views, ratings treated as presence) the training signal is pairwise or pointwise: BPR
+\cite{rendle2009bpr} maximises $\log\sigma(\hat{s}_{ui} - \hat{s}_{uj})$ for an observed item
+$i$ and a sampled unobserved item $j$; the pointwise alternative treats observed pairs as
+positives and sampled unobserved pairs as negatives under a binary cross-entropy (BCE) loss, the
+choice of neural collaborative filtering (NCF) \cite{he2017ncf} and of PFedRec
+\cite{zhang2023pfedrec}. Coordinate-descent and graph-based variants
+\cite{bayer2016implicit,he2020lightgcn} change the optimiser or the encoder but keep the
+inner-product scorer.
+
+The evaluation protocol of NCF is the de facto standard for these models: the latest
+interaction of each user is held out, 99 unobserved items are sampled as candidates, and \hr{}
+and \ndcg{} measure where the held-out item ranks among the 100 candidates. Krichene and Rendle
+\cite{krichene2020sampled} show that sampled metrics are inconsistent with their exhaustive
+counterparts and are sensitive to the sampling scheme, which is one reason why numbers from
+different code bases are not directly comparable; this thesis therefore scores every method
+with the same candidate lists per user.
+
+\section{Federated Learning}
+\label{sec:lit-fl}
+
+FedAvg \cite{mcmahan2017fedavg} trains a global model by repeating: sample a fraction $C$ of
+the $N$ clients, send them the global parameters, let each run $K$ local epochs, and average
+the returned parameters weighted by local data size. Heterogeneous data make the local updates
+drift apart; FedProx \cite{li2020fedprox} adds a proximal term $\frac{\mu}{2}\|\theta -
+\vect{w}\|^2$ to the local objective, SCAFFOLD \cite{karimireddy2020scaffold} corrects the drift
+with control variates, and adaptive server optimisers \cite{reddi2021adaptive} replace the
+plain average by Adam-like updates. Kairouz et al.\ \cite{kairouz2021advances} distinguish the
+\emph{cross-silo} setting (few, reliable, stateful clients) from the \emph{cross-device} setting
+(many unreliable clients, each participating rarely, stateless or with limited state). The
+protocol of this thesis is cross-device: $N=\NClients$ clients, $C=\ParticipationC$, and
+client state that persists between participations.
+
+\section{Personalised Federated Learning}
+\label{sec:lit-pfl}
+
+A single global model serves heterogeneous clients poorly, which motivates personalised FL.
+Three families are relevant here.
+
+\paragraph{Parameter splitting.} FedPer \cite{arivazhagan2019fedper} shares the base layers and
+keeps the top layers private; FedRep \cite{collins2021fedrep} shares a representation and keeps a
+low-dimensional head per client, updating the head for many more steps than the body. Federated
+Reconstruction \cite{singhal2021fedrecon} goes further for stateless clients: the private part
+(for MF, the user vector) is reconstructed from scratch at every participation and at inference
+with the global part frozen, which the authors deployed in Gboard.
+
+\paragraph{Interpolation.} APFL \cite{deng2020apfl} forms the personal model as $\alpha_u
+\theta_u + (1-\alpha_u)\vect{w}$ and learns $\alpha_u$ by gradient descent on the local loss;
+its analysis gives a closed-form optimal $\alpha_u$ that grows with the divergence between the
+local and global optima. Mansour et al.\ \cite{mansour2020three} compare clustering,
+interpolation and fine-tuning as three routes to personalisation.
+
+\paragraph{Test-time personalisation.} FedTHE \cite{jiang2023fedthe} keeps a global head and a
+local head on a shared extractor and chooses a per-sample ensemble weight at test time by
+entropy minimisation; its gains appear mainly under distribution shift at test time and are
+small in-distribution. This is the closest prior work to the blending experiment of
+Section~\ref{sec:res-placement}; following the advisor's guidance, the results of this thesis are
+described as \emph{consistent with} the findings of APFL and FedTHE rather than as confirming
+them.
+
+\section{Federated Recommendation}
+\label{sec:lit-fedrec}
+
+Early federated CF kept the user vector on the device and aggregated the item vectors
+\cite{ammaduddin2019fcf,chai2021fedmf}, the placement called \emph{Personalized} in this
+thesis. The methods below personalise more.
+
+\paragraph{PFedRec} \cite{zhang2023pfedrec} removes the user vector altogether: each client
+holds a private scoring function (a one-layer head $\wu$) on top of a shared item table
+$\Qtab$, trained by alternating updates of the head and of the item rows. At inference the
+official code scores each user with the client's own \emph{post-tuned} copy of the item table
+from the last local epoch, not with the server's table. The paper reports
+\PublishedPfedrecNdcg{} \ndcg{} and \PublishedPfedrecHr{} \hr{} on ML-1M with full
+participation ($C=1$), 100 rounds, one local epoch and a validation item (the second-latest
+interaction). Its released code excludes every interacted item, including the held-out test
+item, from the training negatives.
+
+\paragraph{FedRAP} \cite{li2024fedrap} adds an additive private item table $\vect{D}_u$ to a
+sparse global one, with curriculum regularisers; its released code selects the best round on the
+test metric and its published ML-1M numbers are therefore not used as a target here.
+\paragraph{GPFedRec} \cite{zhang2024gpfedrec} aggregates item tables per client along a
+server-side user-similarity graph; its own PFedRec re-run on ML-1M (\pending{73.03/44.49, verify
+in the digest}) is above its proposed method. \paragraph{CoFedRec} \cite{he2024cofedrec} clusters
+clients by item category and adds supervised contrastive learning; \paragraph{FedCA}
+\cite{zhang2024fedca} combines similarity and complementarity in aggregation; \paragraph{LightFR}
+\cite{zhang2022lightfr} learns binary codes for communication efficiency; \paragraph{P2FedRec}
+\cite{hu2025p2fedrec} adds secret sharing, homomorphic encryption and local differential privacy
+on top of relationship-aware aggregation. \paragraph{FedDAE} \pending{digest of FedDAE (AAAI
+2025) once the PDF is available; add to Table~\ref{tab:lit-numbers} and to the comparison in
+Section~\ref{sec:lit-positioning}}. Surveys of the area
+\cite{zhang2025survey,yin2025devicers} organise these methods by which part is personalised
+and by the aggregation rule, which is the organisation adopted in Chapter~\ref{ch:method}.
+
+\begin{table}[htbp]
+  \caption{Published ML-1M numbers of related methods with the protocol details that affect
+  comparability. ``Own table'' = the client scores with its own post-tuned item table;
+  ``test excluded'' = the held-out test item is removed from the training negatives. Numbers are
+  as reported in the papers or in their re-runs; every cell must be re-checked against
+  \code{Papers/digested/} before submission.}
+  \label{tab:lit-numbers}
+  \centering\small
+  \begin{tabular}{lrrllll}
+    \toprule
+    Method & \hr{} & \ndcg{} & $C$ & Own table & Validation item & Test excluded \\
+    \midrule
+    NCF / NeuMF (centralised) \cite{he2017ncf} & 0.730 & 0.447 & -- & -- & yes & \pending{?} \\
+    FedRecon (PFedRec re-run) \cite{singhal2021fedrecon,zhang2023pfedrec} & 0.633 & 0.366 & 1.0 & no & yes & yes \\
+    PFedRec \cite{zhang2023pfedrec} & \PublishedPfedrecHr & \PublishedPfedrecNdcg & 1.0 & yes & yes & yes \\
+    GPFedRec \cite{zhang2024gpfedrec} & 0.722 & 0.436 & 1.0 & yes & yes & \pending{?} \\
+    CoFedRec \cite{he2024cofedrec} & 0.778 & 0.488 & \pending{?} & \pending{?} & \pending{?} & \pending{?} \\
+    FedRAP \cite{li2024fedrap} & 0.932 & 0.719 & 1.0 & yes & no (best round on test) & yes \\
+    LightFR \cite{zhang2022lightfr} & 0.501 & -- & \pending{?} & no & \pending{?} & \pending{?} \\
+    \midrule
+    This thesis, PFedRec (Section~\ref{sec:res-pfedrec}) & \HrPfedrec & \NdcgPfedrec & \ParticipationC & no & no & no (clean) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Privacy in Federated Recommendation}
+\label{sec:lit-privacy}
+
+Federated training does not by itself protect the user. Gradients and parameter updates leak
+training data \cite{zhu2019dlg,melis2019exploiting}; in MF the update of the item table is
+non-zero only for the items a user interacted with, so an honest-but-curious server learns the
+interaction set from the sparsity pattern alone \cite{chai2021fedmf}. Uploading the user vector
+is worse: with the item table known to the server, $\pu^\top\Qtab^\top$ ranks every item for the
+user and recovers the preferences directly, which is why Federated Reconstruction never
+transmits nor persists the user vector server-side \cite{singhal2021fedrecon}. Mitigations are
+secure aggregation \cite{bonawitz2017secagg}, which hides individual updates behind the sum,
+local differential privacy and cryptographic aggregation \cite{hu2025p2fedrec}, and binary codes
+that resist inversion \cite{zhang2022lightfr}. GPFedRec and FedRAP apply Laplace or Gaussian
+noise but do not report the resulting $\varepsilon$ \cite{zhang2024gpfedrec,li2024fedrap}. The
+threat model of Section~\ref{sec:method-threat} and the attack of Section~\ref{sec:res-privacy}
+follow this line: the server is honest-but-curious, and the attack is exactly the
+$\pu^\top\Qtab^\top$ ranking that the adaptive method's upload of $\pu$ makes possible.
+
+\section{Evaluation Pitfalls in Federated Recommendation}
+\label{sec:lit-pitfalls}
+
+Four protocol choices change the reported numbers by amounts comparable to the differences
+between methods.
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Participation fraction.} Most FedRec papers use $C=1$; cross-device deployments
+        use $C \ll 1$, under which the private part of a client is stale between participations
+        \cite{kairouz2021advances}.
+  \item \textbf{Inference with a client-side item table.} PFedRec and FedRAP score with a
+        post-tuned or additive private item table; methods that score with the shared table are
+        at a disadvantage that has nothing to do with the placement of personalisation.
+  \item \textbf{Validation item.} Selecting the best round on the test item inflates the result;
+        PFedRec and FedRAP hold out a second item for validation, many re-implementations do not.
+  \item \textbf{Test item in the negative pool.} Excluding every interacted item, including the
+        held-out test item, from the training negatives is common in released code. With a shared
+        table the leak is diluted across users; with any per-user fine-tuning of the item table it
+        is not (Section~\ref{sec:res-pfedrec}).
+\end{enumerate}
+To these the cross-device setting adds a fifth, specific to stateful clients: the evaluation
+must load each client's trained local state, and a scoring pass that silently uses a cold
+(initial) state produces a plausible-looking but meaningless number
+(Section~\ref{sec:setup-validity}).
+
+\section{Positioning of this Thesis}
+\label{sec:lit-positioning}
+
+The methods above each propose a placement and report it under its own protocol. This thesis
+holds the protocol fixed (cross-device, $C=\ParticipationC$, shared candidate lists, clean
+negatives, no validation item declared as such) and varies the placement: all-global, private
+user vector, private head, and blend with population knowledge. It measures the protocol
+effects that the literature leaves implicit (post-tuning with and without the test-item leak;
+staleness at low participation) and reports the privacy cost of each placement in the same
+threat model. The adaptive method of Chapter~\ref{ch:method} is the thesis's own design and is
+reported as a negative result in the sense of the FedTHE observation that blending helps mainly
+under test-time shift.

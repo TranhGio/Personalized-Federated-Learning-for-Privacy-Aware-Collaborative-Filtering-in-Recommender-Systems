@@ -1,0 +1,203 @@
+% fptmse.sty -- layout of an FPT University Master of Software Engineering thesis.
+%
+% Modelled on the theses in thesis_examples/ (A4, Times-like serif, numbered
+% references with DOIs, two cover pages, abstract page with degree line,
+% acknowledgements, ToC, lists of figures/tables/abbreviations, appendices).
+%
+% Engines: XeLaTeX or LuaLaTeX (preferred: fontspec + unicode-math, as the
+% 2026 example thesis) or pdfLaTeX (newtx fonts). Vietnamese names on the
+% cover pages render correctly with either engine.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{fptmse}[2026/11/25 FPT MSE thesis layout]
+
+% ---------------------------------------------------------------------------
+% Core packages
+% ---------------------------------------------------------------------------
+\RequirePackage{iftex}
+\RequirePackage{amsmath,amssymb,amsthm}
+\RequirePackage{mathtools}
+\RequirePackage{geometry}
+\RequirePackage{setspace}
+\RequirePackage{graphicx}
+\RequirePackage{booktabs}
+\RequirePackage{multirow}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{tabularx}
+\RequirePackage{caption}
+\RequirePackage{subcaption}
+\RequirePackage{xcolor}
+\RequirePackage{enumitem}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage{tocloft}
+\RequirePackage{etoolbox}
+\RequirePackage{microtype}
+\RequirePackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,calc,shapes.misc}
+
+% ---------------------------------------------------------------------------
+% Fonts: Times-like text + matching math (TeX Gyre Termes as in the examples)
+% ---------------------------------------------------------------------------
+\ifPDFTeX
+  \RequirePackage[T1]{fontenc}
+  \RequirePackage[utf8]{inputenc}
+  \RequirePackage{newtxtext}
+  \RequirePackage{newtxmath}
+  \RequirePackage[scaled=0.85]{beramono}
+\else
+  \RequirePackage{fontspec}
+  \RequirePackage{unicode-math}
+  \setmainfont{TeX Gyre Termes}
+  \setsansfont{TeX Gyre Heros}
+  \setmonofont{Latin Modern Mono}[Scale=MatchLowercase]
+  \setmathfont{TeX Gyre Termes Math}
+\fi
+
+% ---------------------------------------------------------------------------
+% Page layout (measured on the example theses: ~3 cm inner, ~2.5 cm outer)
+% ---------------------------------------------------------------------------
+\geometry{a4paper, left=30mm, right=25mm, top=25mm, bottom=25mm, headheight=14pt}
+\setstretch{1.15}
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{1.2em}
+
+% Running header "Chapter N. Title" on the right, page number centred bottom
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\chaptermark}[1]{\markboth{\chaptername\ \thechapter.\ #1}{}}
+\fancyhead[R]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% Chapter and section titles
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries\centering}{\chaptertitlename\ \thechapter}{0.6em}{\LARGE}
+\titlespacing*{\chapter}{0pt}{-10pt}{30pt}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\itshape}{\thesubsubsection}{1em}{}
+
+% Captions
+\captionsetup{font=small, labelfont=bf, labelsep=period, width=0.92\linewidth}
+\captionsetup[table]{position=above, skip=4pt}
+
+% Table of contents depth and list names
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{3}
+\renewcommand{\contentsname}{Table of Contents}
+\renewcommand{\cftchapfont}{\bfseries}
+\renewcommand{\cftchappagefont}{\bfseries}
+
+% Theorem-like environments used in the methodology chapter
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{hypothesis}{Hypothesis}
+\newtheorem{assumption}{Assumption}[chapter]
+
+% ---------------------------------------------------------------------------
+% Thesis metadata macros (set in main.tex)
+% ---------------------------------------------------------------------------
+\newcommand{\thesistitle}[1]{\gdef\@thesistitle{#1}}
+\newcommand{\thesisauthor}[1]{\gdef\@thesisauthor{#1}}
+\newcommand{\thesissupervisor}[1]{\gdef\@thesissupervisor{#1}}
+\newcommand{\thesiscosupervisor}[1]{\gdef\@thesiscosupervisor{#1}}
+\newcommand{\thesisyear}[1]{\gdef\@thesisyear{#1}}
+\newcommand{\thesisdegree}[1]{\gdef\@thesisdegree{#1}}
+\newcommand{\thesisschool}[1]{\gdef\@thesisschool{#1}}
+\newcommand{\thesisuniversity}[1]{\gdef\@thesisuniversity{#1}}
+\newcommand{\thesisministry}[1]{\gdef\@thesisministry{#1}}
+\newcommand{\thethesisyear}{\@thesisyear}
+\newcommand{\thethesisauthor}{\@thesisauthor}
+\thesiscosupervisor{}
+\thesisministry{MINISTRY OF EDUCATION AND TRAINING}
+\thesisuniversity{FPT UNIVERSITY}
+\thesisschool{FPT School of Business \& Technology}
+\thesisdegree{Master of Software Engineering}
+
+% Cover page 1 (no supervisor) and cover page 2 (with supervisor), as in the examples
+\newcommand{\coverblock}[1]{%
+  \begin{titlepage}
+    \centering
+    \setstretch{1.3}
+    {\large\bfseries \@thesisministry\par}
+    {\large\bfseries \@thesisuniversity\par}
+    \vspace{5.5cm}
+    {\Large\bfseries\MakeUppercase{\@thesistitle}\par}
+    \vspace{3.5cm}
+    {\large By\par}
+    \vspace{0.6cm}
+    {\large\bfseries \@thesisauthor\par}
+    \vspace{2.5cm}
+    {\normalsize A thesis submitted in conformity with the requirements\\
+      for the degree of \@thesisdegree\par}
+    #1
+    \vfill
+    {\normalsize \textcopyright\ Copyright by \@thesisauthor, \@thesisyear\par}
+  \end{titlepage}
+}
+\newcommand{\makecoverpages}{%
+  \coverblock{}%
+  \coverblock{%
+    \vspace{1.8cm}
+    {\normalsize Supervisor:\par}
+    \vspace{0.3cm}
+    {\normalsize 1.\ \@thesissupervisor\par}
+    {\normalsize 2.\ \@thesiscosupervisor\par}
+  }%
+}
+
+% Abstract page header (title, author, degree, school, year) as on page i of the examples
+\newcommand{\abstractheader}{%
+  \begin{center}
+    \setstretch{1.3}
+    {\large\bfseries\MakeUppercase{\@thesistitle}\par}
+    \vspace{0.5cm}
+    {\normalsize \@thesisauthor\par}
+    {\normalsize Degree \@thesisdegree\par}
+    {\normalsize \@thesisschool\par}
+    {\normalsize \@thesisyear\par}
+    \vspace{0.8cm}
+    {\Large\bfseries Abstract\par}
+  \end{center}
+}
+
+% Unnumbered front-matter chapter that still appears in the ToC
+\newcommand{\frontchapter}[1]{%
+  \chapter*{#1}\addcontentsline{toc}{chapter}{#1}\markboth{#1}{}}
+
+% ---------------------------------------------------------------------------
+% Placeholders for results and decisions that are still pending.
+% \pending{text} prints an orange box in draft mode; \finalmodetrue hides them
+% (they then print a red "??" so an unfilled placeholder is never silent).
+% ---------------------------------------------------------------------------
+\newif\iffinalmode
+\finalmodefalse
+\definecolor{pendingbg}{RGB}{255,236,204}
+\definecolor{pendingfg}{RGB}{140,70,0}
+\newcommand{\pending}[1]{%
+  \iffinalmode\textcolor{red}{\textbf{??}}\else%
+  {\colorbox{pendingbg}{\textcolor{pendingfg}{\small\sffamily [PENDING: #1]}}}\fi}
+\newcommand{\decision}[1]{%
+  \iffinalmode\textcolor{red}{\textbf{??}}\else%
+  {\colorbox{pendingbg}{\textcolor{pendingfg}{\small\sffamily [ADVISOR DECISION: #1]}}}\fi}
+
+% ---------------------------------------------------------------------------
+% Notation shortcuts
+% ---------------------------------------------------------------------------
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\pu}{\vect{p}_u}
+\newcommand{\qi}{\vect{q}_i}
+\newcommand{\wu}{\vect{w}_u}
+\newcommand{\Qtab}{\vect{Q}}
+\newcommand{\Qu}{\vect{Q}_u}
+\newcommand{\ndcg}{NDCG@10}
+\newcommand{\hr}{HR@10}
+\newcommand{\mrr}{MRR}
+\newcommand{\sigmoid}{\sigma}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\endinput

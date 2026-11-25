@@ -1,0 +1,257 @@
+% Chapter 3 -- Methodology: problem formulation, the placement taxonomy, the four methods,
+% the offline re-scoring procedures, the post-tuning experiment, and the threat model.
+% Status: basic draft; formulas follow the module code. Pending: attack protocol details.
+\chapter{Methodology}
+\label{ch:method}
+
+\section{Problem Formulation}
+\label{sec:method-problem}
+
+Let $\mathcal{U}$ be the set of users and $\mathcal{I}$ the set of items. Each user $u$ has an
+ordered interaction history; the latest interaction $t_u$ is held out as the test item and the
+remaining interactions form the local training set $\mathcal{D}_u$, all treated as implicit
+positives. In the cross-device protocol each user is one client, so the client population is
+$\mathcal{U}$ with $N=|\mathcal{U}|=\NClients$, and the federated algorithm runs for
+$R=\NRounds$ rounds, sampling $\lceil C N\rceil = \ClientsPerRound$ clients per round with
+$C=\ParticipationC$. A client therefore participates about $CR = \ExpectedParticipations$ times
+in expectation and keeps its private parameters on the device between participations.
+
+Every method scores a user--item pair with a function $\hat{s}_{ui} = f(\theta_u, \vect{w};
+u, i)$ of private parameters $\theta_u$ and global parameters $\vect{w}$. The \emph{placement}
+of personalisation is the choice of what goes into $\theta_u$. At evaluation the candidate set
+$\mathcal{C}_u$ of user $u$ is $t_u$ plus 99 items sampled from the items $u$ never interacted
+with, identical across methods (Section~\ref{sec:setup-protocol}); the metrics are \hr{},
+\ndcg{} and \mrr{} of $t_u$ within $\mathcal{C}_u$, averaged over all $N$ users and within the
+sparse, medium and dense groups.
+
+\section{A Taxonomy of Placements}
+\label{sec:method-taxonomy}
+
+Figure~\ref{fig:placement} shows the four placements compared in this thesis.
+
+\begin{figure}[htbp]
+  \centering
+  \input{figures/fig_placement}
+  \caption{The four placements of the personal part. Blue boxes are aggregated by the server;
+  dashed red boxes stay on the device. The adaptive method also uploads the user vector
+  $\pu$ as its contribution to the global prototype (red arrow), which Section~\ref{sec:method-threat}
+  treats as a leakage channel.}
+  \label{fig:placement}
+\end{figure}
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{None (all-global).} Every parameter, including the user vectors, is aggregated.
+        A user vector is updated only when its owner participates, and the aggregation mixes it
+        with the stale copies held by the other sampled clients.
+  \item \textbf{Private user vector (split learning).} The user vector and bias never leave the
+        device; the item table and biases are aggregated.
+  \item \textbf{Private scoring head.} There is no user vector. Each client owns a linear head
+        over the shared item table; the item table is aggregated.
+  \item \textbf{Blend with population knowledge.} The private user vector is interpolated with a
+        global prototype by a per-user weight $\alpha_u$, and a private neural scorer is added.
+\end{enumerate}
+
+\section{The Four Methods}
+\label{sec:method-methods}
+
+All four methods use the same data split, the same exclusion table for negative sampling and the
+same scoring routine (Chapter~\ref{ch:setup}); they differ in the model, the loss and the
+placement. Table~\ref{tab:hyperparams} in Appendix~\ref{app:config} lists the configurations of
+the cited runs.
+
+\subsection{Baseline: all-global BPR-MF}
+\label{sec:method-baseline}
+
+The model is matrix factorisation with biases,
+\begin{equation}
+  \hat{s}_{ui} = b + b_u + b_i + \pu^\top \qi, \qquad \pu, \qi \in \mathbb{R}^{d},
+  \label{eq:mf}
+\end{equation}
+trained with the BPR loss \cite{rendle2009bpr}
+\begin{equation}
+  \mathcal{L}_u = -\sum_{i \in \mathcal{D}_u}\sum_{j \in \mathcal{N}_u(i)}
+    \log \sigma\big(\hat{s}_{ui} - \hat{s}_{uj}\big) + \lambda \|\theta\|^2,
+  \label{eq:bpr}
+\end{equation}
+where $\mathcal{N}_u(i)$ are negatives sampled from the items $u$ has not interacted with.
+Every parameter is global: the server runs FedAvg \cite{mcmahan2017fedavg}, weighting the
+sampled clients by their number of positives. The client uploads \ParamsBaselineGlobal{}
+parameters per participation. This placement is the lower bound: its user vectors are averaged
+with copies that other clients never trained.
+
+\subsection{Personalized: split learning with a private user vector}
+\label{sec:method-personalized}
+
+The same model and loss as the baseline, with the parameter set split into
+$\theta_u = \{\pu, b_u\}$ (private, cached on the device) and $\vect{w} = \{\Qtab, \vect{b}_I,
+b\}$ (global). In each participation the client loads $\theta_u$ from its cache, trains all
+parameters on $\mathcal{D}_u$, saves $\theta_u$ and returns only $\vect{w}$. The FedProx variant
+regularises the global part only, $\frac{\mu}{2}\|\vect{w} - \vect{w}_{\text{server}}\|^2$, so
+that the private part is free to diverge. The upload is \ParamsSplitGlobal{} parameters. This
+is the placement of FCF and FedMF \cite{ammaduddin2019fcf,chai2021fedmf}, and the
+``knob-for-knob'' partner of the baseline: the two cited runs share the loss, the dimension
+$d=\DimMf$, the optimiser and the learning rate, and differ only in whether $\pu$ is averaged.
+
+\subsection{PFedRec: private scoring head on a shared item table}
+\label{sec:method-pfedrec}
+
+PFedRec \cite{zhang2023pfedrec} has no user vector. Each client owns a linear head
+$\wu \in \mathbb{R}^{d}$ and scores
+\begin{equation}
+  \hat{s}_{ui} = \sigma\big(\wu^\top \qi + b\big), \qquad d=\DimPfedrec,
+  \label{eq:pfedrec}
+\end{equation}
+with a BCE loss on the observed items (positives) and four sampled negatives per positive. One
+local epoch alternates, per mini-batch, a step on the head with learning rate $\eta_w$ and a
+step on the item rows with learning rate $\eta_w \cdot |\mathcal{I}| \cdot \eta$; the large item
+learning rate compensates for the sparsity of the item gradients. The server averages the item
+tables uniformly over the participating clients, as in the reference implementation. The upload
+is \ParamsPfedrecGlobal{} parameters, the smallest of the four.
+
+Two evaluation details matter under $C<1$. First, a client that has not participated for many
+rounds holds a head that was trained against an older item table. The cited run therefore ends
+with a \emph{final calibration}: after the best-round item table is restored, every client runs
+one local epoch on the head only, with the item table frozen, so that each head is aligned to
+the table that is evaluated. Second, the reference implementation scores each user with the
+client's own post-tuned item table $\Qu$ from its last local epoch; the thesis number scores
+with the shared table $\Qtab$, and Section~\ref{sec:method-posttune} measures the difference.
+
+\subsection{Adaptive: dual-level personalisation with a hierarchical-conditional $\alpha$}
+\label{sec:method-adaptive}
+
+The adaptive method is the thesis's own design on top of the split-learning placement. It has
+two levels.
+
+\paragraph{Level 1: blended user vector.} The server keeps a global prototype
+$\bar{\vect{p}}$, an exponential moving average with momentum \PrototypeMomentum{} of the
+user vectors uploaded by the participating clients, weighted by their number of positives. The
+client forms
+\begin{equation}
+  \tilde{\vect{p}}_u = \alpha_u \pu + (1-\alpha_u)\, \bar{\vect{p}},
+  \label{eq:blend}
+\end{equation}
+where $\alpha_u \in [\AlphaMin, \AlphaMax]$ is computed from four per-user statistics (interaction count,
+genre entropy, number of unique items, rating standard deviation) by a two-stage rule: a
+hierarchical aggregation of a data-volume score and a preference-quality score, followed by
+conditional adjustments for sparse users (down to a 50\% penalty), niche specialists ($+0.15$),
+inconsistent raters (30\% penalty) and completionists ($+0.10$). The rule is deterministic and
+needs no gradient; its ablation partners are a naive multi-factor weighted sum and a single
+data-quantity factor.
+
+\paragraph{Level 2: private neural scorer.} A per-client multi-layer perceptron scores the
+element-wise product of the blended user vector and the item vector,
+\begin{equation}
+  \hat{s}^{\text{MLP}}_{ui} = \text{PersonalMLP}_u\big(\tilde{\vect{p}}_u \odot \qi\big),
+  \qquad
+  \hat{s}_{ui} = \vect{v}_u^\top \big[\hat{s}^{\text{CF}}_{ui},\ \hat{s}^{\text{MLP}}_{ui}\big] + c_u,
+  \label{eq:dual}
+\end{equation}
+where $\hat{s}^{\text{CF}}_{ui} = b + b_u + b_i + \tilde{\vect{p}}_u^\top\qi$ and the fusion
+$(\vect{v}_u, c_u)$ is a private linear layer. With hidden sizes \MlpHidden{} the PersonalMLP
+has \ParamsPersonalMlp{} private parameters, against a median of \DsMedianRatings{}
+interactions per user. Training uses the BPR loss, FedProx on the global part, and a contrastive
+term between $\pu$ and $\tilde{\vect{p}}_u$ with weight \ContrastiveLambda; the optional
+per-user learnable $\alpha_u$ and item perturbation were disabled in the cited run.
+
+\paragraph{What is transmitted.} The global part (\ParamsSplitGlobal{} parameters) and, in
+addition, the user vector $\pu$ (\ParamsAdaptiveUploadExtra{} floats) as the client's
+contribution to the prototype. The second upload is what distinguishes this placement from
+split learning in the threat model.
+
+\section{Offline Re-scoring and Counterfactual Heads}
+\label{sec:method-reeval}
+
+To compare scoring conditions on the same trained model, an offline re-scoring tool reproduces
+the final federated evaluation: it loads the best-round global parameters of a run, the cached
+private parameters of every client, and the same candidate list per user, and recomputes the
+metrics. A \emph{replay trust gate} requires that this reproduction match the run's recorded
+per-user and aggregate metrics exactly before any variant is scored; on the cited PFedRec run the
+match is bit-exact (Section~\ref{sec:setup-validity}).
+
+On the PFedRec model the tool then answers the placement question with counterfactual heads,
+holding $\Qtab$, $b$ and the candidate lists fixed and replacing $\wu$ at scoring time by:
+\begin{itemize}[leftmargin=2em]
+  \item the population-mean head $\bar{\vect{w}}$ (uniform mean of all $N$ calibrated heads),
+        and a variant weighted by interaction count;
+  \item the blend $\alpha_u \wu + (1-\alpha_u)\bar{\vect{w}}$ for every $\alpha$ on a grid of
+        \HeadAlphaGridSize{} values with step \HeadAlphaGridStep, and for the
+        hierarchical-conditional rule of Section~\ref{sec:method-adaptive} applied to the
+        PFedRec head;
+  \item another user's head (a random permutation of the heads);
+  \item a freshly initialised head per user, and one shared freshly initialised head, which
+        reproduce the cold-evaluation failure deliberately.
+\end{itemize}
+Each variant yields a per-user \ndcg{}, so the comparison with the own-head reference is paired.
+
+\section{Post-tuning Re-score of PFedRec}
+\label{sec:method-posttune}
+
+The second re-scoring experiment measures how much of the gap between the reproduced PFedRec
+number and the published one is due to the reference implementation's inference protocol. It
+was pre-registered (Appendix~\ref{app:posttune}) and then run once. For every user $u$:
+\begin{enumerate}[leftmargin=2em]
+  \item initialise $\Qu \leftarrow \Qtab$ (the restored best-round table) and freeze the
+        calibrated head $(\wu, b)$;
+  \item fine-tune only the rows of $\Qu$ on $\mathcal{D}_u$ for $E \in \{1, 3\}$ epochs with the
+        run's own item learning rate (\PtLrItem), BCE, four negatives per positive, batch 256,
+        plain SGD;
+  \item score $u$ with $\Qu$ on the same 100 candidates.
+\end{enumerate}
+Step 2 is run with two negative-sampling pools. The \emph{clean} pool draws negatives from all
+items $u$ has not trained on, so the held-out test item can be drawn, as a client that does not
+know the future would do. The \emph{official-code} pool additionally excludes the test item, as
+the released PFedRec code does. The two pools are the only difference between the two
+trajectories, so the contrast official $-$ clean isolates the test-item leak, and the contrast
+clean $-$ reference isolates the effect of post-tuning itself. Table~\ref{tab:posttune-deviations}
+lists the known deviations from the reference implementation.
+
+\begin{table}[htbp]
+  \caption{Known deviations of the post-tuning re-score from the reference implementation and
+  their expected effect (registered before the run).}
+  \label{tab:posttune-deviations}
+  \centering\small
+  \begin{tabular}{p{0.05\linewidth}p{0.3\linewidth}p{0.28\linewidth}p{0.3\linewidth}}
+    \toprule
+    \# & Reference code & This experiment & Consequence \\
+    \midrule
+    K1 & Alternates head and item updates per batch & Head frozen, item rows only & Post-tuning is weaker here; the head was already calibrated \\
+    K2 & Private table is the one after the user's last participation ($C=1$: always the last round) & Every user starts from the restored best-round table & Removes staleness from the measurement; isolates post-tuning \\
+    K3 & Validation item selects the round & None; best round selected on the test item & Inflates our numbers (declared limitation) \\
+    K4 & Test item excluded from the negatives & Both pools run & Separates the leak from post-tuning \\
+    K5 & $C=1$ & $C=\ParticipationC$, unchanged & The residual gap is left as ``not separated'' \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Threat Model and Privacy Measurements}
+\label{sec:method-threat}
+
+\paragraph{Adversary.} The server is \emph{honest-but-curious}: it follows the protocol, stores
+every message it receives, and tries to infer the users' interactions and preferences. Clients
+are honest. No secure aggregation is deployed in the cited runs, so the server sees every
+client's upload individually.
+
+\paragraph{Leakage channels per placement.}
+\begin{itemize}[leftmargin=2em]
+  \item \emph{All-global:} the full user vector and bias of the participating user, and the
+        update pattern of the item table (non-zero rows = interacted items plus sampled
+        negatives).
+  \item \emph{Private user vector:} the item-table update pattern only.
+  \item \emph{Private head:} the item-table update pattern only; the head never leaves the device.
+  \item \emph{Blend with population knowledge:} the item-table update pattern \emph{and} the
+        user vector $\pu$, uploaded as the prototype contribution.
+\end{itemize}
+The update pattern is common to all placements and is mitigated by secure aggregation
+\cite{bonawitz2017secagg}, which reveals only the sum over the sampled clients. The upload of
+$\pu$ is specific to the adaptive placement and is not mitigated by secure aggregation of the
+item table.
+
+\paragraph{Measurements.} Two quantities are reported in Section~\ref{sec:res-privacy}.
+(i) The communication volume per participating client per round, counted in parameters from
+the architectures (Table~\ref{tab:params-comm}) and \pending{measured in bytes from the actual
+Flower messages}. (ii) A \emph{preference-reconstruction attack}: for every user of the adaptive
+run, the server ranks all $|\mathcal{I}|$ items by $\pu^\top \qi$ with the received $\pu$ and
+its own item table, takes the top 10, and counts how many of them the user actually interacted
+with; the score is compared with a random ranking and with a popularity ranking.
+\pending{attack protocol to be pre-registered and run; report hit counts and the two baselines
+overall and by group, and the effect of secure aggregation as the mitigation}.

@@ -1,0 +1,63 @@
+% Appendix C -- reproducibility record. Keep in sync with the repository.
+\chapter{Reproducibility}
+\label{app:repro}
+
+\section{Repository and Result Files}
+
+All code, result files and this document live in one repository. The four federated methods are
+the packages \code{federated-baseline-cf}, \code{federated-personalized-cf}, \code{federated-pfedrec}
+and \code{federated-adaptive-personalized-cf}; the shared foundation library is
+\code{scripts/foundation/fedrec\_foundation}; the offline re-scoring tool is
+\code{scripts/thesis/reeval.py} and the paired statistics are \code{scripts/thesis/gate\_stats.py}.
+Each cited run has a directory \code{results/federated/<module>/<run\_id>/} with
+\code{results.json}, \code{manifest.json} and \code{EVAL\_VALIDITY.json}; the PFedRec run also
+holds the per-user scores of every re-scoring variant (\code{reeval\_*\_best\_per\_user.csv}) and
+the \code{posttune/} directory with the registered experiment.
+
+\begin{table}[htbp]
+  \caption{Identifiers of the cited runs.}
+  \label{tab:repro-runs}
+  \centering\small
+  \begin{tabular}{lll}
+    \toprule
+    Method & Run identifier & Code commit \\
+    \midrule
+    Baseline & \RunBaselineId & \RunBaselineCommit \\
+    Personalized & \RunPersonalizedId & \RunPersonalizedCommit \\
+    PFedRec (+ calibration) & \RunPfedrecId & \RunPfedrecCommit \\
+    Adaptive & \RunAdaptiveId & \RunAdaptiveCommit \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Regenerating the Tables and Figures}
+
+Every table and number in this document is produced by
+\code{thesis/scripts/build\_assets.py} from the files above:
+\begin{verbatim}
+python thesis/scripts/build_assets.py   # writes thesis/tables/*.tex and thesis/figures/*.pdf
+cd thesis && latexmk -xelatex main.tex  # builds the thesis
+\end{verbatim}
+The script fails if a result file is missing or has an unexpected shape, so a successful build
+is evidence that the numbers in the text correspond to the committed results.
+
+\section{Re-running the Offline Experiments}
+
+The re-scoring variants require the run's saved global parameters and its per-client cache,
+which are kept on the training machine (they are large and are not committed). With those in
+place:
+\begin{verbatim}
+python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/<run> \
+    --module pfedrec --globals best --local-variant cached global_head random
+python scripts/thesis/reeval.py --run-dir results/federated/pfedrec/<run> \
+    --module pfedrec --globals best --local-variant qu_diag --out-dir posttune
+python scripts/thesis/gate_stats.py --grid <posttune/reeval_qu_diag_best.json> \
+    --contrast a0.00_E1_leaky a0.00_E1_clean --contrast a0.00_E3_leaky a0.00_E3_clean
+\end{verbatim}
+The first command aborts unless its \code{cached} replay matches the run's recorded evaluation.
+
+\section{Software Versions}
+
+\pending{Flower, PyTorch, NumPy, SciPy and Python versions of the training machine and of the
+analysis machine, read from the manifests (\code{flwr\_version}, \code{torch\_version}) and
+from \code{stats\_wilcoxon.json} (\code{numpy\_version}, \code{scipy\_version})}.

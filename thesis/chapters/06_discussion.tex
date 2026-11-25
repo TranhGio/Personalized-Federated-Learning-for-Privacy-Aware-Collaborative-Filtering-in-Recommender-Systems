@@ -1,0 +1,136 @@
+% Chapter 6 -- Discussion
+% Status: basic draft; revise after the pending results and the advisor's decisions.
+\chapter{Discussion}
+\label{ch:discussion}
+
+\section{Assessment of the Hypotheses}
+\label{sec:disc-hypotheses}
+
+\begin{description}[leftmargin=3em, style=nextline]
+  \item[H1 (original): refuted.] The adaptive method does not beat the other placements; it is
+        below the private user vector overall and below every method on sparse users
+        (Section~\ref{sec:res-main}). \pending{paired tests to state the margins with
+        confidence intervals}.
+  \item[H2: supported on the mean.] Keeping the user vector private improves \ndcg{} by
+        \GainPersonalizedVsBaselinePct\% over averaging it, with everything else equal.
+        \pending{paired test}.
+  \item[H3: supported.] On the PFedRec model the population-mean head costs
+        \DeltaHeadGlobalHead, no $\alpha$ on the grid beats $\alpha=1$, and the data-driven
+        rule loses \AbsDeltaHeadAlphaPolicyHc{} (Section~\ref{sec:res-placement}).
+  \item[H4: supported; prediction A5 refuted.] Clean post-tuning lowers \ndcg{}
+        (\PtDeltaEOneClean, CI \PtCiEOneClean); official-code negatives raise it
+        (\PtDeltaEOneLeaky); the contrast is \PtContrastEOne{} and is carried by
+        \PtContrastEOneNonZero{} users. The $E=3$ official-code cell exceeded the registered
+        ceiling of 0.394 and the published number itself (Section~\ref{sec:res-pfedrec}).
+\end{description}
+
+\section{Why Blending with Population Knowledge Did Not Help}
+\label{sec:disc-adaptive}
+
+Three mechanisms are consistent with the measurements. First, the population prototype is
+nearly uninformative for ranking: the uniform mean of \DsUsers{} heads or vectors cancels
+exactly the directions that distinguish one user from another, so any weight $(1-\alpha_u)>0$
+on it moves the user toward a point that ranks items like a popularity list. The counterfactual
+rows of Table~\ref{tab:head-counterfactuals} show this directly: the population head is worth
+less than the own head in every group, and most in the sparse group. Second, the
+hierarchical-conditional rule assigns the smallest $\alpha_u$ to exactly those users, so the
+rule applies the strongest pull where the prototype is least adequate. Third, the data are not a
+cold-start setting: a ``sparse'' MovieLens user still has at least 19 training interactions, enough
+to fit a 64-dimensional vector or a 32-dimensional head, so there is little to gain from
+borrowing. These observations are consistent with APFL's analysis, in which the optimal mixing
+weight approaches the local model as the local and global optima diverge
+\cite{deng2020apfl}, and with FedTHE's finding that test-time ensembling of a global and a local
+head helps under distribution shift and little in-distribution \cite{jiang2023fedthe}. The
+PersonalMLP adds a second problem: \ParamsPersonalMlp{} private parameters trained on a median
+of \DsMedianRatings{} interactions in about \ExpectedParticipations{} short visits is a
+capacity-to-data ratio under which a non-linear scorer cannot be expected to beat an inner
+product. The adaptive design would need a different setting to be useful: a genuine cold-start
+population, or a shift between a user's training and test behaviour.
+
+\section{What Post-tuning Measures and What It Does Not}
+\label{sec:disc-posttune}
+
+The post-tuning experiment separates three things that the literature reports as one number.
+(i) Post-tuning the item table on the client with honest negatives is a \emph{cost} under this
+protocol: the client pushes down whatever it draws, and it cannot know that one of the items it
+draws is the one the evaluation will ask for. (ii) Excluding the held-out item from the
+negatives converts that cost into a gain, because the only rows that can then move among the
+candidates are the 99 negatives, which can only move down. This is a property of the evaluation
+protocol, not of the method, and it is invisible when the item table is shared, because the
+update of one user is diluted among the \ClientsPerRound{} clients of a round. (iii) What
+remains of the gap after (ii) is not separated between the participation fraction and the three
+deviations K1--K3 of Table~\ref{tab:posttune-deviations}; the official code run on the same
+machine (\OfficialCodeNdcg) bounds the sum of those effects if its configuration is confirmed
+to be the official default (\pending{confirmation}). The thesis therefore reports PFedRec at
+\NdcgPfedrec{} with the shared table as its number, lists the two post-tuning rows next to it,
+and states the limitation with the measured cause. \decision{final wording of the limitation
+paragraph: (A) two measured causes, $C$ unmeasured but bounded, and the negative-pool leak with
+its size; or (B) keep ``no post-tuning at evaluation'' as the cause with a footnote giving the
+measurement that has the opposite sign}.
+
+A point on statistics. In the clean cells the mean and the rank test disagree
+(Table~\ref{tab:posttune-wilcoxon}): under Pratt's treatment of ties the test almost reduces to
+counting the users who gained a little (\PtNPosEOneClean) against those who lost everything
+(\PtNNegEOneClean{} at $E=1$, every one of them to \ndcg{} $=0$), and it ignores the size of
+the losses. Both views are legitimate answers to different questions; the thesis reports both
+and concludes on the mean, because a recommender is judged on its average ranking quality and
+a user whose test item disappears from the list is a worse outcome than many users whose item
+moves up by one rank.
+
+\section{Fairness of the Placement Comparison}
+\label{sec:disc-fairness}
+
+The four cited runs differ in more than the placement (Table~\ref{tab:asymmetries}). PFedRec
+uses BCE with four negatives, SGD and $d=\DimPfedrec$; the three others use BPR, Adam and
+$d=\DimMf$. Only PFedRec has a final calibration of its private part. The best rounds differ,
+and all are selected on the test item. These asymmetries limit the comparison to the reading
+``each method at its own, author-faithful configuration'': the placement study is clean only
+within the BPR family (Baseline against Personalized), and the PFedRec margin should be read as
+a design-level result rather than as a controlled effect of the head alone. \decision{(A) keep
+the author-faithful configurations and present Table~\ref{tab:asymmetries} as the reading
+guide, or (B) first calibrate the Personalized and Adaptive runs offline to remove the
+calibration asymmetry}.
+
+\begin{table}[htbp]
+  \caption{Configuration asymmetries between the four cited runs.}
+  \label{tab:asymmetries}
+  \centering\small
+  \input{tables/tab_asymmetries}
+\end{table}
+
+\section{Implications for Practice}
+\label{sec:disc-practice}
+
+For a cross-device recommender at low participation the results suggest: keep the user-specific
+part on the device (it is both the most private and the most accurate choice of the BPR family);
+if the model allows it, place personalisation in a private scoring function on a shared item
+table rather than in a user vector, and re-align that function to the current table before
+serving; do not blend the private part with a population average unless the population is
+cold; never upload the user vector; and treat any client-side fine-tuning of the item table at
+inference as a protocol decision that must be reported with its negative-sampling rule.
+Operationally, evaluate stateful clients with a cache-miss counter, a validity sidecar and a
+replay gate, because the failure mode is silent.
+
+\section{Threats to Validity}
+\label{sec:disc-threats}
+
+\paragraph{Internal.} One seed per run; no validation item, so best rounds are selected on the
+test item (inflation of \InflationBaseline{} to \InflationPfedrec{} points,
+Section~\ref{sec:setup-validity}); configuration asymmetries (Section~\ref{sec:disc-fairness});
+the adaptive run kept a contrastive term enabled and was not calibrated; the centralised
+comparator is untuned. The paired tests, where available, describe users, not seeds.
+
+\paragraph{Construct.} Sampled metrics with 99 negatives are known to disagree with exhaustive
+ones \cite{krichene2020sampled}; the comparison is valid because every method ranks the same
+candidates, but the absolute numbers are protocol-specific. The ``sparse'' group of MovieLens 1M
+is not a cold-start group.
+
+\paragraph{External.} One dataset, one domain (films), one participation fraction. The leak
+mechanism of Section~\ref{sec:disc-posttune} applies to any method that fine-tunes a per-user
+item table at inference, but its size depends on the number of interactions per user and on
+the number of epochs.
+
+\paragraph{Measurement.} All full-population numbers come from runs classified as valid, with
+cache-miss counters where the code recorded them; the offline tool reproduced the PFedRec
+evaluation bit-exactly. Numbers in this document are generated from the result files by one
+script and are not typed by hand.

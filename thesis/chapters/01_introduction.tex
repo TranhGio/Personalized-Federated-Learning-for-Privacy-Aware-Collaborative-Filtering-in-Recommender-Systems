@@ -1,0 +1,178 @@
+% Chapter 1 -- Introduction
+% Status: basic draft. Numbers come from tables/numbers.tex. Pending items are marked.
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Background and Motivation}
+\label{sec:intro-background}
+
+Recommender systems rank items for a user from that user's past behaviour and from the
+behaviour of other users. Collaborative filtering (CF) is the dominant approach: a user and an
+item are embedded as vectors and the score of a pair is a function of the two vectors
+\cite{rendle2009bpr,he2017ncf}. Training such a model has traditionally required collecting all
+interaction histories on a server. Federated learning (FL) removes that requirement: the data
+stay on the users' devices, each device trains on its own data, and only model updates are sent
+to a server that aggregates them \cite{mcmahan2017fedavg,kairouz2021advances}. Federated
+recommendation (FedRec) applies this idea to CF
+\cite{ammaduddin2019fcf,chai2021fedmf,zhang2025survey}.
+
+Recommendation is an unusually personal task for FL. In standard federated learning one global
+model is expected to serve every client; in recommendation every user is a different task, and
+the user vector is by construction specific to one client. The field has therefore converged on
+\emph{personalised} federated learning \cite{arivazhagan2019fedper,deng2020apfl,collins2021fedrep},
+but it has not converged on \emph{where} the personal part should live. Four placements are
+common: no private part at all, with the user vectors averaged like every other parameter; a
+private user vector that never leaves the device, as in split learning
+\cite{singhal2021fedrecon}; a private scoring function on top of a shared item table, as in
+PFedRec \cite{zhang2023pfedrec}; and a blend between a private part and population knowledge,
+as in APFL \cite{deng2020apfl} and FedTHE \cite{jiang2023fedthe}. Published comparisons of these
+placements are hard to read across papers because the evaluation protocols differ in the
+participation fraction, in whether the client fine-tunes the item table before scoring, in the
+validation split, and in subtle leaks of the test item into training
+\cite{krichene2020sampled}.
+
+The setting that matters in practice is \emph{cross-device}: thousands of clients, one user per
+client, a small fraction of them participating in each round, and client state that persists
+between participations \cite{kairouz2021advances,hard2018gboard}. Under such a protocol the
+private part of a client that has not participated for many rounds becomes stale with respect
+to the current global part, and the evaluation itself becomes a source of error: a client that
+is scored with the wrong local state silently produces a near-random result. These two
+properties, staleness and stateful evaluation, are absent from the full-participation protocols
+under which most federated recommendation methods are reported.
+
+\section{Problem Statement}
+\label{sec:intro-problem}
+
+This thesis started from a specific method: an adaptive, hierarchically-conditioned
+personalisation level $\alpha_u$ that blends each user's vector with a population prototype and
+adds a per-user neural scorer, intended to help users with few interactions. Under a cross-device
+protocol with $N=\NClients$ clients and $C=\ParticipationC$ participation, the method did not
+beat the simpler placements, least of all on sparse users. Rather than discard the work, the
+thesis was reorganised around the question the negative result raises:
+
+\begin{quote}
+\emph{Where should personalisation live in a cross-device federated recommender, what does each
+placement cost in privacy and communication, and how must stateful clients be evaluated so that
+the comparison can be trusted?}
+\end{quote}
+
+The problem has three parts. First, the four placements must be compared on the same data, the
+same protocol and the same per-user scoring so that the differences are attributable to the
+placement. Second, the comparison with the strongest published method (PFedRec) must separate the
+effect of the protocol, in particular the participation fraction and the client-side post-tuning
+of the item table at inference, from the effect of the method, because the published number
+(\PublishedPfedrecNdcg{} \ndcg{} on MovieLens 1M) is obtained under a different protocol. Third,
+the evaluation of stateful clients must be shown to be valid: every number must come from a
+warm, reproducible scoring of all \DsUsers{} users.
+
+\section{Objectives}
+\label{sec:intro-objectives}
+
+The general objective is an empirical, statistically supported answer to the placement question
+under a locked cross-device protocol, together with the evaluation tooling that makes the answer
+reproducible. The specific objectives are:
+
+\begin{enumerate}[label=O\arabic*, leftmargin=2.5em]
+  \item to implement four federated CF methods, one per placement, on a common framework with a
+        common data split, candidate sampling and scoring routine;
+  \item to compare them per user on \ndcg{}, \hr{} and \mrr{}, overall and by user activity
+        group, with paired statistical tests;
+  \item to measure, rather than assume, the causes of the gap between the PFedRec reproduction
+        and its published number;
+  \item to analyse the adaptive method as a negative result with measured causes;
+  \item to quantify the privacy and communication cost of each placement under an
+        honest-but-curious server;
+  \item to establish and document an evaluation procedure for stateful clients, including an
+        offline re-scoring tool that reproduces the federated evaluation exactly.
+\end{enumerate}
+
+\section{Research Questions and Hypotheses}
+\label{sec:intro-rq}
+
+\begin{description}[leftmargin=3em, style=nextline]
+  \item[RQ1] Which placement of the personal part gives the best ranking quality under the
+        cross-device protocol, overall and for sparse users?
+  \item[RQ2] Does blending the private part with population knowledge, with a data-driven
+        $\alpha_u$, improve over keeping the private part fully local?
+  \item[RQ3] How much of the gap between the reproduced and the published PFedRec number is due
+        to the scoring protocol (post-tuning and the negative-sampling pool) rather than to the
+        participation fraction?
+  \item[RQ4] What do the placements cost in uploaded bytes and in what an honest-but-curious
+        server can infer about a user?
+  \item[RQ5] What evaluation safeguards are necessary for stateful clients, and how large is the
+        cost of stale private parts at low participation?
+\end{description}
+
+The hypotheses below were formulated before the corresponding experiments were run; H1 is the
+original thesis hypothesis and is reported as refuted.
+
+\begin{hypothesis}[H1, original]
+The adaptive method beats the three other placements on \ndcg{}, including on sparse users.
+\end{hypothesis}
+\begin{hypothesis}[H2]
+Keeping the user vector private beats averaging it, in an otherwise identical configuration.
+\end{hypothesis}
+\begin{hypothesis}[H3]
+On the PFedRec model, replacing the private head by the population-mean head lowers \ndcg{}, and
+no blend $\alpha_u \wu + (1-\alpha_u)\bar{\vect{w}}$ with $\alpha_u<1$ recovers the loss.
+\end{hypothesis}
+\begin{hypothesis}[H4]
+Scoring PFedRec with a client-side post-tuned item table lowers \ndcg{} when the test item can be
+drawn as a training negative and raises it when the test item is excluded from the negatives, as
+in the official code (registered as predictions A1--A5, Appendix~\ref{app:posttune}).
+\end{hypothesis}
+
+\section{Scope and Limitations}
+\label{sec:intro-scope}
+
+The study uses one dataset (MovieLens 1M), one random seed for the federated runs, one
+cross-device protocol ($N=\NClients$, $C=\ParticipationC$, $R=\NRounds$) and four methods that
+differ in more than the placement (loss, embedding dimension, optimiser; Section~\ref{sec:disc-fairness}).
+Statistical statements are paired per-user tests on a single run, so they describe variability
+across users, not across seeds. The best round of each run is selected on the held-out test item
+because the protocol has no validation item; the inflation this causes is reported in
+Section~\ref{sec:setup-validity}. The participation fraction is not varied, so the share of the
+PFedRec gap that is due to $C$ is bounded only indirectly. \decision{whether to keep the
+single-seed limitation or add two seeds for the three close cells (Baseline, Personalized,
+Adaptive)}.
+
+\section{Contributions}
+\label{sec:intro-contributions}
+
+\begin{enumerate}[label=C\arabic*, leftmargin=2.5em]
+  \item \textbf{A placement study under one cross-device protocol.} Four placements of the
+        personal part are compared per user on \DsUsers{} clients with paired tests
+        (Chapter~\ref{ch:results}). Keeping the user vector private improves \ndcg{} by
+        \GainPersonalizedVsBaselinePct\% over averaging it; a private head on a shared item table
+        reaches \NdcgPfedrec; on that model the private head is worth \AbsDeltaHeadGlobalHead{}
+        \ndcg{} against the population head and a data-driven blend adds nothing
+        ($\alpha^\star=\HeadAlphaStarGlobal$ on a grid of \HeadAlphaGridSize{} values).
+        \pending{paired tests across the four methods}.
+  \item \textbf{A negative result with measured causes.} The adaptive method is analysed rather
+        than discarded: the blending weight pulls taste toward the mean, the per-user network has
+        \ParamsPersonalMlp{} parameters for a median of \DsMedianRatings{} interactions, and the
+        upload of the user vector weakens the privacy boundary (Sections~\ref{sec:res-adaptive}
+        and~\ref{sec:disc-adaptive}).
+  \item \textbf{A privacy analysis with numbers.} A threat model for an honest-but-curious
+        server, the parameters and bytes uploaded per placement, and a preference-reconstruction
+        attack on the uploaded user vector (Section~\ref{sec:res-privacy};
+        \pending{byte measurements and attack results}).
+  \item \textbf{Valid evaluation of stateful clients.} A cold-state evaluation error that
+        reduced \ndcg{} \ColdEvalRatio-fold, the counters and the offline re-scoring tool that
+        prevent it, a measured decomposition of the PFedRec reproduction gap, and the cost of
+        stale private parts at $C=\ParticipationC$ (Sections~\ref{sec:setup-validity},
+        \ref{sec:res-pfedrec} and~\ref{sec:res-staleness}).
+\end{enumerate}
+
+\section{Thesis Structure}
+\label{sec:intro-structure}
+
+Chapter~\ref{ch:literature} reviews collaborative filtering, federated learning, personalised FL,
+federated recommendation and the evaluation pitfalls of the field. Chapter~\ref{ch:method}
+formulates the problem, defines the four placements and the four methods, the offline re-scoring
+procedure and the threat model. Chapter~\ref{ch:setup} describes the data, the locked protocol,
+the implementation, the evaluation safeguards and the statistical analysis.
+Chapter~\ref{ch:results} reports the results, Chapter~\ref{ch:discussion} assesses the
+hypotheses and the threats to validity, and Chapter~\ref{ch:conclusion} concludes. The
+appendices contain the full post-tuning tables, the configurations and the reproducibility
+record.
