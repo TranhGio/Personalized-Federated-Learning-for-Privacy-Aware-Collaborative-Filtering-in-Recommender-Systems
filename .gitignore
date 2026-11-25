@@ -80,3 +80,6 @@ Vinh_lv.docx
 
 # Harness intermediate artefacts (kept locally for audit, never committed)
 _workspace/
+
+# Example theses from other students (reference only, not ours to redistribute)
+thesis_examples/

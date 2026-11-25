@@ -1,0 +1,40 @@
+% List of Notations. Mirrors the notation table of the project (CLAUDE.md) so that
+% symbols in the thesis and in the code base mean the same thing.
+\frontchapter{List of Notations}
+\thispagestyle{plain}
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.77\linewidth}@{}}
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+\endhead
+$\mathcal{U}$, $u$ & Set of users and one user; in the cross-device protocol one user is one client \\
+$\mathcal{I}$, $i$ & Set of items (films) and one item \\
+$N = |\mathcal{U}|$ & Number of clients (\NClients) \\
+$\mathcal{D}_u$ & Local training data of client $u$: the user's interactions minus the held-out test item \\
+$t_u$ & Held-out test item of user $u$ (the latest interaction) \\
+$\mathcal{C}_u$ & Candidate set of user $u$ at evaluation: $t_u$ plus 99 sampled unseen items \\
+$R$ & Number of federated rounds (\NRounds) \\
+$C$ & Client sampling fraction per round (\ParticipationC) \\
+$K$ & Local epochs per round \\
+$\vect{w}$ & Global (server-side) parameters \\
+$\theta_u$ & Personal (client-side) parameters of client $u$ \\
+$\pu$ & User vector (embedding) of user $u$ \\
+$\qi$ & Item vector of item $i$; $\Qtab \in \mathbb{R}^{|\mathcal{I}| \times d}$ is the item table \\
+$\Qu$ & Client-side copy of the item table after post-tuning on $\mathcal{D}_u$ (PFedRec inference) \\
+$\wu$, $b$ & Private scoring head of user $u$ (PFedRec) and the shared bias \\
+$\bar{\vect{w}}$ & Population-mean head (uniform mean of all $\wu$) \\
+$d$ & Embedding dimension (\DimMf{} for the BPR-based methods, \DimPfedrec{} for PFedRec) \\
+$\alpha_u$ & Personalisation level of user $u$ ($\alpha=1$ fully local, $\alpha=0$ fully global) \\
+$\bar{\vect{p}}$ & Global prototype (server-side exponential moving average of uploaded user vectors) \\
+$\mu$ & FedProx proximal strength \\
+$\eta$ & Item-table learning-rate multiplier of PFedRec \\
+$E$ & Post-tuning epochs in the re-scoring experiment \\
+$\hat{s}_{ui}$ & Predicted score of item $i$ for user $u$ \\
+$d_u$ & Per-user paired difference of a metric between two scoring conditions \\
+$n_+, n_-, n_0$ & Number of users with $d_u > 0$, $d_u < 0$, $d_u = 0$ \\
+$W^+, W^-$ & Wilcoxon signed-rank sums of positive and negative differences \\
+$r$ & Rank-biserial correlation (effect size of the signed-rank test) \\
+\end{longtable}

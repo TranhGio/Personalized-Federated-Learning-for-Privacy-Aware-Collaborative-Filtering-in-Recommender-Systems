@@ -1,0 +1,43 @@
+% Abstract page (page i): title block + abstract + keywords, as in the example theses.
+% TODO (author): revise once the pending results (paired cross-module tests, privacy
+% measurements, stale-head cost) are in; keep it under one page.
+\abstractheader
+\addcontentsline{toc}{chapter}{Abstract}
+\thispagestyle{plain}
+
+Federated recommendation trains a collaborative-filtering model across many devices without
+collecting the users' interaction histories on a server. Prior work agrees that some part of the
+model has to be personalised, but disagrees on \emph{where}: nothing (all parameters global), the
+user vector, a private scoring head, or a blend between a private part and population knowledge.
+This thesis compares the four placements under one cross-device protocol on MovieLens 1M with
+\DsUsers{} users, one user per client, a participation fraction of $C=\ParticipationC$ and
+\NRounds{} rounds, scoring every user with the same leave-one-out protocol and 99 sampled
+negatives.
+
+The main finding is that the placement of personalisation dominates every other design choice in
+this setting. Keeping the user vector on the device raises \ndcg{} by
+\GainPersonalizedVsBaselinePct\% over the all-global baseline in an otherwise identical
+configuration (\NdcgBaseline{} to \NdcgPersonalized), and a private scoring head on a shared item
+table (PFedRec with final calibration) reaches \NdcgPfedrec. Replacing the private head by the
+population-mean head costs \AbsDeltaHeadGlobalHead{} \ndcg{} on the same model, and interpolating
+between the two with a data-driven weight does not recover the loss, so the value lies in having a
+private head, not in blending it. The proposed adaptive method, which blends the user vector with a
+population prototype and adds a per-user neural scorer, is reported as a negative result
+(\NdcgAdaptive): its blending weight pulls user taste toward the mean, its per-user network has
+\ParamsPersonalMlp{} parameters for a median of \DsMedianRatings{} interactions, and it uploads
+the user vector, which weakens the privacy boundary.
+
+Two further contributions concern how such comparisons should be evaluated. First, the gap between
+the PFedRec number reported here and the published one is measured rather than assumed: scoring
+with a client-side post-tuned item table lowers \ndcg{} (\NdcgEOneClean) when the test item can be
+drawn as a training negative, and raises it (\NdcgEOneLeaky) only when the test item is excluded
+from the negatives as in the official code, a difference of \PtContrastEOne{} concentrated in
+\PtContrastEOneNonZero{} users. Second, stateful clients require evaluation safeguards: a
+cold-state evaluation error that reduced \ndcg{} \ColdEvalRatio-fold was found and fixed, and an
+offline re-scoring tool reproduces the federated evaluation exactly before any further analysis.
+\pending{one sentence on the privacy measurements (byte-level communication table and the
+preference-reconstruction attack from the uploaded user vector) once they are run}.
+
+\medskip
+\noindent\textbf{Keywords:} federated learning; recommender systems; collaborative filtering;
+personalisation; privacy; evaluation protocol; MovieLens.

@@ -1,0 +1,6 @@
+# latexmk configuration: XeLaTeX + biber, build artefacts in build/
+$pdf_mode = 5;            # xelatex -> pdf
+$xelatex = 'xelatex -interaction=nonstopmode -halt-on-error -file-line-error %O %S';
+$bibtex_use = 2;          # run biber when needed
+$out_dir = 'build';
+$clean_ext = 'bbl run.xml synctex.gz';
