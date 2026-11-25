@@ -320,8 +320,12 @@ per-user scores of a run without calibration against the last-round table, which
 same saved state and comes out of the ``before'' arm of (A). (C)~Controlled ageing: re-fit the
 private part against the table of round $r_g-k$ and score against the table of round $r_g$ for
 $k\in\{0,5,10,20,40\}$, which needs the table of every round and therefore a new training run
-that saves it. \decision{choice among (A), (B) and (C); recommendation: (A) and (B) on the
-Adaptive run once its adapter is written and its saved tables are confirmed, and one new
-Personalized run that saves the table of every round, after that saving is added to the code
-and tested (the cited run took \RunPersonalizedHours{}~h), so that (A), (B) and (C) are all
-available for the user-vector placement}. \pending{the chosen measurement, pre-registered before it is run}.
+that saves it. The measurement chosen for the thesis is (C) as the cross-placement comparison, with (A) and
+(B) on the same runs, on a new set of runs trained for the purpose: Baseline, Personalized,
+PFedRec without final calibration and Adaptive, with one code version, the same client sequence,
+a seeded local data order, three seeds per method, and the shared table (and the Adaptive
+prototype) saved at every round; the private parts are scored against the last-round table with
+the age-zero stratum as control. These runs replace the single-seed runs of
+Table~\ref{tab:main} once they are in, and the post-tuning experiment is repeated on the new
+PFedRec run. \pending{pre-registration of the run suite and of the three measurements; the
+results of (C), (A) and (B) per placement}.
